@@ -1,0 +1,113 @@
+# Data Models and API Structures
+
+## Core Data Structures
+All data models are defined in [schedule_api_response.go](mdc:schedule_api_response.go).
+
+### Schedule Data
+```go
+type ScheduleResponse struct {
+    Games []Game
+}
+
+type Game struct {
+    GameDate      string     `json:"gameDate"`
+    StartTime     string     `json:"startTimeUTC"`
+    FormattedTime string     // Computed field
+    Broadcasts    []Broadcast `json:"tvBroadcasts"`
+    HomeTeam      Team       `json:"homeTeam"`
+    AwayTeam      Team       `json:"awayTeam"`
+}
+```
+
+### Scoreboard Data
+```go
+type ScoreboardResponse struct {
+    GamesByDate []GamesByDate `json:"gamesByDate"`
+}
+
+type ScoreboardGame struct {
+    GameID     int            `json:"id"`
+    GameState  string         `json:"gameState"`
+    Period     int            `json:"period"`
+    PeriodTime string         `json:"periodTime"`
+    HomeTeam   ScoreboardTeam `json:"homeTeam"`
+    AwayTeam   ScoreboardTeam `json:"awayTeam"`
+}
+```
+
+### Standings Data
+```go
+type StandingsResponse struct {
+    WildCardIndicator    bool           `json:"wildCardIndicator"`
+    StandingsDateTimeUtc string         `json:"standingsDateTimeUtc"`
+    Standings           []TeamStanding  `json:"standings"`
+}
+
+type TeamStanding struct {
+    // Team identification
+    TeamName       TeamNameInfo `json:"teamName"`
+    TeamCommonName TeamNameInfo `json:"teamCommonName"`
+    
+    // Season statistics
+    GamesPlayed    int     `json:"gamesPlayed"`
+    Wins           int     `json:"wins"`
+    Losses         int     `json:"losses"`
+    Points         int     `json:"points"`
+    PointPctg      float64 `json:"pointPctg"`
+    
+    // Goal statistics
+    GoalFor        int     `json:"goalFor"`
+    GoalAgainst    int     `json:"goalAgainst"`
+    GoalDifferential int   `json:"goalDifferential"`
+}
+```
+
+### News Data
+```go
+type NewsHeadline struct {
+    Title string
+    URL   string
+    Date  string
+}
+```
+
+## API Integration Patterns
+Reference [functions.go](mdc:functions.go) for API call implementations.
+
+### NHL API Endpoints
+- Schedule: `https://api-web.nhle.com/v1/club-schedule/UTA/week/now`
+- Scoreboard: `https://api-web.nhle.com/v1/scoreboard/UTA/now`
+- Standings: `https://api-web.nhle.com/v1/standings/now`
+
+### Data Processing
+- Always validate JSON responses before processing
+- Use timezone conversion for Mountain Time (America/Denver)
+- Filter games by current time to get upcoming matches
+- Implement proper error handling for API failures
+
+### Caching Strategy
+- Cache standings data for 30 minutes
+- Cache schedule data until midnight
+- Cache news headlines for 10 minutes
+- Use channels for background updates
+
+### Performance Analysis
+Reference [performance_tracker.go](mdc:performance_tracker.go) for team analysis structures.
+
+```go
+type TeamPerformance struct {
+    TeamStanding
+    TrendAnalysis    string
+    PlayoffChances   string
+    KeyStrengths     []string
+    KeyWeaknesses    []string
+    RecentForm       string
+    HomeRoadBalance  string
+    GoalScoringTrend string
+    DefensiveTrend   string
+}
+```
+description:
+globs:
+alwaysApply: false
+---

@@ -1,0 +1,52 @@
+# Web Server Patterns
+
+## HTTP Handler Structure
+Reference [web_server.go](mdc:web_server.go) for the main server implementation.
+
+### Handler Patterns
+- Use `http.HandleFunc` for route registration
+- Implement consistent error handling in all handlers
+- Set proper `Content-Type` headers for responses
+- Return appropriate HTTP status codes
+
+### Background Data Fetching
+The application uses background goroutines for data updates:
+- `scheduleFetcher()` - Updates schedule data at midnight
+- `newsFetcher()` - Updates news every 10 minutes
+- `scoreboardFetcher()` - Updates scoreboard every 10 minutes (30 seconds when live)
+
+### Caching Strategy
+- Use global variables for cached data: `cachedSchedule`, `cachedScoreboard`
+- Implement channel-based communication for updates
+- Check cache before making external API calls
+- Provide fallback responses when data is unavailable
+
+### Frontend Integration
+- Serve static files with `http.StripPrefix("/static/", http.FileServer(http.Dir(".")))`
+- Use HTMX for dynamic content updates
+- Implement responsive CSS for mobile compatibility
+- Use JavaScript for automatic refresh cycles
+
+### API Endpoints
+- `/schedule` - Returns formatted schedule HTML
+- `/news` - Returns formatted news headlines HTML
+- `/banner` - Returns scrolling banner HTML
+- `/scoreboard` - Returns live scoreboard HTML
+- `/mammoth-analysis` - Returns JSON team analysis data
+- `/` - Main dashboard page
+
+### Error Handling
+- Graceful degradation when external APIs fail
+- Fallback content for missing data
+- Proper logging of errors for debugging
+- User-friendly error messages in responses
+
+### Performance Considerations
+- Use channels for non-blocking updates
+- Implement proper timeouts for external calls
+- Cache responses to reduce API load
+- Use background goroutines for data fetching
+description:
+globs:
+alwaysApply: false
+---

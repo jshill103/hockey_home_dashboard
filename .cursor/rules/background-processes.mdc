@@ -1,0 +1,109 @@
+# Background Processes and Data Fetching
+
+## Background Goroutines
+The application uses several background goroutines for data management, defined in [web_server.go](mdc:web_server.go).
+
+### Schedule Fetcher
+```go
+func scheduleFetcher() {
+    // Runs continuously, updates at midnight
+    // Fetches next Utah game from NHL API
+    // Updates cachedSchedule global variable
+    // Sends updates via scheduleChannel
+}
+```
+
+### News Fetcher
+```go
+func newsFetcher() {
+    // Runs continuously, updates every 10 minutes
+    // Scrapes NHL.com for latest headlines
+    // Updates cachedHeadlines global variable
+    // Sends updates via headlinesChannel
+}
+```
+
+### Scoreboard Fetcher
+```go
+func scoreboardFetcher() {
+    // Runs continuously with dynamic timing
+    // 30 seconds when game is live
+    // 10 minutes when no live game
+    // Updates cachedScoreboard global variable
+    // Sends updates via scoreboardChannel
+}
+```
+
+## Caching Strategy
+- **Schedule Data**: Cached until midnight, then refreshed
+- **News Data**: Cached for 10 minutes with background updates
+- **Scoreboard Data**: Cached with dynamic refresh based on game state
+- **Standings Data**: Cached for 30 minutes (see [performance_tracker.go](mdc:performance_tracker.go))
+
+## Channel Communication
+- Use buffered channels to prevent blocking
+- Implement non-blocking sends with `select` statements
+- Handle channel overflow gracefully
+- Use channels for cross-goroutine communication
+
+### Channel Patterns
+```go
+// Non-blocking channel send
+select {
+case scheduleChannel <- game:
+    // Successfully sent to channel
+default:
+    // Channel is full, skip this update
+}
+
+// Channel initialization
+var scheduleChannel = make(chan Game, 1)
+var scoreboardChannel = make(chan ScoreboardGame, 1)
+var headlinesChannel = make(chan []NewsHeadline, 1)
+```
+
+## Data Fetching Patterns
+Reference [functions.go](mdc:functions.go) for API call implementations.
+
+### HTTP Client Patterns
+- Use consistent timeout handling
+- Implement proper error handling
+- Use user agents for web scraping
+- Handle rate limiting gracefully
+
+### API Call Structure
+```go
+func make_api_call(url_in string) ([]byte, error) {
+    // Create HTTP request with proper headers
+    // Handle response and body reading
+    // Return raw response data
+}
+```
+
+## Error Handling in Background Processes
+- Log errors but don't crash the goroutine
+- Implement exponential backoff for failed requests
+- Provide fallback data when APIs are unavailable
+- Continue operation even with partial failures
+
+## Performance Considerations
+- Use appropriate sleep intervals to avoid API rate limits
+- Implement proper timezone handling (Mountain Time)
+- Cache responses to reduce external API calls
+- Use efficient data structures for in-memory storage
+
+## State Management
+- Track game state changes (live vs. not live)
+- Update refresh intervals based on current state
+- Maintain consistency across all background processes
+- Handle startup initialization properly
+
+## Monitoring and Logging
+- Log all background process activities
+- Track data update frequencies
+- Monitor API response times
+- Log state changes and errors
+description:
+globs:
+alwaysApply: false
+---

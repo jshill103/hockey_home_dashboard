@@ -1,0 +1,97 @@
+# Frontend Integration Patterns
+
+## HTML Structure
+The main dashboard is defined in [web_server.go](mdc:web_server.go) within the `handleHome` function.
+
+### Layout Structure
+- Single-page application with grid layout
+- Responsive design with mobile-first approach
+- Fixed banner at bottom with scrolling content
+- Modular sections for different data types
+
+### Key CSS Classes
+- `.main-layout` - Grid container for main content
+- `.scoreboard-section` - Live game data display
+- `.news-section` - NHL headlines feed
+- `.mammoth-analysis-section` - Team performance analysis
+- `.banner-container` - Fixed bottom scrolling banner
+
+## HTMX Integration
+- Use `hx-get` for dynamic content loading
+- Target specific elements with `hx-target`
+- Implement automatic refresh cycles
+- Handle loading states and error conditions
+
+### HTMX Patterns
+```html
+<!-- Dynamic content loading -->
+<div hx-get="/news" hx-target="#news-content" hx-trigger="load"></div>
+
+<!-- Manual refresh buttons -->
+<button hx-get="/scoreboard" hx-target="#scoreboard-content">Refresh</button>
+
+<!-- Automatic updates -->
+<div hx-get="/banner" hx-target="#banner-content" hx-trigger="every 1h"></div>
+```
+
+## JavaScript Patterns
+- Use `DOMContentLoaded` for initialization
+- Implement automatic refresh cycles with `setInterval`
+- Handle loading states and error conditions
+- Use fetch API for JSON data (mammoth analysis)
+
+### JavaScript Functions
+```javascript
+// Load functions for different data types
+loadNews()           // Fetches and displays news
+loadScoreboard()     // Updates live game data
+loadMammothAnalysis() // Loads team performance data
+loadBanner()         // Updates scrolling banner
+
+// Automatic refresh cycles
+setInterval(loadScoreboard, 30000);    // 30 seconds
+setInterval(loadNews, 600000);         // 10 minutes
+setInterval(loadMammothAnalysis, 1800000); // 30 minutes
+```
+
+## CSS Styling Guidelines
+- Use CSS Grid for responsive layouts
+- Implement backdrop filters for modern glass effects
+- Use CSS animations for smooth transitions
+- Maintain consistent color scheme and typography
+
+### Color Scheme
+- Primary: `#007bff` (blue)
+- Success: `#28a745` (green)
+- Warning: `#ffc107` (yellow)
+- Danger: `#dc3545` (red)
+- Background: `rgba(0, 0, 0, 0.7-0.9)` (semi-transparent black)
+
+### Responsive Design
+- Mobile-first approach with media queries
+- Grid layout adapts to screen size
+- Touch-friendly interface elements
+- Optimized for various device orientations
+
+## Content Formatting
+- Use consistent HTML structure for data display
+- Implement proper semantic markup
+- Ensure accessibility with proper ARIA labels
+- Use consistent date and time formatting
+
+### HTML Templates
+- Schedule data: `formatBannerHTML()`
+- News headlines: `formatNewsHTML()`
+- Scoreboard: `formatScoreboardHTML()`
+- Team analysis: `formatMammothAnalysisJSON()`
+
+## Performance Optimization
+- Minimize DOM manipulation
+- Use efficient CSS selectors
+- Implement proper loading states
+- Cache static assets appropriately
+- Use background images for visual appeal
+description:
+globs:
+alwaysApply: false
+---

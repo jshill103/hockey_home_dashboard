@@ -1,0 +1,74 @@
+# Development Workflow
+
+## Project Setup
+- Use Go 1.23.3 (specified in [go.mod](mdc:go.mod))
+- All dependencies managed through Go modules
+- Static assets served from project root
+- Background image: [mammoth.png](mdc:mammoth.png)
+
+## File Organization
+- **Main server**: [web_server.go](mdc:web_server.go) - HTTP handlers and background processes
+- **Data models**: [schedule_api_response.go](mdc:schedule_api_response.go) - Structs and types
+- **API functions**: [functions.go](mdc:functions.go) - External API calls
+- **Performance analysis**: [performance_tracker.go](mdc:performance_tracker.go) - Team statistics
+- **News scraping**: [news_scraper.go](mdc:news_scraper.go) - Web scraping logic
+- **CLI entry**: [cli_main.go](mdc:cli_main.go) - Command-line interface
+
+## Development Patterns
+- Use `go run web_server.go` for development
+- Build with `go build -o web_server web_server.go`
+- Test individual components in isolation
+- Use backup files (e.g., [test_news.go.bak](mdc:test_news.go.bak)) for experimentation
+
+## Testing Strategy
+- Test API functions independently
+- Mock external dependencies for unit tests
+- Test error conditions and edge cases
+- Validate data parsing and formatting
+- Test background processes in isolation
+
+### Testing Areas
+1. **API Integration**: Test NHL API calls and response parsing
+2. **Data Processing**: Validate timezone conversion and data filtering
+3. **Web Scraping**: Test news extraction and parsing
+4. **Performance Analysis**: Test team statistics calculations
+5. **HTTP Handlers**: Test all endpoint responses
+6. **Background Processes**: Test goroutine behavior and error handling
+
+## Error Handling
+- Implement comprehensive error logging
+- Provide graceful degradation for API failures
+- Use fallback content when data is unavailable
+- Test error scenarios during development
+
+## Performance Monitoring
+- Monitor API response times
+- Track cache hit rates
+- Monitor memory usage
+- Log background process performance
+- Track user interaction patterns
+
+## Deployment Considerations
+- Ensure all static assets are available
+- Configure proper timezone settings
+- Set up logging for production monitoring
+- Implement health check endpoints
+- Consider rate limiting for external APIs
+
+## Debugging
+- Use `fmt.Printf` for development logging
+- Implement debug endpoints for data inspection
+- Test individual components in isolation
+- Use backup files for experimental changes
+- Monitor background process logs
+
+## Code Quality
+- Follow Go coding standards
+- Use consistent error handling patterns
+- Implement proper documentation
+- Maintain clean separation of concerns
+- Use descriptive variable and function names
+description:
+globs:
+alwaysApply: false
+---

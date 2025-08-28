@@ -1,0 +1,73 @@
+# Go UHC - NHL Web Application (Refactored)
+
+This is a Go-based web application that provides real-time NHL data for the Utah Hockey Club (Mammoth). The application serves as a comprehensive dashboard with live scoreboards, news, schedules, and team analysis.
+
+## Modular Project Structure
+
+### Main Entry Point
+- **[main.go](mdc:main.go)** - Main application entry point with initialization and background processes
+
+### Models (Data Structures)
+- **[models/schedule.go](mdc:models/schedule.go)** - Schedule, Game, Broadcast, Team structs
+- **[models/scoreboard.go](mdc:models/scoreboard.go)** - Scoreboard, ScoreboardGame, ScoreboardTeam structs  
+- **[models/standings.go](mdc:models/standings.go)** - Standings, TeamStanding, TeamNameInfo structs
+- **[models/news.go](mdc:models/news.go)** - NewsHeadline struct
+- **[models/season.go](mdc:models/season.go)** - SeasonStatus struct
+- **[models/performance.go](mdc:models/performance.go)** - TeamPerformance struct
+
+### Services (Business Logic)
+- **[services/nhl_api.go](mdc:services/nhl_api.go)** - NHL API integration and data fetching
+- **[services/news_scraper.go](mdc:services/news_scraper.go)** - NHL news scraping functionality
+- **[services/performance.go](mdc:services/performance.go)** - Team performance analysis
+- **[services/season.go](mdc:services/season.go)** - Season detection and validation
+
+### HTTP Handlers
+- **[handlers/handlers.go](mdc:handlers/handlers.go)** - Handler initialization and shared state
+- **[handlers/home.go](mdc:handlers/home.go)** - Main dashboard page with complete HTML template
+- **[handlers/schedule.go](mdc:handlers/schedule.go)** - Schedule, banner, and upcoming games handlers
+- **[handlers/news.go](mdc:handlers/news.go)** - News content handler
+- **[handlers/scoreboard.go](mdc:handlers/scoreboard.go)** - Live scoreboard handler  
+- **[handlers/analysis.go](mdc:handlers/analysis.go)** - Team analysis and season status handlers
+
+### Legacy Files (Deprecated)
+- **[web_server.go](mdc:web_server.go)** - Original monolithic server (deprecated)
+- **[schedule_api_response.go](mdc:schedule_api_response.go)** - Original struct definitions (deprecated)
+- **[functions.go](mdc:functions.go)** - Original API functions (deprecated)
+- **[news_scraper.go](mdc:news_scraper.go)** - Original news scraper (deprecated)
+- **[performance_tracker.go](mdc:performance_tracker.go)** - Original performance tracker (deprecated)
+
+### Static Assets
+- **[mammoth.png](mdc:mammoth.png)** - Background image for the web interface
+- **media/** - Video and media files directory
+
+## Key Features
+1. **Live Scoreboard** - Real-time game data with automatic updates
+2. **News Feed** - Scraped NHL headlines with automatic refresh
+3. **Schedule Display** - Upcoming Utah games with scrolling banner
+4. **Upcoming Games** - 7-day game schedule (hockey season only)
+5. **Team Analysis** - Comprehensive Utah Mammoth performance insights
+6. **Season Detection** - Automatic hockey season vs off-season detection
+7. **Conditional Display** - Different content based on season status
+8. **Background Data Fetching** - Automatic data updates at configurable intervals
+
+## Architecture Benefits
+- **Separation of Concerns** - Models, services, and handlers are clearly separated
+- **Maintainability** - Each component has a single responsibility
+- **Testability** - Individual components can be tested in isolation
+- **Scalability** - Easy to add new features and modify existing ones
+- **Code Reusability** - Services can be used across multiple handlers
+- **Clear Dependencies** - Import structure shows component relationships
+
+## Data Sources
+- NHL Official API (schedule, scoreboard, standings)
+- NHL.com news scraping
+- Local caching for performance optimization
+
+## Development Workflow
+- Build: `go build -o web_server_new main.go`
+- Run: `./web_server_new`
+- The application serves on `http://localhost:8080`
+description:
+globs:
+alwaysApply: false
+---

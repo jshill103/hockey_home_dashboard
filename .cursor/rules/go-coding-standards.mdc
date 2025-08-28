@@ -1,0 +1,53 @@
+# Go Coding Standards
+
+## Code Organization
+- Use `package main` for all files in this application
+- Group imports: standard library, third-party, local
+- Keep functions focused and single-purpose
+- Use descriptive function and variable names
+
+## Error Handling
+- Always check and handle errors explicitly
+- Use `fmt.Errorf` for error wrapping with context
+- Return errors from functions that can fail
+- Log errors with descriptive messages
+
+## API Patterns
+- Use consistent HTTP client patterns from [functions.go](mdc:functions.go)
+- Implement proper timeout handling for external API calls
+- Use structured JSON unmarshaling with proper error handling
+- Cache API responses to reduce external calls
+
+## Data Structures
+- Define structs in [schedule_api_response.go](mdc:schedule_api_response.go)
+- Use JSON tags for API response mapping
+- Keep structs focused and avoid deep nesting
+- Use pointers for optional or large structs
+
+## Concurrency
+- Use goroutines for background data fetching
+- Implement proper channel communication
+- Use select statements for non-blocking channel operations
+- Avoid race conditions with proper synchronization
+
+## Web Server Patterns
+- Define HTTP handlers in [web_server.go](mdc:web_server.go)
+- Use consistent response formatting
+- Set proper Content-Type headers
+- Implement graceful error handling for web requests
+
+## Performance
+- Cache frequently accessed data (standings, news, schedule)
+- Use background goroutines for data updates
+- Implement proper timeouts for external calls
+- Minimize memory allocations in hot paths
+
+## Testing
+- Write tests for critical functions
+- Use table-driven tests for multiple scenarios
+- Mock external dependencies when testing
+- Test error conditions and edge cases
+description:
+globs:
+alwaysApply: false
+---
