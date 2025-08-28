@@ -2,6 +2,9 @@
 
 A comprehensive, team-specific NHL web dashboard built in Go that provides real-time hockey information, news, statistics, and analysis for your favorite NHL team.
 
+🐳 **Docker Hub**: [jshillingburg/hockey_home_dashboard](https://hub.docker.com/r/jshillingburg/hockey_home_dashboard)  
+📦 **Quick Start**: `docker run -d -p 8080:8080 -e TEAM_CODE=YOUR_TEAM jshillingburg/hockey_home_dashboard:latest`
+
 ## Features ✨
 
 ### 🎯 Team-Specific Experience
@@ -59,6 +62,16 @@ The application supports all 32 NHL teams with custom assets:
 ### Installation
 
 #### Option 1: Docker (Recommended) 🐳
+
+**🚀 Quick Start - Use Pre-built Image from Docker Hub:**
+   ```bash
+   # Run with your favorite team (no build required!)
+   docker run -d -p 8080:8080 -e TEAM_CODE=UTA jshillingburg/hockey_home_dashboard:latest
+   docker run -d -p 8080:8080 -e TEAM_CODE=COL jshillingburg/hockey_home_dashboard:latest
+   docker run -d -p 8080:8080 -e TEAM_CODE=TOR jshillingburg/hockey_home_dashboard:latest
+   ```
+
+**📦 Or Build from Source:**
 
 1. **Clone the repository**
    ```bash
@@ -230,7 +243,25 @@ go build -o web_server main.go && ./web_server -team YOUR_TEAM
 
 ## Docker Usage 🐳
 
-### Basic Docker Commands
+### Using Pre-built Docker Hub Image (Easiest!)
+
+```bash
+# Pull from Docker Hub (automatic on first run)
+docker pull jshillingburg/hockey_home_dashboard:latest
+
+# Run with default team (UTA)
+docker run -d -p 8080:8080 jshillingburg/hockey_home_dashboard:latest
+
+# Run with specific team
+docker run -d -p 8080:8080 -e TEAM_CODE=TOR jshillingburg/hockey_home_dashboard:latest
+
+# Run multiple team instances on different ports
+docker run -d -p 8080:8080 -e TEAM_CODE=UTA --name uta-dashboard jshillingburg/hockey_home_dashboard:latest
+docker run -d -p 8081:8080 -e TEAM_CODE=COL --name col-dashboard jshillingburg/hockey_home_dashboard:latest
+docker run -d -p 8082:8080 -e TEAM_CODE=VGK --name vgk-dashboard jshillingburg/hockey_home_dashboard:latest
+```
+
+### Basic Docker Commands (Building from Source)
 
 ```bash
 # Build the Docker image
