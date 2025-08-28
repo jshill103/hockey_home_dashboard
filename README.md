@@ -47,10 +47,52 @@ The application supports all 32 NHL teams with custom assets:
 ## Quick Start 🚀
 
 ### Prerequisites
-- Go 1.19+ installed
+
+#### For Docker Installation (Recommended):
+- Docker and Docker Compose installed
+- Internet connection (for live NHL API data)
+
+#### For Direct Go Installation:
+- Go 1.23.3+ installed  
 - Internet connection (for live NHL API data)
 
 ### Installation
+
+#### Option 1: Docker (Recommended) 🐳
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/jshill103/hockey_home_dashboard.git
+   cd hockey_home_dashboard
+   ```
+
+2. **Run with Docker Compose**
+   ```bash
+   # Default team (Utah Hockey Club)
+   docker-compose up -d
+
+   # Or specify a different team
+   TEAM_CODE=COL docker-compose up -d
+   TEAM_CODE=TOR docker-compose up -d
+   TEAM_CODE=BOS docker-compose up -d
+   ```
+
+3. **Or build and run manually**
+   ```bash
+   # Build the image
+   docker build -t nhl-dashboard .
+
+   # Run with your favorite team
+   docker run -d -p 8080:8080 -e TEAM_CODE=VGK nhl-dashboard
+   docker run -d -p 8080:8080 -e TEAM_CODE=LAK nhl-dashboard
+   ```
+
+4. **Access your dashboard**
+   ```
+   http://localhost:8080
+   ```
+
+#### Option 2: Direct Go Installation
 
 1. **Clone the repository**
    ```bash
@@ -185,6 +227,57 @@ go run main.go -team YOUR_TEAM
 # Build and run
 go build -o web_server main.go && ./web_server -team YOUR_TEAM
 ```
+
+## Docker Usage 🐳
+
+### Basic Docker Commands
+
+```bash
+# Build the Docker image
+docker build -t nhl-dashboard .
+
+# Run with default team (UTA)
+docker run -d -p 8080:8080 nhl-dashboard
+
+# Run with specific team
+docker run -d -p 8080:8080 -e TEAM_CODE=TOR nhl-dashboard
+
+# Run multiple team instances on different ports
+docker run -d -p 8080:8080 -e TEAM_CODE=UTA --name uta-dashboard nhl-dashboard
+docker run -d -p 8081:8080 -e TEAM_CODE=COL --name col-dashboard nhl-dashboard
+docker run -d -p 8082:8080 -e TEAM_CODE=VGK --name vgk-dashboard nhl-dashboard
+```
+
+### Docker Compose
+
+The `docker-compose.yml` file provides an easy way to run the application:
+
+```bash
+# Start with default configuration
+docker-compose up -d
+
+# Start with custom team
+TEAM_CODE=LAK docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop the application
+docker-compose down
+```
+
+### Multi-Team Setup
+
+To run multiple team dashboards simultaneously, uncomment the additional services in `docker-compose.yml` and run:
+
+```bash
+docker-compose up -d
+```
+
+This will start dashboards for multiple teams on different ports:
+- Utah (UTA): http://localhost:8080
+- Colorado (COL): http://localhost:8081  
+- Vegas (VGK): http://localhost:8082
 
 ### Key Components
 
