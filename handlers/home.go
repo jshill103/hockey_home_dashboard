@@ -41,7 +41,7 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             color: white;
             min-height: 100vh;
             overflow-x: hidden;
-            padding-bottom: 70px;
+            padding-bottom: 130px;
         }
         
         .header {
@@ -60,7 +60,7 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         /* Bottom Scrolling Banner Styles */
         .bottom-banner {
             background: linear-gradient(135deg, var(--team-secondary), var(--team-primary-dark), var(--team-primary));
-            height: 60px;
+            height: 120px;
             width: 100%;
             position: fixed;
             bottom: 0;
@@ -77,8 +77,8 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             display: inline-block;
             white-space: nowrap;
             animation: scroll-ticker 60s linear infinite;
-            line-height: 60px;
-            height: 60px;
+            line-height: 120px;
+            height: 120px;
             will-change: transform;
         }
         
@@ -118,25 +118,24 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             grid-column: 1 / -1;
             grid-row: 1;
             background: rgba(0, 0, 0, 0.3);
-            padding: 20px 28px 20px 28px;
+            padding: 30px 40px 30px 40px;
             border-radius: 12px;
             box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-            min-height: 120px;
+            min-height: 160px;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: 20px;
+            margin-bottom: 30px;
         }
         
         .news-section {
             grid-column: 1;
             grid-row: 1;
             background: rgba(0, 0, 0, 0.3);
-            padding: 20px 28px 20px 28px;
+            padding: 30px 35px 30px 35px;
             border-radius: 12px;
             box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-            min-height: 500px;
-            height: 500px;
+            height: calc(100vh - 180px);
             width: 100%;
             display: flex;
             flex-direction: column;
@@ -145,16 +144,16 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         }
         
         .news-section h2 {
-            margin: 0 0 12px 0;
+            margin: 0 0 18px 0;
             color: white;
-            font-size: 1.3em;
+            font-size: 2.0em;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
         }
         
         .news-item {
             border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-            padding: 6px 0;
-            margin-bottom: 3px;
+            padding: 12px 0;
+            margin-bottom: 8px;
         }
         
         .news-item:last-child {
@@ -165,10 +164,10 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             color: var(--team-primary);
             text-decoration: none;
             font-weight: bold;
-            font-size: 0.75em;
+            font-size: 1.2em;
             display: block;
-            margin-bottom: 3px;
-            line-height: 1.3;
+            margin-bottom: 8px;
+            line-height: 1.4;
         }
         
         .news-item a:hover {
@@ -181,22 +180,21 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             grid-column: 1;
             grid-row: 1;
             background: rgba(0, 0, 0, 0.3);
-            padding: 20px 28px 20px 28px;
+            padding: 30px 35px 30px 35px;
             border-radius: 12px;
             box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-            min-height: 500px;
-            height: 500px;
+            height: calc(100vh - 180px);
             width: 100%;
             display: flex;
             flex-direction: column;
             justify-content: flex-start;
-            overflow-y: auto;
+            overflow-y: hidden;
         }
         
         .upcoming-games-section h2 {
-            margin: 0 0 15px 0;
+            margin: 0 0 25px 0;
             color: white;
-            font-size: 1.5em;
+            font-size: 2.2em;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
         }
         
@@ -213,8 +211,8 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         .game-date {
             color: var(--team-accent);
             font-weight: bold;
-            font-size: 0.9em;
-            margin-bottom: 4px;
+            font-size: 1.4em;
+            margin-bottom: 8px;
         }
         
         .game-matchup {
@@ -224,12 +222,12 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         .game-teams {
             color: var(--team-primary);
             font-weight: bold;
-            font-size: 1.1em;
+            font-size: 1.7em;
         }
         
         .game-time {
             color: var(--team-primary);
-            font-size: 0.9em;
+            font-size: 1.4em;
         }
         
         /* Player Stats Section */
@@ -237,22 +235,21 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             grid-column: 2;
             grid-row: 1;
             background: rgba(0, 0, 0, 0.3);
-            padding: 20px 28px 20px 28px;
+            padding: 30px 35px 30px 35px;
             border-radius: 12px;
             box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-            min-height: 500px;
-            height: 500px;
+            height: calc(100vh - 180px);
             width: 100%;
             display: flex;
             flex-direction: column;
             justify-content: flex-start;
-            overflow-y: auto;
+            overflow-y: hidden;
         }
         
         .player-stats-section h2 {
-            margin: 0 0 15px 0;
+            margin: 0 0 25px 0;
             color: white;
-            font-size: 1.5em;
+            font-size: 2.2em;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
         }
         
@@ -297,12 +294,12 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         
         .player-name, .goalie-name {
             font-weight: bold;
-            font-size: 1.1em;
+            font-size: 1.7em;
             color: white;
         }
         
         .player-position, .goalie-position {
-            font-size: 0.9em;
+            font-size: 1.4em;
             color: #aaa;
         }
         
@@ -311,13 +308,13 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         }
         
         .stat-value {
-            font-size: 1.4em;
+            font-size: 2.2em;
             font-weight: bold;
             color: var(--team-primary);
         }
         
         .stat-label {
-            font-size: 0.8em;
+            font-size: 1.3em;
             color: #ccc;
             text-transform: uppercase;
         }
@@ -327,9 +324,9 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         }
         
         .stat-category h4 {
-            margin: 0 0 10px 0;
+            margin: 0 0 15px 0;
             color: var(--team-accent);
-            font-size: 1.1em;
+            font-size: 1.7em;
             text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
         }
         
@@ -347,73 +344,81 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             grid-column: 2;
             grid-row: 1;
             background: rgba(0, 0, 0, 0.3);
-            padding: 20px 28px 20px 28px;
+            padding: 30px 35px 30px 35px;
             border-radius: 12px;
             box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-            min-height: 500px;
-            height: 500px;
+            height: calc(100vh - 180px);
             width: 100%;
             display: flex;
             flex-direction: column;
             justify-content: flex-start;
-            overflow-y: auto;
+            overflow-y: hidden;
         }
 
-        .season-countdown-section h2 {
-            margin: 0 0 15px 0;
-            color: white;
-            font-size: 1.5em;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-        }
+
 
         /* Countdown Components */
         .countdown-container {
             display: flex;
             flex-direction: column;
-            gap: 12px;
-            height: 100%;
+            gap: 10px;
+            height: calc(100% - 20px);
+            padding: 10px 0;
+            overflow: hidden;
         }
 
         .main-countdown, .uta-countdown {
             background: linear-gradient(135deg, var(--team-secondary), var(--team-primary-dark));
-            border-radius: 8px;
+            border-radius: 10px;
             padding: 12px;
             border: 2px solid rgba(0, 123, 255, 0.3);
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 0;
+            max-height: 50%;
         }
 
         .countdown-header h3, .countdown-header h4 {
-            margin: 0 0 8px 0;
+            margin: 0 0 6px 0;
             color: var(--team-accent);
             text-align: center;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-            font-size: 1em;
+            font-size: 1.5em;
+            line-height: 1.0;
         }
 
         .countdown-main, .uta-countdown-main {
             text-align: center;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex: 1;
         }
 
         .days-counter, .uta-days-counter {
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 3px;
+            gap: 8px;
         }
 
         .days-number, .uta-days-number {
-            font-size: 2.2em;
+            font-size: 3.2em;
             font-weight: bold;
             color: var(--team-primary);
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-            line-height: 1;
+            line-height: 0.8;
         }
 
         .days-label, .uta-days-label {
-            font-size: 0.8em;
+            font-size: 0.9em;
             color: #a8c8ec;
             text-transform: uppercase;
             letter-spacing: 1px;
+            line-height: 1.0;
         }
 
         .first-game-details, .uta-game-details {
@@ -421,29 +426,34 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             border-radius: 6px;
             padding: 8px;
             border: 1px solid rgba(0, 123, 255, 0.2);
+            flex-shrink: 0;
         }
 
         .game-info, .uta-game-info {
             text-align: center;
+            padding: 2px 0;
         }
 
         .game-teams, .uta-game-teams {
-            font-size: 1em;
+            font-size: 1.2em;
             font-weight: bold;
             color: #e0e8f5;
             margin-bottom: 4px;
-            line-height: 1.2;
+            line-height: 1.0;
         }
 
         .game-date, .uta-game-date {
-            font-size: 0.85em;
+            font-size: 1.0em;
             color: #ffc107;
-            margin-bottom: 3px;
+            margin-bottom: 2px;
+            line-height: 1.1;
         }
 
         .game-venue, .uta-game-venue {
-            font-size: 0.8em;
+            font-size: 0.95em;
             color: #a8c8ec;
+            line-height: 1.0;
+            margin: 0;
         }
 
         .no-countdown, .countdown-error, .season-started {
@@ -464,27 +474,26 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             grid-column: 3;
             grid-row: 1;
             background: rgba(0, 0, 0, 0.3);
-            padding: 15px 20px 15px 20px;
+            padding: 30px 35px 30px 35px;
             border-radius: 12px;
             box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-            min-height: 500px;
-            height: 500px;
+            height: calc(100vh - 180px);
             width: 100%;
             display: block;
             overflow-y: hidden;
         }
         
         .mammoth-analysis-section h2 {
-            margin: 0 0 10px 0;
+            margin: 0 0 20px 0;
             color: white;
-            font-size: 1.3em;
+            font-size: 2.0em;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
         }
         
         .last-updated {
             margin-top: auto;
-            padding-top: 6px;
-            font-size: 0.7em;
+            padding-top: 12px;
+            font-size: 1.1em;
             color: #ccc;
             text-align: center;
             border-top: 1px solid rgba(255, 255, 255, 0.2);
@@ -904,9 +913,9 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         }
 
         .metric-label {
-            font-size: 0.8em;
+            font-size: 1.3em;
             color: #a8c8ec;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
         }
 
         .metric-value {
@@ -918,9 +927,9 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         /* Rotating Analysis Sections */
         .analysis-container {
             position: relative;
-            height: 480px;
-            min-height: 480px;
-            max-height: 480px;
+            height: calc(100vh - 280px);
+            min-height: calc(100vh - 280px);
+            max-height: calc(100vh - 280px);
             overflow: hidden;
         }
 
@@ -969,9 +978,9 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             display: none;
             opacity: 0;
             transition: opacity 0.5s ease;
-            height: 350px;
-            min-height: 350px;
-            max-height: 350px;
+            height: calc(100vh - 380px);
+            min-height: calc(100vh - 380px);
+            max-height: calc(100vh - 380px);
             overflow-y: hidden;
             overflow-x: hidden;
         }
@@ -991,15 +1000,15 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         }
 
         .section-header h3 {
-            margin: 0 0 5px 0;
+            margin: 0 0 8px 0;
             color: var(--team-accent);
-            font-size: 1.4em;
+            font-size: 2.2em;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
         }
 
         .section-subtitle {
             color: #a8c8ec;
-            font-size: 0.9em;
+            font-size: 1.4em;
             margin: 0;
         }
 
@@ -1022,21 +1031,21 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         }
 
         .team-record-large {
-            font-size: 1.8em;
+            font-size: 2.8em;
             font-weight: bold;
             color: var(--team-accent);
-            margin-bottom: 8px;
+            margin-bottom: 12px;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
         }
 
         .team-points {
-            font-size: 0.95em;
+            font-size: 1.5em;
             color: #e0e8f5;
-            margin-bottom: 6px;
+            margin-bottom: 10px;
         }
 
         .division-info {
-            font-size: 0.8em;
+            font-size: 1.3em;
             color: #a8c8ec;
         }
 
@@ -1048,11 +1057,11 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         }
 
         .streak-info, .last10-info, .games-progress {
-            margin: 8px 0;
-            padding: 6px 10px;
+            margin: 12px 0;
+            padding: 10px 15px;
             background: rgba(0, 123, 255, 0.1);
             border-radius: 6px;
-            font-size: 0.8em;
+            font-size: 1.3em;
             color: #e0e8f5;
         }
 
@@ -1083,10 +1092,10 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         }
 
         .metric-value-large {
-            font-size: 1.5em;
+            font-size: 2.4em;
             font-weight: bold;
             color: #e0e8f5;
-            margin-top: 5px;
+            margin-top: 8px;
         }
 
         .analytics-compact {
@@ -1097,9 +1106,9 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         }
 
         .analytics-item {
-            margin: 10px 0;
+            margin: 15px 0;
             color: #e0e8f5;
-            font-size: 0.9em;
+            font-size: 1.4em;
         }
 
         /* Section 3: Location & Standing Styles */
@@ -1128,18 +1137,18 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         .split-label {
             font-weight: bold;
             color: var(--team-accent);
-            margin-bottom: 4px;
-            font-size: 0.8em;
+            margin-bottom: 6px;
+            font-size: 1.3em;
         }
 
         .split-record {
-            font-size: 0.85em;
+            font-size: 1.35em;
             color: #e0e8f5;
-            margin-bottom: 3px;
+            margin-bottom: 5px;
         }
 
         .split-pct {
-            font-size: 0.75em;
+            font-size: 1.2em;
             color: #a8c8ec;
         }
 
@@ -1151,9 +1160,9 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         }
 
         .position-item {
-            margin: 3px 0;
+            margin: 6px 0;
             color: #e0e8f5;
-            font-size: 0.75em;
+            font-size: 1.2em;
         }
 
         .playoff-indicator {
@@ -1418,19 +1427,18 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             grid-row: 1;
             background: linear-gradient(135deg, var(--team-secondary), var(--team-primary-dark), var(--team-primary));
             border-radius: 15px;
-            padding: 25px;
+            padding: 35px;
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
             border: 2px solid rgba(0, 123, 255, 0.3);  
-            min-height: 500px;
-            height: 500px;
-            overflow-y: auto;
+            height: calc(100vh - 180px);
+            overflow-y: hidden;
             flex-direction: column;
         }
 
         .playoff-odds-section h2 {
-            margin: 0 0 20px 0;
+            margin: 0 0 30px 0;
             color: var(--team-accent);
-            font-size: 1.6em;
+            font-size: 2.4em;
             text-align: center;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
         }
@@ -1665,10 +1673,10 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         /* Banner Styles */
         .away-indicator, .home-indicator {
             font-weight: bold;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 0.8em;
-            margin-right: 5px;
+            padding: 6px 18px;
+            border-radius: 12px;
+            font-size: 1.8em;
+            margin-right: 15px;
         }
         
         .away-indicator {
@@ -1745,7 +1753,6 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
 
         
         <div class="season-countdown-section offseason-only">
-            <h2><span id="clock-icon" onclick="toggleSeasonStatus()" style="cursor: pointer; user-select: none;" title="Click to toggle season status">⏰</span> Season Countdown</h2>
             <div id="season-countdown-content">
                 <p>Loading season countdown...</p>
             </div>

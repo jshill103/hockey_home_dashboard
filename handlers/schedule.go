@@ -66,20 +66,18 @@ func HandleBanner(w http.ResponseWriter, r *http.Request) {
 func formatBannerHTML(game models.Game) string {
 	// If no game data, return loading message
 	if game.GameDate == "" || game.HomeTeam.CommonName.Default == "" {
-		return "<span style='color: white; font-size: 1.1em; font-weight: bold;'>🏒 Loading next game information...</span>"
+		return "<span style='color: white; font-size: 3.3em; font-weight: bold;'>🏒 Loading next game information...</span>"
 	}
 
 	// Format as a compact horizontal ticker
 	var html strings.Builder
 
-	html.WriteString("<span style='color: white; font-size: 1.1em; font-weight: bold; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);'>")
+	html.WriteString("<span style='color: white; font-size: 3.3em; font-weight: bold; text-shadow: 6px 6px 12px rgba(0,0,0,0.6);'>")
 
-	// Compact game info: NEXT GAME: (AWAY) Away @ (HOME) Home • Date • Time • Venue • TV
+	// Compact game info: NEXT GAME: Away @ Home • Date • Time • Venue • TV
 	html.WriteString("🏒 NEXT GAME: ")
-	html.WriteString("<span class='away-indicator'>AWAY</span>")
 	html.WriteString(game.AwayTeam.CommonName.Default)
 	html.WriteString(" @ ")
-	html.WriteString("<span class='home-indicator'>HOME</span>")
 	html.WriteString(game.HomeTeam.CommonName.Default)
 
 	// Add date/time
