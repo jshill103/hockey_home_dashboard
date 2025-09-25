@@ -12,21 +12,20 @@ import (
 // EASY SETUP INSTRUCTIONS:
 //
 // 1. Get your Slack webhook URL:
-//    - Go to: https://api.slack.com/apps/A09GHT50BFW
-//    - Click "Incoming Webhooks"
-//    - Click "Add New Webhook to Workspace"
-//    - Select your channel
-//    - Copy the webhook URL
+//   - Go to: https://api.slack.com/apps/A09GHT50BFW
+//   - Click "Incoming Webhooks"
+//   - Click "Add New Webhook to Workspace"
+//   - Select your channel
+//   - Copy the webhook URL
 //
 // 2. REPLACE the webhook URL below with your real one:
-//
 var SlackConfig = struct {
 	WebhookURL string
 	Enabled    bool
 }{
 	// 🚨 REPLACE THIS WITH YOUR REAL SLACK WEBHOOK URL:
 	WebhookURL: "REPLACE_WITH_YOUR_SLACK_WEBHOOK_URL_HERE",
-	
+
 	// Set to true to enable Slack notifications:
 	Enabled: true,
 }
@@ -58,7 +57,7 @@ func GetSlackWebhookURL() string {
 	if envURL := os.Getenv("SLACK_WEBHOOK_URL"); envURL != "" {
 		return envURL
 	}
-	
+
 	// Return configured URL
 	return SlackConfig.WebhookURL
 }
@@ -73,7 +72,7 @@ func ValidateSlackConfig() error {
 	if !SlackConfig.Enabled {
 		return fmt.Errorf("Slack notifications are disabled in config.go")
 	}
-	
+
 	webhookURL := GetSlackWebhookURL()
 	if webhookURL == "" || webhookURL == "REPLACE_WITH_YOUR_SLACK_WEBHOOK_URL_HERE" {
 		return fmt.Errorf(`
@@ -88,6 +87,6 @@ OR use environment variable:
 export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
 `)
 	}
-	
+
 	return nil
 }

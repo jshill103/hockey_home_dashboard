@@ -297,6 +297,34 @@ docker-compose logs -f
 docker-compose down
 ```
 
+### 🔔 Docker + Slack Notifications
+
+**NEW!** Enable Utah Mammoth Team Store alerts in Docker using environment variables:
+
+```bash
+# Docker run with Slack notifications
+docker run -d \
+  -p 8080:8080 \
+  -e TEAM_CODE=UTA \
+  -e SLACK_WEBHOOK_URL="https://example.com/your-slack-webhook-url" \
+  --name utah-dashboard \
+  jshillingburg/hockey_home_dashboard:latest
+
+# Docker Compose with Slack
+# Edit docker-compose.yml to add:
+environment:
+  - TEAM_CODE=UTA
+  - SLACK_WEBHOOK_URL=https://example.com/your-slack-webhook-url
+```
+
+**What you'll get:**
+- 🏒 Automatic monitoring of Utah Mammoth Team Store  
+- 📱 Rich Slack notifications with product images, prices, and links
+- ⚡ Real-time alerts when new products are added
+- 🔄 Smart change detection - no spam!
+
+**Setup Guide:** See `DOCKER_SLACK_SETUP.md` for detailed instructions.
+
 ### Multi-Team Setup
 
 To run multiple team dashboards simultaneously, uncomment the additional services in `docker-compose.yml` and run:

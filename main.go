@@ -66,7 +66,7 @@ func main() {
 
 	// Initialize scraper service
 	fmt.Println("Initializing scraping system...")
-	
+
 	// Check Slack configuration for UTA team
 	var slackWebhookURL string
 	if strings.ToUpper(teamConfig.Code) == "UTA" {
@@ -77,14 +77,14 @@ func main() {
 			fmt.Println("✅ Slack webhook configured for Utah Mammoth notifications")
 		}
 	}
-	
+
 	// Create scraper service with or without Slack
 	if slackWebhookURL != "" {
 		scraperService = services.NewScraperServiceWithSlack(teamConfig.Code, "./scraper_data", slackWebhookURL)
 	} else {
 		scraperService = services.NewScraperService(teamConfig.Code, "./scraper_data")
 	}
-	
+
 	if err := scraperService.Initialize(); err != nil {
 		fmt.Printf("Warning: Failed to initialize scraper service: %v\n", err)
 	} else {

@@ -89,9 +89,9 @@ func updateConfigFile(webhookURL string) error {
 	// Replace the placeholder with the real URL
 	oldLine := `	WebhookURL: "REPLACE_WITH_YOUR_SLACK_WEBHOOK_URL_HERE",`
 	newLine := fmt.Sprintf(`	WebhookURL: "%s",`, webhookURL)
-	
+
 	updatedContent := strings.Replace(string(content), oldLine, newLine, 1)
-	
+
 	if updatedContent == string(content) {
 		return fmt.Errorf("could not find placeholder in config.go - it may already be configured")
 	}
