@@ -27,12 +27,12 @@ func main() {
 		fmt.Println("5. Select your channel and copy the webhook URL")
 		fmt.Println("")
 		fmt.Println("📝 Usage:")
-			fmt.Println("   export SLACK_WEBHOOK_URL=\"https://your-slack-webhook-url-here.example.com/replace-with-real-webhook\"")
+		fmt.Println("   export SLACK_WEBHOOK_URL=\"https://your-slack-webhook-url-here.example.com/replace-with-real-webhook\"")
 		fmt.Println("   go run test_slack_notification.go")
 		fmt.Println("")
 		fmt.Println("   OR")
 		fmt.Println("")
-			fmt.Println("   go run test_slack_notification.go \"https://your-slack-webhook-url-here.example.com/replace-with-real-webhook\"")
+		fmt.Println("   go run test_slack_notification.go \"https://your-slack-webhook-url-here.example.com/replace-with-real-webhook\"")
 		os.Exit(1)
 	}
 

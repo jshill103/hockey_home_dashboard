@@ -38,9 +38,11 @@ func HandleSlackTest(w http.ResponseWriter, r *http.Request) {
 			"status":  "error",
 			"message": "No Slack webhook URL configured",
 			"instructions": map[string]string{
+				"config_file":  "Edit config.go and replace REPLACE_WITH_YOUR_SLACK_WEBHOOK_URL_HERE with your webhook URL",
 				"environment":  "Set SLACK_WEBHOOK_URL environment variable",
 				"request_body": "Send JSON with 'webhook_url' field",
 				"get_webhook":  "https://api.slack.com/apps/A09GHT50BFW → Incoming Webhooks",
+				"quick_setup":  "Run: go run setup_slack.go",
 			},
 		}
 		w.WriteHeader(http.StatusBadRequest)

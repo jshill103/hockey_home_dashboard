@@ -10,9 +10,10 @@ import (
 
 // ScraperService provides a high-level interface to the scraping system
 type ScraperService struct {
-	manager  models.ScraperManager
-	teamCode string
-	dataDir  string
+	manager         models.ScraperManager
+	teamCode        string
+	dataDir         string
+	slackWebhookURL string
 }
 
 // NewScraperService creates a new scraper service
@@ -27,6 +28,22 @@ func NewScraperService(teamCode string, dataDir string) *ScraperService {
 		manager:  manager,
 		teamCode: teamCode,
 		dataDir:  dataDir,
+	}
+}
+
+// NewScraperServiceWithSlack creates a new scraper service with Slack webhook URL
+func NewScraperServiceWithSlack(teamCode string, dataDir string, slackWebhookURL string) *ScraperService {
+	if dataDir == "" {
+		dataDir = "./scraper_data"
+	}
+
+	manager := NewScraperManager(dataDir)
+
+	return &ScraperService{
+		manager:         manager,
+		teamCode:        teamCode,
+		dataDir:         dataDir,
+		slackWebhookURL: slackWebhookURL,
 	}
 }
 
@@ -103,7 +120,7 @@ func (ss *ScraperService) setupActions() error {
 	}
 
 	// Slack notification action for UTA team (Mammoth store monitoring)
-	if strings.ToUpper(ss.teamCode) == "UTA" {
+	if strings.ToUpper(ss.teamCode) == "UTA" && ss.slackWebhookURL != "" {
 		slackConfig := SlackConfig{
 			AppID:             "A09GHT50BFW",
 			ClientID:          "1023450607298.9561923011540",
@@ -112,14 +129,17 @@ func (ss *ScraperService) setupActions() error {
 			VerificationToken: "M60EwLFxKj1EsRqJ7tNFM89j",
 		}
 
-		// Note: You'll need to set up a webhook URL or bot token for this to work
-		// For now, we'll create the action but it won't send messages without a webhook URL
-		slackAction := NewSlackAction(slackConfig, "") // Empty webhook URL for now
+		// Create Slack action with configured webhook URL
+		slackAction := NewSlackAction(slackConfig, ss.slackWebhookURL)
 		if scraperManager, ok := ss.manager.(*ScraperManagerImpl); ok {
 			if err := scraperManager.RegisterAction(slackAction); err != nil {
 				return fmt.Errorf("failed to register slack action: %v", err)
 			}
 		}
+		fmt.Println("✅ Slack notifications enabled for new Utah Mammoth products!")
+	} else if strings.ToUpper(ss.teamCode) == "UTA" {
+		fmt.Println("⚠️  Slack notifications disabled - no webhook URL configured")
+		fmt.Println("   Edit config.go to set up Slack notifications")
 	}
 
 	return nil
