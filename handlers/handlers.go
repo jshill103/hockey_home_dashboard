@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/jaredshillingburg/go_uhc/models"
 	"github.com/jaredshillingburg/go_uhc/services"
@@ -10,18 +11,20 @@ import (
 
 // Shared state for handlers
 var (
-	cachedSchedule      *models.Game
-	cachedScoreboard    *models.ScoreboardGame
-	cachedNews          *[]models.NewsHeadline
-	cachedUpcomingGames *[]models.Game
-	currentSeasonStatus *models.SeasonStatus
-	isGameCurrentlyLive *bool
-	teamConfig          *models.TeamConfig
+	cachedSchedule        *models.Game
+	cachedScheduleUpdated *time.Time
+	cachedScoreboard      *models.ScoreboardGame
+	cachedNews            *[]models.NewsHeadline
+	cachedUpcomingGames   *[]models.Game
+	currentSeasonStatus   *models.SeasonStatus
+	isGameCurrentlyLive   *bool
+	teamConfig            *models.TeamConfig
 )
 
 // Init initializes the handlers with shared state from main
 func Init(
 	schedule *models.Game,
+	scheduleUpdated *time.Time,
 	scoreboard *models.ScoreboardGame,
 	news *[]models.NewsHeadline,
 	upcomingGames *[]models.Game,
@@ -29,6 +32,7 @@ func Init(
 	gameLive *bool,
 ) {
 	cachedSchedule = schedule
+	cachedScheduleUpdated = scheduleUpdated
 	cachedScoreboard = scoreboard
 	cachedNews = news
 	cachedUpcomingGames = upcomingGames

@@ -1783,7 +1783,16 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         let currentSeasonStatus = null;
         
         function loadBanner() {
-            htmx.ajax('GET', '/banner', '#banner-content');
+            console.log('Loading banner content...'); // Debug log
+            htmx.ajax('GET', '/banner', '#banner-content', {
+                afterRequest: function(xhr) {
+                    if (xhr.status === 200) {
+                        console.log('Banner updated successfully');
+                    } else {
+                        console.error('Error updating banner:', xhr.status);
+                    }
+                }
+            });
         }
 
         function loadUpcomingGames() {
@@ -2133,6 +2142,9 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             loadSeasonStatus().then(() => {
                 // Load banner content (always shown)
                 loadBanner();
+                
+                // Set up banner auto-update (every hour)
+                setInterval(loadBanner, 3600000); // 60 minutes
                 
                 // Conditionally load content based on season status
                 if (currentSeasonStatus && currentSeasonStatus.isHockeySeason) {

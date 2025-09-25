@@ -14,12 +14,13 @@ import (
 
 // Global variables for caching
 var (
-	cachedSchedule      models.Game
-	cachedScoreboard    models.ScoreboardGame
-	cachedNews          []models.NewsHeadline
-	cachedUpcomingGames []models.Game
-	currentSeasonStatus models.SeasonStatus
-	isGameCurrentlyLive bool = false
+	cachedSchedule        models.Game
+	cachedScheduleUpdated time.Time
+	cachedScoreboard      models.ScoreboardGame
+	cachedNews            []models.NewsHeadline
+	cachedUpcomingGames   []models.Game
+	currentSeasonStatus   models.SeasonStatus
+	isGameCurrentlyLive   bool = false
 	// Player stats caching
 	cachedPlayerStats     models.PlayerStatsLeaders
 	cachedGoalieStats     models.GoalieStatsLeaders
@@ -30,6 +31,11 @@ var (
 // Global team configuration
 var (
 	teamConfig models.TeamConfig
+)
+
+// Global scraper service
+var (
+	scraperService *services.ScraperService
 )
 
 // Channels for background communication
@@ -58,6 +64,27 @@ func main() {
 		fmt.Printf("Warning: Team code '%s' not found, using default team %s\n", teamCode, teamConfig.Code)
 	}
 
+	// Initialize scraper service
+	fmt.Println("Initializing scraping system...")
+	scraperService = services.NewScraperService(teamConfig.Code, "./scraper_data")
+	if err := scraperService.Initialize(); err != nil {
+		fmt.Printf("Warning: Failed to initialize scraper service: %v\n", err)
+	} else {
+		fmt.Printf("✅ Scraping system initialized for %s\n", teamConfig.Code)
+		fmt.Println("   - NHL News Scraper: https://www.nhl.com/news")
+		fmt.Printf("   - Fanatics %s Products Scraper\n", teamConfig.Code)
+		fmt.Println("   - Change detection and automated actions enabled")
+
+		// Start scraping in background
+		go func() {
+			if err := scraperService.Start(); err != nil {
+				fmt.Printf("Warning: Failed to start scraper service: %v\n", err)
+			} else {
+				fmt.Printf("🕷️  Automatic scraping started for %s\n", teamConfig.Code)
+			}
+		}()
+	}
+
 	// Initialize schedule data on startup
 	fmt.Printf("Initializing schedule data for %s...\n", teamConfig.Code)
 	game, err := services.GetTeamSchedule(teamConfig.Code)
@@ -65,6 +92,7 @@ func main() {
 		fmt.Printf("Error fetching initial schedule: %v\n", err)
 	} else {
 		cachedSchedule = game
+		cachedScheduleUpdated = time.Now()
 		fmt.Printf("Initial schedule loaded: %s vs %s on %s\n",
 			game.AwayTeam.CommonName.Default,
 			game.HomeTeam.CommonName.Default,
@@ -161,6 +189,7 @@ func main() {
 	// Initialize handlers with cached data
 	handlers.Init(
 		&cachedSchedule,
+		&cachedScheduleUpdated,
 		&cachedScoreboard,
 		&cachedNews,
 		&cachedUpcomingGames,
@@ -178,6 +207,11 @@ func main() {
 		&cachedTeamPlayerStats,
 		&cachedTeamGoalieStats,
 	)
+
+	// Initialize scraper handlers
+	if scraperService != nil {
+		handlers.InitScraperHandlers(scraperService)
+	}
 
 	// Serve static files
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("."))))
@@ -197,12 +231,31 @@ func main() {
 	http.HandleFunc("/season-countdown-json", handlers.HandleSeasonCountdownJSON)
 	http.HandleFunc("/api-test", handlers.HandleAPITest)
 	http.HandleFunc("/playoff-odds", handlers.HandlePlayoffOdds)
+
+	// Scraper endpoints
+	http.HandleFunc("/scraper-dashboard", handlers.HandleScraperDashboard)
+	http.HandleFunc("/api/scrapers/status", handlers.HandleScraperStatus)
+	http.HandleFunc("/api/scrapers/products", handlers.HandleLatestProducts)
+	http.HandleFunc("/api/scrapers/news", handlers.HandleLatestNewsV2)
+	http.HandleFunc("/api/scrapers/changes", handlers.HandleRecentChanges)
+	http.HandleFunc("/api/scrapers/run", handlers.HandleRunScrapers)
+	http.HandleFunc("/api/scrapers/run/news", handlers.HandleRunNewsScraperOnce)
+	http.HandleFunc("/api/scrapers/run/fanatics", handlers.HandleRunFanaticsScraperOnce)
+	http.HandleFunc("/api/scrapers/run/mammoth", handlers.HandleRunMammothScraperOnce)
+	http.HandleFunc("/api/slack/test", handlers.HandleSlackTest)
+
 	http.HandleFunc("/", handlers.HandleHome)
 
 	fmt.Println("Server starting on http://localhost:8080")
 	fmt.Println("Schedule will be automatically updated every night at midnight")
 	fmt.Println("News will be automatically updated every 10 minutes")
 	fmt.Println("Scoreboard will be updated every 10 minutes (30 seconds when game is live)")
+	if scraperService != nil {
+		fmt.Printf("🕷️  Scraping system active - Dashboard: http://localhost:8080/scraper-dashboard\n")
+		fmt.Println("   - NHL News: Every 10 minutes")
+		fmt.Printf("   - %s Products: Every 30 minutes\n", teamConfig.Code)
+		fmt.Println("   - Change logs: ./scraper_data/logs/")
+	}
 	http.ListenAndServe(":8080", nil)
 }
 
@@ -226,6 +279,7 @@ func scheduleFetcher() {
 		} else {
 			// Update cached schedule
 			cachedSchedule = game
+			cachedScheduleUpdated = time.Now()
 			fmt.Printf("Schedule updated: %s vs %s on %s\n",
 				game.AwayTeam.CommonName.Default,
 				game.HomeTeam.CommonName.Default,

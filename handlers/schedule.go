@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jaredshillingburg/go_uhc/models"
 	"github.com/jaredshillingburg/go_uhc/services"
@@ -41,16 +42,26 @@ func HandleSchedule(w http.ResponseWriter, r *http.Request) {
 
 // HandleBanner handles banner requests
 func HandleBanner(w http.ResponseWriter, r *http.Request) {
-	// Check if we have cached schedule data
-	if cachedSchedule.GameDate == "" {
-		// If no cached data, try to fetch fresh data
-		fmt.Println("No cached schedule data, fetching fresh data...")
+	// Check if we need to refresh cached schedule data (if empty or older than 1 hour)
+	now := time.Now()
+	needsRefresh := cachedSchedule.GameDate == "" || now.Sub(*cachedScheduleUpdated) > time.Hour
+
+	if needsRefresh {
+		// Fetch fresh data
+		if cachedSchedule.GameDate == "" {
+			fmt.Println("No cached schedule data, fetching fresh data...")
+		} else {
+			fmt.Printf("Schedule cache expired (last updated: %s), refreshing...\n", cachedScheduleUpdated.Format("15:04:05"))
+		}
+
 		game, err := services.GetTeamSchedule(teamConfig.Code)
 		if err != nil {
 			w.Write([]byte("<p>Error fetching banner data: " + err.Error() + "</p>"))
 			return
 		}
 		*cachedSchedule = game
+		*cachedScheduleUpdated = now
+		fmt.Printf("Banner cache refreshed at %s\n", now.Format("15:04:05"))
 	}
 
 	if cachedSchedule.GameDate == "" {
