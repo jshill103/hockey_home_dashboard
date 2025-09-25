@@ -92,7 +92,12 @@ func (sa *SlackAction) ShouldTrigger(change models.Change) bool {
 		return false
 	}
 
-	// Trigger on new items and significant updates
+	// Only trigger for ProductItem changes (Mammoth store, Fanatics), not NewsItem changes
+	if _, ok := change.Item.(*models.ProductItem); !ok {
+		return false // Skip non-product items (like news items)
+	}
+
+	// Trigger on new items and significant updates for products only
 	switch change.Type {
 	case models.ChangeTypeNew:
 		return true // Always notify on new products
