@@ -33,11 +33,6 @@ var (
 	teamConfig models.TeamConfig
 )
 
-// Global scraper service
-var (
-	scraperService *services.ScraperService
-)
-
 // Channels for background communication
 var (
 	scheduleChannel      = make(chan models.Game, 1)
@@ -62,45 +57,6 @@ func main() {
 	// Validate team code
 	if !models.IsValidTeamCode(teamCode) {
 		fmt.Printf("Warning: Team code '%s' not found, using default team %s\n", teamCode, teamConfig.Code)
-	}
-
-	// Initialize scraper service
-	fmt.Println("Initializing scraping system...")
-
-	// Check Slack configuration for UTA team
-	var slackWebhookURL string
-	if strings.ToUpper(teamConfig.Code) == "UTA" {
-		if err := ValidateSlackConfig(); err != nil {
-			fmt.Printf("⚠️  Slack setup needed: %v\n", err)
-		} else {
-			slackWebhookURL = GetSlackWebhookURL()
-			fmt.Println("✅ Slack webhook configured for Utah Mammoth notifications")
-		}
-	}
-
-	// Create scraper service with or without Slack
-	if slackWebhookURL != "" {
-		scraperService = services.NewScraperServiceWithSlack(teamConfig.Code, "./scraper_data", slackWebhookURL)
-	} else {
-		scraperService = services.NewScraperService(teamConfig.Code, "./scraper_data")
-	}
-
-	if err := scraperService.Initialize(); err != nil {
-		fmt.Printf("Warning: Failed to initialize scraper service: %v\n", err)
-	} else {
-		fmt.Printf("✅ Scraping system initialized for %s\n", teamConfig.Code)
-		fmt.Println("   - NHL News Scraper: https://www.nhl.com/news")
-		fmt.Printf("   - Fanatics %s Products Scraper\n", teamConfig.Code)
-		fmt.Println("   - Change detection and automated actions enabled")
-
-		// Start scraping in background
-		go func() {
-			if err := scraperService.Start(); err != nil {
-				fmt.Printf("Warning: Failed to start scraper service: %v\n", err)
-			} else {
-				fmt.Printf("🕷️  Automatic scraping started for %s\n", teamConfig.Code)
-			}
-		}()
 	}
 
 	// Initialize schedule data on startup
@@ -145,7 +101,7 @@ func main() {
 
 	// Initialize season status on startup
 	fmt.Println("Initializing season status...")
-	currentSeasonStatus = services.GetSeasonStatus()
+	currentSeasonStatus = services.GetSeasonStatusWithTeamOverride(teamConfig.Code)
 	fmt.Printf("Season status: %s (%s) - Hockey Season: %t\n",
 		currentSeasonStatus.CurrentSeason,
 		currentSeasonStatus.SeasonPhase,
@@ -227,9 +183,7 @@ func main() {
 	)
 
 	// Initialize scraper handlers
-	if scraperService != nil {
-		handlers.InitScraperHandlers(scraperService)
-	}
+	// Removed - scraper service no longer used
 
 	// Serve static files
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("."))))
@@ -250,30 +204,12 @@ func main() {
 	http.HandleFunc("/api-test", handlers.HandleAPITest)
 	http.HandleFunc("/playoff-odds", handlers.HandlePlayoffOdds)
 
-	// Scraper endpoints
-	http.HandleFunc("/scraper-dashboard", handlers.HandleScraperDashboard)
-	http.HandleFunc("/api/scrapers/status", handlers.HandleScraperStatus)
-	http.HandleFunc("/api/scrapers/products", handlers.HandleLatestProducts)
-	http.HandleFunc("/api/scrapers/news", handlers.HandleLatestNewsV2)
-	http.HandleFunc("/api/scrapers/changes", handlers.HandleRecentChanges)
-	http.HandleFunc("/api/scrapers/run", handlers.HandleRunScrapers)
-	http.HandleFunc("/api/scrapers/run/news", handlers.HandleRunNewsScraperOnce)
-	http.HandleFunc("/api/scrapers/run/fanatics", handlers.HandleRunFanaticsScraperOnce)
-	http.HandleFunc("/api/scrapers/run/mammoth", handlers.HandleRunMammothScraperOnce)
-	http.HandleFunc("/api/slack/test", handlers.HandleSlackTest)
-
 	http.HandleFunc("/", handlers.HandleHome)
 
 	fmt.Println("Server starting on http://localhost:8080")
 	fmt.Println("Schedule will be automatically updated every night at midnight")
 	fmt.Println("News will be automatically updated every 10 minutes")
 	fmt.Println("Scoreboard will be updated every 10 minutes (30 seconds when game is live)")
-	if scraperService != nil {
-		fmt.Printf("🕷️  Scraping system active - Dashboard: http://localhost:8080/scraper-dashboard\n")
-		fmt.Println("   - NHL News: Every 10 minutes")
-		fmt.Printf("   - %s Products: Every 30 minutes\n", teamConfig.Code)
-		fmt.Println("   - Change logs: ./scraper_data/logs/")
-	}
 	http.ListenAndServe(":8080", nil)
 }
 
