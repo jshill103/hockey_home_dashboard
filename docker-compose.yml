@@ -8,6 +8,13 @@ services:
       - "8080:8080"
     environment:
       - TEAM_CODE=UTA
+      # Weather API Keys (optional - uncomment and set to enable weather analysis)
+      # - OPENWEATHER_API_KEY=your_openweather_api_key_here
+      # - WEATHER_API_KEY=your_weather_api_key_here
+      # - ACCUWEATHER_API_KEY=your_accuweather_api_key_here
+    volumes:
+      # Persistent storage for accuracy tracking data
+      - nhl-data-uta:/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
@@ -25,6 +32,9 @@ services:
   #     - "8081:8080"
   #   environment:
   #     - TEAM_CODE=COL
+  #     # - WEATHER_API_KEY=your_weather_api_key_here
+  #   volumes:
+  #     - nhl-data-col:/app/data
   #   restart: unless-stopped
   
   # nhl-dashboard-knights:
@@ -33,7 +43,20 @@ services:
   #     - "8082:8080"
   #   environment:
   #     - TEAM_CODE=VGK
+  #     # - WEATHER_API_KEY=your_weather_api_key_here
+  #   volumes:
+  #     - nhl-data-vgk:/app/data
   #   restart: unless-stopped
+
+volumes:
+  # Named volumes for persistent data storage
+  nhl-data-uta:
+    driver: local
+  # Uncomment additional volumes if running multiple team dashboards
+  # nhl-data-col:
+  #   driver: local
+  # nhl-data-vgk:
+  #   driver: local
 
 networks:
   default:

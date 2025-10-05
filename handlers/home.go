@@ -108,6 +108,7 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         .main-layout {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: auto auto auto;
             gap: 20px;
             padding: 0 20px;
             max-width: 2400px;
@@ -178,7 +179,7 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         /* Upcoming Games Styles */
         .upcoming-games-section {
             grid-column: 1;
-            grid-row: 1;
+            grid-row: 2;
             background: rgba(0, 0, 0, 0.3);
             padding: 30px 35px 30px 35px;
             border-radius: 12px;
@@ -228,95 +229,6 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         .game-time {
             color: var(--team-primary);
             font-size: 1.4em;
-        }
-        
-        /* Player Stats Section */
-        .player-stats-section {
-            grid-column: 2;
-            grid-row: 1;
-            background: rgba(0, 0, 0, 0.3);
-            padding: 30px 35px 30px 35px;
-            border-radius: 12px;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-            height: calc(100vh - 180px);
-            width: 100%;
-            display: flex;
-            flex-direction: column;
-            justify-content: flex-start;
-            overflow-y: hidden;
-        }
-        
-        .player-stats-section h2 {
-            margin: 0 0 25px 0;
-            color: white;
-            font-size: 2.2em;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-        }
-        
-        .goalie-stats-subsection {
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 2px solid rgba(255, 255, 255, 0.2);
-        }
-        
-        .goalie-stats-subsection h3 {
-            margin: 0 0 15px 0;
-            color: var(--team-accent);
-            font-size: 1.3em;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-        }
-        
-        .player-grid, .goalie-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-        
-        .player-card, .goalie-card {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            padding: 12px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            transition: background-color 0.3s ease;
-        }
-        
-        .player-card:hover, .goalie-card:hover {
-            background: rgba(255, 255, 255, 0.15);
-        }
-        
-        .player-info, .goalie-info {
-            display: flex;
-            flex-direction: column;
-        }
-        
-        .player-name, .goalie-name {
-            font-weight: bold;
-            font-size: 1.7em;
-            color: white;
-        }
-        
-        .player-position, .goalie-position {
-            font-size: 1.4em;
-            color: #aaa;
-        }
-        
-        .player-stats, .goalie-stats {
-            text-align: right;
-        }
-        
-        .stat-value {
-            font-size: 2.2em;
-            font-weight: bold;
-            color: var(--team-primary);
-        }
-        
-        .stat-label {
-            font-size: 1.3em;
-            color: #ccc;
-            text-transform: uppercase;
         }
         
         .stat-category {
@@ -537,6 +449,351 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             display: none;
         }
         
+        /* Model Insights Section */
+        .model-insights-section {
+            grid-column: 2;
+            grid-row: 2;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 30px 35px;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+            height: calc(100vh - 180px);
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+        
+        .model-insights-section h2 {
+            margin: 0 0 25px 0;
+            color: white;
+            font-size: 2.2em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+        }
+        
+        /* Model Insights Content */
+        .model-insights-container {
+            color: white;
+        }
+        
+        .game-matchup-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .team-info {
+            text-align: center;
+        }
+        
+        .team-info .team-name {
+            display: block;
+            font-size: 1.8em;
+            font-weight: bold;
+            color: var(--team-primary);
+        }
+        
+        .team-info .team-record {
+            color: #aaa;
+            font-size: 0.9em;
+        }
+        
+        .vs-separator {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: var(--team-accent);
+        }
+        
+        .overall-prediction {
+            background: linear-gradient(135deg, rgba(76, 175, 80, 0.2), rgba(102, 187, 106, 0.2));
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border: 2px solid rgba(76, 175, 80, 0.3);
+        }
+        
+        .prediction-header {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #66BB6A;
+        }
+        
+        .prediction-winner {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .winner-name {
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+        
+        .win-probability {
+            font-size: 2em;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        
+        .confidence-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        
+        .confidence-fill {
+            height: 100%;
+            transition: width 0.3s ease;
+        }
+        
+        .model-agreement {
+            text-align: center;
+            color: #aaa;
+            font-size: 0.9em;
+        }
+        
+        .section-title {
+            font-size: 1.3em;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: var(--team-accent);
+            border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+            padding-bottom: 8px;
+        }
+        
+        .individual-models-section {
+            margin-bottom: 20px;
+        }
+        
+        .models-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .model-card {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .model-card .model-name {
+            font-weight: bold;
+            font-size: 0.9em;
+            color: var(--team-accent);
+            margin-bottom: 8px;
+        }
+        
+        .model-prediction {
+            margin-bottom: 5px;
+        }
+        
+        .model-winner {
+            display: block;
+            font-size: 1.1em;
+            font-weight: bold;
+        }
+        
+        .model-confidence {
+            display: block;
+            font-size: 1.3em;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+        
+        .model-confidence.confidence-high {
+            color: #4CAF50;
+        }
+        
+        .model-confidence.confidence-medium {
+            color: #FFC107;
+        }
+        
+        .model-confidence.confidence-low {
+            color: #FF9800;
+        }
+        
+        .model-weight {
+            font-size: 0.85em;
+            color: #aaa;
+        }
+        
+        .phase6-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+        }
+        
+        .insight-grid {
+            display: grid;
+            gap: 8px;
+        }
+        
+        .insight-item {
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            font-size: 0.95em;
+        }
+        
+        .insight-item.highlight {
+            background: rgba(76, 175, 80, 0.2);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            font-weight: bold;
+        }
+        
+        .form-comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        
+        .team-form {
+            padding: 15px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        .team-form.hot {
+            background: rgba(255, 87, 34, 0.2);
+            border: 2px solid rgba(255, 87, 34, 0.4);
+        }
+        
+        .team-form.cold {
+            background: rgba(33, 150, 243, 0.2);
+            border: 2px solid rgba(33, 150, 243, 0.4);
+        }
+        
+        .team-label {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .form-rating, .momentum-score {
+            margin: 5px 0;
+            font-size: 1.1em;
+        }
+        
+        .form-details {
+            margin-top: 8px;
+            font-size: 0.9em;
+            color: #aaa;
+        }
+        
+        .learning-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+        }
+        
+        .learning-card {
+            background: rgba(33, 150, 243, 0.1);
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(33, 150, 243, 0.3);
+        }
+        
+        .learning-card .model-name {
+            font-weight: bold;
+            color: #64B5F6;
+            margin-bottom: 5px;
+        }
+        
+        .rating-info {
+            font-size: 0.95em;
+            margin: 5px 0;
+        }
+        
+        .learning-note {
+            font-size: 0.85em;
+            color: #aaa;
+            font-style: italic;
+        }
+
+        /* Combined Predictions Section */
+        .predictions-section {
+            grid-column: 3;
+            grid-row: 2;
+            background: linear-gradient(135deg, var(--team-secondary), var(--team-primary-dark), var(--team-primary));
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            height: calc(100vh - 180px);
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .predictions-section h2 {
+            margin: 0 0 20px 0;
+            color: var(--team-accent);
+            font-size: 2.2em;
+            text-align: center;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+        }
+
+        .predictions-tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            overflow: hidden;
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .predictions-tab {
+            flex: 1;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.7);
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: bold;
+        }
+
+        .predictions-tab.active {
+            background: rgba(255, 255, 255, 0.2);
+            color: var(--team-accent);
+        }
+
+        .predictions-tab:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .predictions-content {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .prediction-panel {
+            display: none;
+        }
+
+        .prediction-panel.active {
+            display: block;
+        }
+        
+        .prediction-loading {
+            text-align: center;
+            color: #888;
+            font-size: 1.2em;
+            padding: 40px 20px;
+        }
+        
 
         
         /* Responsive Design */
@@ -561,21 +818,19 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
                 grid-row: 3;
             }
             
-
+            .model-insights-section {
+                grid-column: 1;
+                grid-row: 4;
+            }
             
             .season-countdown-section {
                 grid-column: 1;
-                grid-row: 4;
+                grid-row: 5;
             }
             
             .mammoth-analysis-section {
                 grid-column: 1;
                 grid-row: 5;
-            }
-            
-            .player-stats-section {
-                grid-column: 1;
-                grid-row: 6;
             }
             
             /* Hockey season responsive layout */
@@ -588,11 +843,11 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
                 grid-row: 2;
             }
             
-            body.hockey-season .player-stats-section {
+            body.hockey-season .model-insights-section {
                 grid-row: 3;
             }
             
-            body.hockey-season .playoff-odds-section {
+            body.hockey-season .predictions-section {
                 grid-row: 4;
             }
         }
@@ -1423,8 +1678,8 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
 
         /* Playoff Odds Section Styles */
         .playoff-odds-section {
-            grid-column: 3;
-            grid-row: 1;
+            grid-column: 2;
+            grid-row: 3;
             background: linear-gradient(135deg, var(--team-secondary), var(--team-primary-dark), var(--team-primary));
             border-radius: 15px;
             padding: 35px;
@@ -1705,7 +1960,7 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
     
     <div class="main-layout">
         <div class="news-section offseason-only">
-            <h2>📰 NHL News</h2>
+            <h2><span id="season-toggle" style="cursor: pointer; user-select: none;" title="Click to toggle season/offseason view for testing">📰</span> NHL News</h2>
             <div id="news-content">
                 <p>Loading NHL news headlines...</p>
             </div>
@@ -1724,32 +1979,42 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             </div>
         </div>
         
-        <div class="player-stats-section hockey-season-only">
-            <h2>⭐ Player Stats</h2>
-            <div id="player-stats-content">
-                <p>Loading player statistics...</p>
+        <div class="model-insights-section hockey-season-only">
+            <h2>🤖 AI Model Insights</h2>
+            <div id="model-insights-content">
+                <p>Loading AI model insights...</p>
             </div>
-            <div class="goalie-stats-subsection">
-                <h3>🥅 Goalie Stats</h3>
-                <div id="goalie-stats-content">
-                    <p>Loading goalie statistics...</p>
+            <div class="last-updated">
+                Model insights update in real-time
+            </div>
+        </div>
+
+        <div class="predictions-section hockey-season-only">
+            <h2>🎯 Predictions & Odds</h2>
+            
+            <div class="predictions-tabs">
+                <div class="predictions-tab active" onclick="switchPredictionTab('ai'); restartPredictionTabCycling();">
+                    🤖 AI Prediction
+                </div>
+                <div class="predictions-tab" onclick="switchPredictionTab('playoff'); restartPredictionTabCycling();">
+                    🏆 Playoff Odds
                 </div>
             </div>
-            <div class="last-updated">
-                Player stats automatically update every 30 minutes
+            
+            <div class="predictions-content">
+                <div class="prediction-panel active" id="ai-panel">
+                    <div id="prediction-widget-content">
+                        <div class="prediction-loading">🤖 Loading AI Prediction...</div>
+                    </div>
+                </div>
+                
+                <div class="prediction-panel" id="playoff-panel">
+                    <div id="playoff-odds-content">
+                        <p>Loading playoff odds...</p>
+                    </div>
+                </div>
             </div>
         </div>
-        
-        <div class="playoff-odds-section hockey-season-only">
-            <h2>🏆 Playoff Odds</h2>
-            <div id="playoff-odds-content">
-                <p>Loading playoff odds...</p>
-            </div>
-            <div class="last-updated">
-                Playoff odds automatically update with standings
-            </div>
-        </div>
-        
 
         
         <div class="season-countdown-section offseason-only">
@@ -1878,36 +2143,6 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             }
         }
 
-        function loadPlayerStats() {
-            const playerStatsContent = document.getElementById('player-stats-content');
-            const lastUpdated = document.querySelector('.player-stats-section .last-updated');
-            
-            // Show loading state
-            if (lastUpdated) {
-                lastUpdated.innerHTML = '<span class="news-loading">Updating player stats...</span>';
-            }
-            
-            htmx.ajax('GET', '/player-stats', '#player-stats-content', {
-                afterRequest: function(xhr) {
-                    if (lastUpdated) {
-                        if (xhr.status === 200) {
-                            const now = new Date();
-                            const timeString = now.toLocaleTimeString();
-                            lastUpdated.innerHTML = '<span class="news-updated">Player stats updated at ' + timeString + ' (auto-updates every 30 minutes)</span>';
-                        } else {
-                            lastUpdated.innerHTML = '<span class="news-error">Error updating player stats</span>';
-                        }
-                    }
-                }
-            });
-        }
-
-        function loadGoalieStats() {
-            const goalieStatsContent = document.getElementById('goalie-stats-content');
-            
-            htmx.ajax('GET', '/goalie-stats', '#goalie-stats-content');
-        }
-
         function toggleSeasonStatus() {
             if (!currentSeasonStatus) {
                 console.log('No season status available to toggle');
@@ -1944,26 +2179,19 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
 
         function loadPlayoffOdds() {
             const playoffOddsContent = document.getElementById('playoff-odds-content');
-            const lastUpdated = document.querySelector('.playoff-odds-section .last-updated');
+            
+            if (!playoffOddsContent) return; // Element doesn't exist or not available
             
             // Show loading state
-            if (lastUpdated) {
-                lastUpdated.innerHTML = '<span class="news-loading">Calculating playoff odds...</span>';
-            }
+            playoffOddsContent.innerHTML = '<p>Loading playoff odds...</p>';
             
-            htmx.ajax('GET', '/playoff-odds', '#playoff-odds-content', {
-                afterRequest: function(xhr) {
-                    if (lastUpdated) {
-                        if (xhr.status === 200) {
-                            const now = new Date();
-                            const timeString = now.toLocaleTimeString();
-                            lastUpdated.innerHTML = '<span class="news-updated">Playoff odds updated at ' + timeString + '</span>';
-                        } else {
-                            lastUpdated.innerHTML = '<span class="news-error">Error calculating playoff odds</span>';
-                        }
-                    }
-                }
-            });
+            htmx.ajax('GET', '/playoff-odds', '#playoff-odds-content');
+        }
+
+        function loadModelInsights() {
+            const modelInsightsContent = document.getElementById('model-insights-content');
+            
+            htmx.ajax('GET', '/model-insights', '#model-insights-content');
         }
 
         function loadNews() {
@@ -2148,12 +2376,15 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
                 
                 // Conditionally load content based on season status
                 if (currentSeasonStatus && currentSeasonStatus.isHockeySeason) {
-                    // Hockey season: Load scoreboard, upcoming games, player stats, and playoff odds
+                    // Hockey season: Load scoreboard, upcoming games, model insights, and playoff odds
                     loadScoreboard();
                     loadUpcomingGames();
-                    loadPlayerStats();
-                    loadGoalieStats();
+                    loadModelInsights();
                     loadPlayoffOdds();
+                    loadAIPrediction(); // Load AI prediction for the default active tab
+                    
+                    // Start auto-cycling between prediction tabs
+                    startPredictionTabCycling();
                     
                     // Set up automatic updates
                     setInterval(loadScoreboard, 30000); // Check every 30 seconds
@@ -2195,6 +2426,136 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             // Only start midnight scheduler during off-season
             if (currentSeasonStatus && !currentSeasonStatus.isHockeySeason) {
                 scheduleMidnightAnalysisReload();
+            }
+        });
+
+        // Auto-cycling tab state
+        let currentPredictionTab = 'ai';
+        let predictionTabInterval;
+
+        // Season toggle functionality for testing
+        function switchPredictionTab(tabType) {
+            // Update tab active states
+            const tabs = document.querySelectorAll('.predictions-tab');
+            const panels = document.querySelectorAll('.prediction-panel');
+            
+            tabs.forEach(tab => tab.classList.remove('active'));
+            panels.forEach(panel => panel.classList.remove('active'));
+            
+            if (tabType === 'ai') {
+                tabs[0].classList.add('active');
+                document.getElementById('ai-panel').classList.add('active');
+                // Load AI prediction content when switching to AI tab
+                loadAIPrediction();
+                currentPredictionTab = 'ai';
+            } else if (tabType === 'playoff') {
+                tabs[1].classList.add('active');
+                document.getElementById('playoff-panel').classList.add('active');
+                // Load playoff odds content when switching to playoff tab
+                loadPlayoffOdds();
+                currentPredictionTab = 'playoff';
+            }
+        }
+
+        // Auto-cycle between prediction tabs every 30 seconds
+        function startPredictionTabCycling() {
+            predictionTabInterval = setInterval(() => {
+                if (currentPredictionTab === 'ai') {
+                    switchPredictionTab('playoff');
+                } else {
+                    switchPredictionTab('ai');
+                }
+            }, 30000); // 30 seconds
+        }
+
+        // Stop auto-cycling (useful if user manually clicks tabs)
+        function stopPredictionTabCycling() {
+            if (predictionTabInterval) {
+                clearInterval(predictionTabInterval);
+            }
+        }
+
+        // Restart cycling after manual tab switch
+        function restartPredictionTabCycling() {
+            stopPredictionTabCycling();
+            startPredictionTabCycling();
+        }
+
+        function loadAIPrediction() {
+            const predictionContent = document.getElementById('prediction-widget-content');
+            if (!predictionContent) return; // Element doesn't exist in offseason
+            
+            // Show loading state
+            predictionContent.innerHTML = '<div class="prediction-loading">🤖 Generating AI Prediction...</div>';
+            
+            fetch('/prediction-widget')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status);
+                    }
+                    return response.text();
+                })
+                .then(html => {
+                    predictionContent.innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('Error loading AI prediction:', error);
+                    predictionContent.innerHTML = '<div class="prediction-error">Unable to load AI prediction</div>';
+                });
+        }
+
+        function toggleSeasonView() {
+            const body = document.body;
+            const toggle = document.getElementById('season-toggle');
+            const isCurrentlyOffseason = body.classList.contains('offseason');
+            
+            if (isCurrentlyOffseason) {
+                // Switch to hockey season view
+                body.classList.remove('offseason');
+                body.classList.add('hockey-season');
+                toggle.title = 'Click to switch to offseason view';
+                console.log('🏒 Switched to HOCKEY SEASON view');
+                
+                // Load season-specific content
+                loadUpcomingGames();
+                loadPlayerStats();
+                loadGoalieStats();
+                loadAIPrediction();
+                loadScoreboard();
+                
+                // Start auto-cycling between prediction tabs
+                startPredictionTabCycling();
+            } else {
+                // Switch to offseason view
+                body.classList.remove('hockey-season');
+                body.classList.add('offseason');
+                toggle.title = 'Click to switch to hockey season view';
+                console.log('🏔️ Switched to OFFSEASON view');
+                
+                // Load offseason-specific content
+                loadSeasonCountdown();
+                loadTeamAnalysis();
+                
+                // Stop auto-cycling when switching to offseason
+                stopPredictionTabCycling();
+            }
+        }
+
+        // Add click event listener to the newspaper emoji
+        document.addEventListener('DOMContentLoaded', function() {
+            const seasonToggle = document.getElementById('season-toggle');
+            if (seasonToggle) {
+                seasonToggle.addEventListener('click', toggleSeasonView);
+                
+                // Add hover effect
+                seasonToggle.addEventListener('mouseover', function() {
+                    seasonToggle.style.transform = 'scale(1.2)';
+                    seasonToggle.style.transition = 'transform 0.2s ease';
+                });
+                
+                seasonToggle.addEventListener('mouseout', function() {
+                    seasonToggle.style.transform = 'scale(1)';
+                });
             }
         });
     </script>

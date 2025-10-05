@@ -34,6 +34,12 @@ COPY --from=builder /app/web_server .
 # Copy media assets (static files needed at runtime)
 COPY --from=builder /app/media ./media
 
+# Create data directories for persistent storage
+# Phase 3: Accuracy tracking and model persistence
+RUN mkdir -p /app/data/accuracy /app/data/models /app/data/results
+# Phase 6: Feature engineering data
+RUN mkdir -p /app/data/matchups /app/data/rolling_stats /app/data/player_impact
+
 # Create non-root user for security
 RUN addgroup -g 1001 -S appgroup && \
     adduser -u 1001 -S appuser -G appgroup
@@ -44,6 +50,9 @@ RUN chown -R appuser:appgroup /app
 # Switch to non-root user
 USER appuser
 
+# Create volume mount point for persistent data
+VOLUME ["/app/data"]
+
 # Expose port
 EXPOSE 8080
 
@@ -53,6 +62,11 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 # Default team (can be overridden)
 ENV TEAM_CODE=UTA
+
+# Weather API Keys (optional - if not set, weather analysis will be disabled)
+# ENV OPENWEATHER_API_KEY=""
+# ENV WEATHER_API_KEY=""
+# ENV ACCUWEATHER_API_KEY=""
 
 # Run the application
 CMD ["sh", "-c", "./web_server -team ${TEAM_CODE}"]

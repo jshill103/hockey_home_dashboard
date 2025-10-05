@@ -82,7 +82,7 @@ type RosterPlayer struct {
 	WeightInKilograms   int        `json:"weightInKilograms"`
 	BirthDate           string     `json:"birthDate"`
 	BirthCity           PlayerName `json:"birthCity"`
-	BirthCountry        PlayerName `json:"birthCountry"`
+	BirthCountry        string     `json:"birthCountry"` // API returns string, not PlayerName
 }
 
 // PlayerStatsLeaders represents the stats leaders API response

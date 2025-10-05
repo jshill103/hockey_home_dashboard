@@ -170,15 +170,36 @@ func formatUpcomingGamesHTML(games []models.Game) string {
 		html.WriteString("padding: 10px; margin: 8px 0; border-radius: 5px; ")
 		html.WriteString("border-left: 3px solid #ff6b35;'>")
 
-		html.WriteString("<div style='font-weight: bold;'>")
-		html.WriteString(fmt.Sprintf("%s vs %s",
+		// Team matchup with better formatting
+		html.WriteString("<div style='font-weight: bold; font-size: 1.1em; margin-bottom: 5px;'>")
+		html.WriteString(fmt.Sprintf("%s @ %s",
 			game.AwayTeam.CommonName.Default,
 			game.HomeTeam.CommonName.Default))
 		html.WriteString("</div>")
 
+		// Date and time
 		if game.FormattedTime != "" {
-			html.WriteString("<div style='font-size: 0.9em; color: #ccc; margin-top: 5px;'>")
+			html.WriteString("<div style='font-size: 0.9em; color: #ccc; margin: 2px 0;'>")
 			html.WriteString("📅 " + game.FormattedTime)
+			html.WriteString("</div>")
+		}
+
+		// Venue information
+		if game.Venue.Default != "" {
+			html.WriteString("<div style='font-size: 0.9em; color: #a8c8ec; margin: 2px 0;'>")
+			html.WriteString("🏟️ " + game.Venue.Default)
+			html.WriteString("</div>")
+		}
+
+		// TV broadcasts (if available)
+		if len(game.Broadcasts) > 0 {
+			html.WriteString("<div style='font-size: 0.85em; color: #ffc107; margin: 2px 0;'>")
+			html.WriteString("📺 ")
+			networks := make([]string, len(game.Broadcasts))
+			for j, broadcast := range game.Broadcasts {
+				networks[j] = broadcast.Network
+			}
+			html.WriteString(strings.Join(networks, ", "))
 			html.WriteString("</div>")
 		}
 
