@@ -454,7 +454,7 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             grid-column: 2;
             grid-row: 2;
             background: rgba(0, 0, 0, 0.3);
-            padding: 30px 35px;
+            padding: 20px 25px;
             border-radius: 12px;
             box-shadow: 0 2px 12px rgba(0,0,0,0.3);
             height: calc(100vh - 180px);
@@ -462,13 +462,6 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             display: flex;
             flex-direction: column;
             overflow-y: auto;
-        }
-        
-        .model-insights-section h2 {
-            margin: 0 0 25px 0;
-            color: white;
-            font-size: 2.2em;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
         }
         
         /* Model Insights Content */
@@ -571,7 +564,7 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         }
         
         .individual-models-section {
-            margin-bottom: 20px;
+            margin-bottom: 10px;
         }
         
         .models-grid {
@@ -729,21 +722,13 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             grid-row: 2;
             background: linear-gradient(135deg, var(--team-secondary), var(--team-primary-dark), var(--team-primary));
             border-radius: 15px;
-            padding: 25px;
+            padding: 20px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.3);
             height: calc(100vh - 180px);
             width: 100%;
             display: flex;
             flex-direction: column;
             overflow-y: auto;
-        }
-
-        .predictions-section h2 {
-            margin: 0 0 20px 0;
-            color: var(--team-accent);
-            font-size: 2.2em;
-            text-align: center;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
         }
 
         .predictions-content {
@@ -1689,13 +1674,11 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         .whats-needed,
         .odds-breakdown {
             background: linear-gradient(135deg, var(--team-primary-dark), var(--team-secondary));
-            padding: 15px;
+            padding: 12px;
             border-radius: 8px;
             border: 1px solid rgba(0, 123, 255, 0.2);
         }
 
-        .current-position h4,
-        .ml-simulation-insights h4,
         .whats-needed h4,
         .odds-breakdown h4 {
             margin: 0 0 12px 0;
@@ -1995,7 +1978,6 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         </div>
         
         <div class="model-insights-section hockey-season-only">
-            <h2>🤖 AI Model Insights</h2>
             <div id="model-insights-content">
                 <p>Loading AI model insights...</p>
             </div>
@@ -2005,8 +1987,6 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         </div>
 
         <div class="predictions-section hockey-season-only">
-            <h2>🏆 Playoff Odds</h2>
-            
             <div class="predictions-content">
                 <div id="playoff-odds-content">
                     <p>Loading playoff odds...</p>

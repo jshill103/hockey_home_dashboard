@@ -325,7 +325,6 @@ func formatPlayoffOddsHTML(odds models.PlayoffOdds) string {
 
 	// Current position section
 	html.WriteString("<div class='current-position'>")
-	html.WriteString("<h4>Current Position</h4>")
 	html.WriteString("<div class='position-grid'>")
 
 	html.WriteString("<div class='position-item'>")
@@ -366,7 +365,6 @@ func formatPlayoffOddsHTML(odds models.PlayoffOdds) string {
 
 	// ML Simulation Insights section
 	html.WriteString("<div class='ml-simulation-insights'>")
-	html.WriteString("<h4>🤖 ML Simulation Analysis</h4>")
 
 	// Show simulation count if available
 	if odds.MLSimulations > 0 {

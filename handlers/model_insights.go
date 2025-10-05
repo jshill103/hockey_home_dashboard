@@ -84,7 +84,6 @@ func buildModelInsightsHTML(
 
 	// Individual model predictions
 	html += `<div class="individual-models-section">`
-	html += `<div class="section-title">🤖 Individual Model Predictions</div>`
 	html += `<div class="models-grid">`
 
 	if len(result.ModelResults) > 0 {
