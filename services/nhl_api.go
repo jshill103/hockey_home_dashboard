@@ -11,7 +11,12 @@ import (
 )
 
 // MakeAPICall makes a generic HTTP GET request to the specified URL
+// This function is rate-limited to prevent API abuse
 func MakeAPICall(urlIn string) ([]byte, error) {
+	// Rate limit BEFORE making the API call
+	rateLimiter := GetNHLRateLimiter()
+	rateLimiter.Wait()
+
 	fmt.Printf("Making API call to: %s\n", urlIn)
 
 	req, err := http.NewRequest("GET", urlIn, nil)

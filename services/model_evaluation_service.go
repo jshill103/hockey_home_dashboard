@@ -203,6 +203,12 @@ func (mes *ModelEvaluationService) trainBatch() error {
 		log.Printf("🧠 Neural Network trained on %d games (batch)", successCount)
 	}
 
+	// Recalculate and save metrics after batch training
+	mes.calculateMetrics()
+	if err := mes.saveMetrics(); err != nil {
+		log.Printf("⚠️ Failed to save metrics after batch training: %v", err)
+	}
+
 	// Update other models
 	if mes.eloModel != nil {
 		for _, game := range mes.pendingBatch {

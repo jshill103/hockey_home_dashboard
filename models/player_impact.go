@@ -47,6 +47,7 @@ type TopScorer struct {
 	Assists       int     `json:"assists"`
 	Points        int     `json:"points"`
 	PointsPerGame float64 `json:"pointsPerGame"`
+	PlusMinus     int     `json:"plusMinus"`
 
 	// Recent Form (Last 10 Games)
 	Last10Goals   int     `json:"last10Goals"`

@@ -29,7 +29,7 @@ type NeuralNetworkModel struct {
 
 // NewNeuralNetworkModel creates a new neural network prediction model
 func NewNeuralNetworkModel() *NeuralNetworkModel {
-	layers := []int{65, 32, 16, 3} // Input features (50 original + 15 Phase 4), hidden layers, output (win/loss/ot)
+	layers := []int{81, 32, 16, 3} // Input features (50 original + 15 Phase 4 + 10 Player + 6 Goalie), hidden layers, output (win/loss/ot)
 
 	model := &NeuralNetworkModel{
 		layers:       layers,
@@ -76,26 +76,9 @@ type DecisionTree struct {
 	IsLeaf    bool
 }
 
-// LSTMModel implements Long Short-Term Memory for sequence prediction
-type LSTMModel struct {
-	hiddenSize  int
-	sequenceLen int
-	weights     map[string][][]float64
-	gameHistory []models.GameResult
-	weight      float64
-	lastUpdated time.Time
-}
+// LSTM Model is now in lstm_model.go
 
-// RandomForestModel implements random forest ensemble
-type RandomForestModel struct {
-	trees         []DecisionTree
-	numTrees      int
-	maxDepth      int
-	featureSubset int
-	weight        float64
-	oobScore      float64 // Out-of-bag score
-	lastUpdated   time.Time
-}
+// Random Forest Model is now in random_forest.go
 
 // Predict implements neural network prediction
 func (nn *NeuralNetworkModel) Predict(homeFactors, awayFactors *models.PredictionFactors) (*models.ModelResult, error) {
@@ -127,7 +110,7 @@ func (nn *NeuralNetworkModel) Predict(homeFactors, awayFactors *models.Predictio
 
 // extractFeatures converts prediction factors to neural network input
 func (nn *NeuralNetworkModel) extractFeatures(home, away *models.PredictionFactors) []float64 {
-	features := make([]float64, 65) // 65 input features (50 original + 15 Phase 4)
+	features := make([]float64, 81) // 81 input features (50 original + 15 Phase 4 + 10 Player + 6 Goalie)
 
 	// Basic team stats
 	features[0] = home.WinPercentage
@@ -225,6 +208,54 @@ func (nn *NeuralNetworkModel) extractFeatures(home, away *models.PredictionFacto
 	features[62] = home.ScheduleDensity / 7.0 // Normalize by max games per week
 	features[63] = away.ScheduleDensity / 7.0
 	features[64] = home.RestAdvantage / 5.0 // Normalize by max rest advantage
+
+	// ============================================================================
+	// PLAYER INTELLIGENCE: TOP 10 TRACKING (65-74)
+	// ============================================================================
+
+	// Star Power & Top 3 Scoring (65-68)
+	features[65] = home.StarPowerRating // 0-1 scale (star player quality)
+	features[66] = away.StarPowerRating
+	features[67] = home.Top3CombinedPPG / 4.0 // Normalize by ~max (4.0 PPG is elite)
+	features[68] = away.Top3CombinedPPG / 4.0
+
+	// Recent Form - Top 3 and Depth (69-72)
+	features[69] = home.TopScorerForm / 10.0 // 0-10 scale → 0-1
+	features[70] = away.TopScorerForm / 10.0
+	features[71] = home.DepthForm / 10.0 // Depth scorers (4-10) form
+	features[72] = away.DepthForm / 10.0
+
+	// Player Advantages (73-74)
+	features[73] = home.StarPowerEdge // Already normalized -1 to +1
+	features[74] = home.DepthEdge     // Already normalized -1 to +1
+
+	// ============================================================================
+	// GOALIE FEATURES (75-80) - 6 new features
+	// ============================================================================
+
+	// Goalie Save Percentage Differential (75)
+	// Positive = home goalie advantage, negative = away goalie advantage
+	features[75] = home.GoalieSavePctDiff // Already calculated differential
+
+	// Goalie Recent Form Differential (76)
+	// Based on last 5 starts performance
+	features[76] = home.GoalieRecentFormDiff // Already calculated differential
+
+	// Goalie Workload/Fatigue Differential (77)
+	// Positive = away goalie more fatigued, negative = home goalie more fatigued
+	features[77] = home.GoalieFatigueDiff // Already calculated differential
+
+	// Overall Goalie Advantage (78)
+	// Combined goalie impact on win probability (-0.15 to +0.15)
+	features[78] = home.GoalieAdvantage // From GoalieIntelligenceService
+
+	// Advanced Goalie Stats - Home (79)
+	// Saves Above Expected from AdvancedStats
+	features[79] = home.AdvancedStats.SavesAboveExpected
+
+	// Advanced Goalie Stats - Away (80)
+	// Saves Above Expected from AdvancedStats
+	features[80] = away.AdvancedStats.SavesAboveExpected
 
 	return features
 }
@@ -626,8 +657,5 @@ func (nn *NeuralNetworkModel) GetLastUpdate() time.Time {
 func (xgb *XGBoostModel) GetName() string    { return "XGBoost" }
 func (xgb *XGBoostModel) GetWeight() float64 { return xgb.weight }
 
-func (lstm *LSTMModel) GetName() string    { return "LSTM" }
-func (lstm *LSTMModel) GetWeight() float64 { return lstm.weight }
-
-func (rf *RandomForestModel) GetName() string    { return "Random Forest" }
-func (rf *RandomForestModel) GetWeight() float64 { return rf.weight }
+// LSTM methods are now in lstm_model.go
+// Random Forest methods are now in random_forest.go

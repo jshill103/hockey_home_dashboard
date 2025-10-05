@@ -63,6 +63,20 @@ func (pis *PlayerImpactService) GetPlayerImpact(teamCode string) *models.PlayerI
 	}
 }
 
+// NeedsUpdate checks if player data for a team needs updating (older than 1 hour)
+func (pis *PlayerImpactService) NeedsUpdate(teamCode string) bool {
+	pis.mutex.RLock()
+	defer pis.mutex.RUnlock()
+
+	impact, exists := pis.index.Teams[teamCode]
+	if !exists || impact == nil {
+		return true // No data exists, needs update
+	}
+
+	// Check if data is older than 1 hour
+	return time.Since(impact.LastUpdated) > time.Hour
+}
+
 // UpdatePlayerImpact updates player impact after fetching NHL API data
 func (pis *PlayerImpactService) UpdatePlayerImpact(teamCode string, season int) error {
 	pis.mutex.Lock()
@@ -74,6 +88,29 @@ func (pis *PlayerImpactService) UpdatePlayerImpact(teamCode string, season int) 
 		return fmt.Errorf("failed to fetch player stats: %w", err)
 	}
 
+	// Validate players against current roster
+	rosterService := GetRosterValidationService()
+	if rosterService != nil {
+		roster, err := rosterService.FetchRoster(teamCode, season)
+		if err != nil {
+			log.Printf("⚠️ Could not fetch roster for validation: %v", err)
+		} else {
+			// Filter out players not on current roster
+			validStats := []models.TopScorer{}
+			for _, player := range playerStats {
+				if roster.IsOnRoster(player.PlayerID) {
+					validStats = append(validStats, player)
+				} else {
+					log.Printf("🏒 Filtered out %s (ID %d) - not on current %s roster",
+						player.Name, player.PlayerID, teamCode)
+				}
+			}
+			playerStats = validStats
+			log.Printf("🏒 Roster validation complete: %d/%d players on current roster",
+				len(validStats), len(playerStats))
+		}
+	}
+
 	// Create or update team impact
 	impact := &models.PlayerImpact{
 		TeamCode:    teamCode,
@@ -82,31 +119,87 @@ func (pis *PlayerImpactService) UpdatePlayerImpact(teamCode string, season int) 
 		TopScorers:  []models.TopScorer{},
 	}
 
-	// Calculate top scorers (top 3)
-	if len(playerStats) >= 3 {
-		impact.TopScorers = playerStats[:3]
+	// Calculate top 10 scorers and fetch their game logs for comprehensive depth analysis
+	numTopScorers := 10
+	if len(playerStats) < numTopScorers {
+		numTopScorers = len(playerStats)
+	}
+
+	if numTopScorers >= 3 {
+		impact.TopScorers = playerStats[:numTopScorers]
+
+		log.Printf("📊 Fetching game logs for top %d scorers...", numTopScorers)
+
+		// Fetch game logs for all top scorers to calculate recent form
+		for i := range impact.TopScorers {
+			gameLog, err := pis.fetchPlayerGameLog(impact.TopScorers[i].PlayerID, season, 10)
+			if err != nil {
+				log.Printf("⚠️ Could not fetch game log for player %d (%s): %v",
+					impact.TopScorers[i].PlayerID, impact.TopScorers[i].Name, err)
+				// Continue with default form values
+				continue
+			}
+
+			// Calculate recent form (last 10 games)
+			last10Goals, last10Assists, last10Points, last10PPG, formRating := pis.calculateRecentForm(gameLog)
+
+			impact.TopScorers[i].Last10Goals = last10Goals
+			impact.TopScorers[i].Last10Assists = last10Assists
+			impact.TopScorers[i].Last10Points = last10Points
+			impact.TopScorers[i].Last10PPG = last10PPG
+			impact.TopScorers[i].FormRating = formRating
+
+			// Detect hot/cold streaks
+			isHot := pis.detectHotStreak(gameLog)
+			isCold := pis.detectColdStreak(gameLog)
+
+			// Log detailed info for top 3, summary for depth (4-10)
+			if i < 3 {
+				if isHot {
+					log.Printf("🔥 #%d %s is HOT! %d points in last 10 games (%.2f PPG)",
+						i+1, impact.TopScorers[i].Name, last10Points, last10PPG)
+				} else if isCold {
+					log.Printf("🧊 #%d %s is COLD: %d points in last 10 games (%.2f PPG)",
+						i+1, impact.TopScorers[i].Name, last10Points, last10PPG)
+				}
+				log.Printf("📊 #%d %s recent form: %d G, %d A, %d PTS in last 10 games (%.2f PPG, form rating: %.1f/10)",
+					i+1, impact.TopScorers[i].Name, last10Goals, last10Assists, last10Points, last10PPG, formRating)
+			} else {
+				// Summarize depth scorers (4-10)
+				log.Printf("   #%d %s: %d PTS in last 10 (%.2f PPG, form: %.1f/10)",
+					i+1, impact.TopScorers[i].Name, last10Points, last10PPG, formRating)
+			}
+		}
 
 		// Calculate top 3 PPG
-		for _, scorer := range impact.TopScorers {
-			impact.Top3PPG += scorer.PointsPerGame
+		for i := 0; i < 3 && i < len(impact.TopScorers); i++ {
+			impact.Top3PPG += impact.TopScorers[i].PointsPerGame
 		}
 
 		// Star power (0-1 scale based on top scorer)
 		topPPG := impact.TopScorers[0].PointsPerGame
 		impact.StarPower = pis.calculateStarPower(topPPG)
 
-		// Top scorer form
-		impact.TopScorerForm = pis.calculateTopScorerForm(impact.TopScorers)
+		// Top scorer form (top 3)
+		impact.TopScorerForm = pis.calculateTopScorerForm(impact.TopScorers[:min(3, len(impact.TopScorers))])
 	}
 
-	// Calculate depth scoring (4th-10th scorers)
-	if len(playerStats) >= 10 {
+	// Calculate depth scoring (4th-10th scorers) using actual form data
+	if len(impact.TopScorers) >= 10 {
 		var secondaryPoints float64
 		var secondaryGames int
+		var depthFormSum float64
+		depthCount := 0
 
-		for i := 3; i < 10 && i < len(playerStats); i++ {
-			secondaryPoints += float64(playerStats[i].Points)
-			secondaryGames += playerStats[i].GamesPlayed
+		for i := 3; i < 10 && i < len(impact.TopScorers); i++ {
+			secondaryPoints += float64(impact.TopScorers[i].Points)
+			secondaryGames += impact.TopScorers[i].GamesPlayed
+
+			// Use actual form ratings from game logs
+			if impact.TopScorers[i].FormRating > 0 {
+				depthFormSum += impact.TopScorers[i].FormRating
+				depthCount++
+			}
 		}
 
 		if secondaryGames > 0 {
@@ -116,11 +209,17 @@ func (pis *PlayerImpactService) UpdatePlayerImpact(teamCode string, season int) 
 		// Depth score (0-1 scale)
 		impact.DepthScore = pis.calculateDepthScore(impact.Secondary4to10)
 
-		// Balance rating (how evenly distributed is scoring)
-		impact.BalanceRating = pis.calculateBalanceRating(playerStats)
+		// Balance rating (how evenly distributed is scoring across top 10)
+		impact.BalanceRating = pis.calculateBalanceRating(impact.TopScorers)
 
-		// Depth form
-		impact.DepthForm = pis.calculateDepthForm(playerStats[3:10])
+		// Depth form (average form of 4th-10th scorers)
+		if depthCount > 0 {
+			impact.DepthForm = depthFormSum / float64(depthCount)
+			log.Printf("📊 Depth scorers (4-10) average form: %.1f/10 (%d players)", impact.DepthForm, depthCount)
+		} else {
+			// Fallback if no form data
+			impact.DepthForm = pis.calculateDepthForm(impact.TopScorers[3:min(10, len(impact.TopScorers))])
+		}
 	}
 
 	// Calculate differentials vs league average
@@ -227,17 +326,237 @@ func (pis *PlayerImpactService) ComparePlayerImpact(homeTeam, awayTeam string) *
 
 // Helper functions
 
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func (pis *PlayerImpactService) fetchPlayerStats(teamCode string, season int) ([]models.TopScorer, error) {
-	// Fetch from NHL API stats leaders endpoint
-	// For now, return empty list - will be populated by NHL API integration
-	// This is a placeholder for the actual API call
+	log.Printf("📊 Fetching player stats for %s (season %d) from NHL API...", teamCode, season)
 
-	log.Printf("📊 Fetching player stats for %s (season %d)", teamCode, season)
+	// Try current season first (using /now endpoint)
+	url := fmt.Sprintf("https://api-web.nhle.com/v1/club-stats/%s/now", teamCode)
 
-	// TODO: Implement actual NHL API call to get player stats
-	// Endpoint: https://api-web.nhle.com/v1/club-stats/{teamCode}/now
+	body, err := MakeAPICall(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch club stats from NHL API: %w", err)
+	}
 
-	return []models.TopScorer{}, nil
+	var clubStats models.ClubStatsResponse
+	if err := json.Unmarshal(body, &clubStats); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal club stats JSON: %w", err)
+	}
+
+	// Check if we have data (current season has started)
+	if len(clubStats.Skaters) == 0 {
+		log.Printf("⚠️ No current season data for %s, trying previous season...", teamCode)
+
+		// Try previous season for seed data
+		previousSeason := season - 10001 // e.g., 20252026 -> 20242025
+		prevSeasonStr := fmt.Sprintf("%d%d", previousSeason/10000, previousSeason%10000)
+		url = fmt.Sprintf("https://api-web.nhle.com/v1/club-stats/%s/%s/2", teamCode, prevSeasonStr)
+
+		body, err = MakeAPICall(url)
+		if err == nil {
+			if err := json.Unmarshal(body, &clubStats); err == nil && len(clubStats.Skaters) > 0 {
+				log.Printf("✅ Using previous season (%d) data as seed for %s", previousSeason, teamCode)
+			}
+		}
+	}
+
+	// Convert skaters to TopScorer format
+	topScorers := make([]models.TopScorer, 0, len(clubStats.Skaters))
+
+	for _, skater := range clubStats.Skaters {
+		// Calculate points per game
+		ppg := 0.0
+		if skater.GamesPlayed > 0 {
+			ppg = float64(skater.Points) / float64(skater.GamesPlayed)
+		}
+
+		// Build player name
+		firstName := skater.FirstName.Default
+		lastName := skater.LastName.Default
+		fullName := fmt.Sprintf("%s %s", firstName, lastName)
+
+		topScorer := models.TopScorer{
+			PlayerID:      skater.PlayerID,
+			Name:          fullName,
+			Position:      skater.Position,
+			Number:        skater.SweaterNumber,
+			Goals:         skater.Goals,
+			Assists:       skater.Assists,
+			Points:        skater.Points,
+			GamesPlayed:   skater.GamesPlayed,
+			PointsPerGame: ppg,
+			PlusMinus:     skater.PlusMinus,
+			IsPlaying:     skater.GamesPlayed > 0, // Has played this season
+
+			// TODO Phase 2: Fetch game logs for recent form
+			Last10Goals:   0,
+			Last10Assists: 0,
+			Last10Points:  0,
+			Last10PPG:     0.0,
+			FormRating:    5.0, // Default neutral form
+		}
+
+		topScorers = append(topScorers, topScorer)
+	}
+
+	// Sort by points descending to get top scorers first
+	sort.Slice(topScorers, func(i, j int) bool {
+		if topScorers[i].Points != topScorers[j].Points {
+			return topScorers[i].Points > topScorers[j].Points
+		}
+		// Tie-breaker: PPG (for players with different games played)
+		return topScorers[i].PointsPerGame > topScorers[j].PointsPerGame
+	})
+
+	if len(topScorers) > 0 {
+		log.Printf("✅ Successfully fetched %d player stats for %s (Top scorer: %s with %d points in %d games, %.2f PPG)",
+			len(topScorers), teamCode,
+			topScorers[0].Name, topScorers[0].Points, topScorers[0].GamesPlayed, topScorers[0].PointsPerGame)
+	} else {
+		log.Printf("⚠️ No player stats found for %s", teamCode)
+	}
+
+	return topScorers, nil
+}
+
+// fetchPlayerGameLog fetches the last N games for a specific player
+// Falls back to previous season if current season has no data
+func (pis *PlayerImpactService) fetchPlayerGameLog(playerID int, season int, numGames int) ([]models.PlayerGameLogEntry, error) {
+	log.Printf("📈 Fetching game log for player %d (season %d, last %d games)...", playerID, season, numGames)
+
+	// Try current season first
+	gameLog, err := pis.fetchPlayerGameLogForSeason(playerID, season, numGames)
+	if err == nil && len(gameLog) > 0 {
+		log.Printf("✅ Fetched %d games for player %d (current season)", len(gameLog), playerID)
+		return gameLog, nil
+	}
+
+	// If no data for current season, try previous season
+	previousSeason := season - 10001 // e.g., 20252026 -> 20242025
+	log.Printf("⚠️ No current season data, trying previous season %d...", previousSeason)
+
+	gameLog, err = pis.fetchPlayerGameLogForSeason(playerID, previousSeason, numGames)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch game log from current or previous season: %w", err)
+	}
+
+	if len(gameLog) > 0 {
+		log.Printf("✅ Fetched %d games for player %d (previous season - seed data)", len(gameLog), playerID)
+	} else {
+		log.Printf("⚠️ No game log data found for player %d", playerID)
+	}
+
+	return gameLog, nil
+}
+
+// fetchPlayerGameLogForSeason fetches game log for a specific season
+func (pis *PlayerImpactService) fetchPlayerGameLogForSeason(playerID int, season int, numGames int) ([]models.PlayerGameLogEntry, error) {
+	// NHL API endpoint for player game logs
+	url := fmt.Sprintf("https://api-web.nhle.com/v1/player/%d/game-log/%d/2", playerID, season)
+
+	body, err := MakeAPICall(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch game log from NHL API: %w", err)
+	}
+
+	var gameLogResp models.PlayerGameLogResponse
+	if err := json.Unmarshal(body, &gameLogResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal game log JSON: %w", err)
+	}
+
+	// Take only the last N games (most recent)
+	gameLog := gameLogResp.GameLog
+	if len(gameLog) > numGames {
+		gameLog = gameLog[len(gameLog)-numGames:] // Get last N games
+	}
+
+	return gameLog, nil
+}
+
+// calculateRecentForm calculates a player's recent form from their game log
+func (pis *PlayerImpactService) calculateRecentForm(gameLog []models.PlayerGameLogEntry) (goals, assists, points int, ppg, formRating float64) {
+	if len(gameLog) == 0 {
+		return 0, 0, 0, 0.0, 5.0 // Default neutral form
+	}
+
+	totalGoals := 0
+	totalAssists := 0
+	totalPoints := 0
+
+	for _, game := range gameLog {
+		totalGoals += game.Goals
+		totalAssists += game.Assists
+		totalPoints += game.Points
+	}
+
+	gamesPlayed := len(gameLog)
+	ppg = float64(totalPoints) / float64(gamesPlayed)
+
+	// Form rating (0-10 scale)
+	// Based on PPG in recent games vs expected
+	// 1.5+ PPG = 10.0 (elite form)
+	// 1.0 PPG = 8.0 (great form)
+	// 0.7 PPG = 6.0 (good form)
+	// 0.5 PPG = 5.0 (average form)
+	// 0.3 PPG = 3.0 (cold)
+	// 0.0 PPG = 1.0 (ice cold)
+
+	if ppg >= 1.5 {
+		formRating = 10.0
+	} else if ppg >= 1.0 {
+		formRating = 8.0 + (ppg-1.0)*4.0 // 8.0-10.0
+	} else if ppg >= 0.7 {
+		formRating = 6.0 + (ppg-0.7)*6.67 // 6.0-8.0
+	} else if ppg >= 0.5 {
+		formRating = 5.0 + (ppg-0.5)*5.0 // 5.0-6.0
+	} else if ppg >= 0.3 {
+		formRating = 3.0 + (ppg-0.3)*10.0 // 3.0-5.0
+	} else if ppg > 0 {
+		formRating = 1.0 + (ppg)*6.67 // 1.0-3.0
+	} else {
+		formRating = 1.0 // Ice cold
+	}
+
+	return totalGoals, totalAssists, totalPoints, ppg, formRating
+}
+
+// detectHotStreak detects if a player is on a hot streak (3+ points in last 3 games)
+func (pis *PlayerImpactService) detectHotStreak(gameLog []models.PlayerGameLogEntry) bool {
+	if len(gameLog) < 3 {
+		return false
+	}
+
+	// Check last 3 games
+	last3 := gameLog[len(gameLog)-3:]
+	totalPoints := 0
+	for _, game := range last3 {
+		totalPoints += game.Points
+	}
+
+	return totalPoints >= 3 // 3+ points in last 3 games = hot
+}
+
+// detectColdStreak detects if a player is in a slump (0 points in last 5 games)
+func (pis *PlayerImpactService) detectColdStreak(gameLog []models.PlayerGameLogEntry) bool {
+	if len(gameLog) < 5 {
+		return false
+	}
+
+	// Check last 5 games
+	last5 := gameLog[len(gameLog)-5:]
+	totalPoints := 0
+	for _, game := range last5 {
+		totalPoints += game.Points
+	}
+
+	return totalPoints == 0 // 0 points in last 5 games = cold
 }
 
 func (pis *PlayerImpactService) calculateStarPower(topPPG float64) float64 {

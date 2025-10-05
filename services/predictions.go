@@ -37,10 +37,74 @@ func (ps *PredictionService) PredictNextGame() (*models.GamePrediction, error) {
 	}
 
 	nextGame := games[0]
+	homeTeam := nextGame.HomeTeam.Abbrev
+	awayTeam := nextGame.AwayTeam.Abbrev
+
 	fmt.Printf("🏒 Analyzing matchup: %s @ %s on %s\n",
 		nextGame.AwayTeam.CommonName.Default,
 		nextGame.HomeTeam.CommonName.Default,
 		nextGame.GameDate)
+
+	// ============================================================================
+	// 🔥 FETCH FRESH OPPONENT DATA BEFORE PREDICTION
+	// ============================================================================
+	currentSeason := 20252026 // TODO: Calculate dynamically based on date
+
+	fmt.Printf("📊 Updating team data for accurate predictions...\n")
+
+	// 1. Update Player Impact for both teams (with smart caching)
+	playerService := GetPlayerImpactService()
+	if playerService != nil {
+		// Update home team player stats (only if older than 1 hour)
+		if playerService.NeedsUpdate(homeTeam) {
+			if err := playerService.UpdatePlayerImpact(homeTeam, currentSeason); err != nil {
+				fmt.Printf("⚠️ Could not update player stats for %s: %v (using cached data)\n", homeTeam, err)
+			} else {
+				fmt.Printf("✅ Updated player data for %s\n", homeTeam)
+			}
+		} else {
+			fmt.Printf("📌 Using cached player data for %s (fresh)\n", homeTeam)
+		}
+
+		// Update away team player stats (only if older than 1 hour)
+		if playerService.NeedsUpdate(awayTeam) {
+			if err := playerService.UpdatePlayerImpact(awayTeam, currentSeason); err != nil {
+				fmt.Printf("⚠️ Could not update player stats for %s: %v (using cached data)\n", awayTeam, err)
+			} else {
+				fmt.Printf("✅ Updated player data for %s\n", awayTeam)
+			}
+		} else {
+			fmt.Printf("📌 Using cached player data for %s (fresh)\n", awayTeam)
+		}
+	}
+
+	// 2. Update Goalie Stats for both teams (with smart caching)
+	goalieService := GetGoalieService()
+	if goalieService != nil {
+		// Update home team goalie stats (only if older than 1 hour)
+		if goalieService.NeedsUpdate(homeTeam) {
+			if err := goalieService.FetchGoalieStats(homeTeam, currentSeason); err != nil {
+				fmt.Printf("⚠️ Could not update goalie stats for %s: %v (using cached data)\n", homeTeam, err)
+			} else {
+				fmt.Printf("✅ Updated goalie data for %s\n", homeTeam)
+			}
+		} else {
+			fmt.Printf("📌 Using cached goalie data for %s (fresh)\n", homeTeam)
+		}
+
+		// Update away team goalie stats (only if older than 1 hour)
+		if goalieService.NeedsUpdate(awayTeam) {
+			if err := goalieService.FetchGoalieStats(awayTeam, currentSeason); err != nil {
+				fmt.Printf("⚠️ Could not update goalie stats for %s: %v (using cached data)\n", awayTeam, err)
+			} else {
+				fmt.Printf("✅ Updated goalie data for %s\n", awayTeam)
+			}
+		} else {
+			fmt.Printf("📌 Using cached goalie data for %s (fresh)\n", awayTeam)
+		}
+	}
+
+	fmt.Printf("✅ Team data updated - proceeding with prediction\n")
 
 	// Fetch enhanced factors for both teams using situational analysis
 	analyzer := NewSituationalAnalyzer(ps.teamCode)

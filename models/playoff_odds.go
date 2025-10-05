@@ -47,6 +47,12 @@ type PlayoffOdds struct {
 	PlayoffStatus string `json:"playoffStatus"` // "In Great Shape", "On Bubble", etc.
 	KeyInsight    string `json:"keyInsight"`    // Main takeaway
 	NextMilestone string `json:"nextMilestone"` // Next goal to reach
+
+	// ML Simulation Data
+	MLSimulations int     `json:"mlSimulations"` // Number of Monte Carlo simulations (e.g., 5000)
+	MLAvgPoints   float64 `json:"mlAvgPoints"`   // Average final points from simulations
+	MLBestCase    int     `json:"mlBestCase"`    // Best case scenario (max points)
+	MLWorstCase   int     `json:"mlWorstCase"`   // Worst case scenario (min points)
 }
 
 // ConferencePlayoffPicture shows the broader playoff race context

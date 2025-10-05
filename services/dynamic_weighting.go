@@ -162,20 +162,26 @@ func NewDynamicWeightingService() *DynamicWeightingService {
 	calculator := &ModelWeightCalculator{
 		trackers: make(map[string]*ModelPerformanceTracker),
 		baseWeights: map[string]float64{
-			"Enhanced Statistical":   0.35,
-			"Bayesian Inference":     0.15,
-			"Monte Carlo Simulation": 0.10,
-			"Elo Rating":             0.20,
-			"Poisson Regression":     0.15,
-			"Neural Network":         0.05, // New model, starting conservative
+			"Enhanced Statistical":   0.30,
+			"Bayesian Inference":     0.12,
+			"Monte Carlo Simulation": 0.09,
+			"Elo Rating":             0.17,
+			"Poisson Regression":     0.12,
+			"Neural Network":         0.06,
+			"Gradient Boosting":      0.07,
+			"LSTM":                   0.07,
+			"Random Forest":          0.07, // New bagging ensemble
 		},
 		currentWeights: map[string]float64{
-			"Enhanced Statistical":   0.35,
-			"Bayesian Inference":     0.15,
-			"Monte Carlo Simulation": 0.10,
-			"Elo Rating":             0.20,
-			"Poisson Regression":     0.15,
-			"Neural Network":         0.05, // New model, starting conservative
+			"Enhanced Statistical":   0.30,
+			"Bayesian Inference":     0.12,
+			"Monte Carlo Simulation": 0.09,
+			"Elo Rating":             0.17,
+			"Poisson Regression":     0.12,
+			"Neural Network":         0.06,
+			"Gradient Boosting":      0.07,
+			"LSTM":                   0.07,
+			"Random Forest":          0.07,
 		},
 		weightConstraints: constraints,
 		smoothingFactor:   settings.SmoothingStrength,

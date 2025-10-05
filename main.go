@@ -226,6 +226,19 @@ func main() {
 		fmt.Printf("✅ Live Prediction System initialized for %s\n", teamConfig.Code)
 	}
 
+	// Initialize Playoff Simulation Service for ML-powered playoff odds
+	fmt.Println("Initializing ML-powered Playoff Simulation Service...")
+	liveSys := services.GetLivePredictionSystem()
+	if liveSys != nil {
+		ensembleService := liveSys.GetEnsemble()
+		if ensembleService != nil {
+			services.InitPlayoffSimulationService(ensembleService)
+			fmt.Println("✅ Playoff Simulation Service initialized with ML models")
+		} else {
+			fmt.Println("⚠️ Warning: Could not initialize Playoff Simulation Service")
+		}
+	}
+
 	// Initialize Game Results Collection Service for automatic model learning
 	fmt.Println("Initializing Game Results Collection Service...")
 	if err := services.InitializeGameResultsService(teamConfig.Code); err != nil {
@@ -243,9 +256,39 @@ func main() {
 		fmt.Printf("✅ Rolling Stats Service initialized\n")
 	}
 
+	// Initialize Roster Validation Service (needed for player/goalie validation)
+	fmt.Println("Initializing Roster Validation Service...")
+	if err := services.InitializeRosterValidationService(); err != nil {
+		fmt.Printf("⚠️ Warning: Failed to initialize roster validation service: %v\n", err)
+	} else {
+		fmt.Printf("✅ Roster Validation Service initialized\n")
+	}
+
+	// Initialize Goalie Intelligence Service and fetch goalie stats
+	fmt.Println("Initializing Goalie Intelligence Service...")
+	if err := services.InitializeGoalieService(); err != nil {
+		fmt.Printf("⚠️ Warning: Failed to initialize goalie service: %v\n", err)
+	} else {
+		fmt.Printf("✅ Goalie Intelligence Service initialized\n")
+	}
+
+	// Fetch goalie stats for the configured team (with previous season fallback)
+	fmt.Println("Fetching goalie stats...")
+	goalieService := services.GetGoalieService()
+	if goalieService != nil {
+		currentSeason := 20252026 // TODO: Calculate dynamically
+		if err := goalieService.FetchGoalieStats(teamConfig.Code, currentSeason); err != nil {
+			fmt.Printf("⚠️ Could not fetch goalie stats for %s: %v\n", teamConfig.Code, err)
+		} else {
+			fmt.Printf("✅ Goalie stats loaded for %s\n", teamConfig.Code)
+		}
+	} else {
+		fmt.Println("⚠️ Warning: Goalie service is nil, cannot fetch stats")
+	}
+
 	// Initialize Model Evaluation Service for train/test split and performance metrics
 	fmt.Println("Initializing Model Evaluation Service...")
-	liveSys := services.GetLivePredictionSystem()
+	liveSys = services.GetLivePredictionSystem()
 	if liveSys != nil {
 		neuralNet := liveSys.GetNeuralNetwork()
 		eloModel := liveSys.GetEloModel()
@@ -353,6 +396,7 @@ func main() {
 	// Performance Metrics Dashboard endpoints
 	http.HandleFunc("/api/performance", handlers.PerformanceDashboardHandler)
 	http.HandleFunc("/api/metrics", handlers.ModelMetricsHandler)
+	http.HandleFunc("/api/rate-limiter", handlers.HandleRateLimiterMetrics)
 
 	// Live Prediction System management endpoints
 	if livePredictionSystem := services.GetLivePredictionSystem(); livePredictionSystem != nil {

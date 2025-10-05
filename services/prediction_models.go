@@ -141,10 +141,11 @@ func (m *StatisticalModel) calculateAdvancedScore(factors *models.PredictionFact
 	gameStateImpact := (advStats.LeadingPerformance + advStats.CloseGameRecord*50.0) * 0.1
 	score += gameStateImpact
 
-	// Player analysis removed - no real data available
-	// Future: Re-enable when real player roster API with stats is integrated
+	// Player Intelligence (10% weight) - NOW WITH REAL DATA!
+	playerImpact := m.calculatePlayerImpact(factors)
+	score += playerImpact
 
-	// NEW: Weather Impact Analysis Integration (5% weight in total score)
+	// Weather Impact Analysis Integration (5% weight in total score)
 	weatherImpact := m.calculateWeatherImpact(&factors.WeatherAnalysis)
 	score += weatherImpact
 
@@ -158,12 +159,36 @@ func (m *StatisticalModel) calculateAdvancedScore(factors *models.PredictionFact
 		(factors.MomentumFactors.MomentumScore-0.5)*8.0)
 	fmt.Printf("   🏒 Advanced: xG %.1f, Talent %.1f, Possession %.1f, HDC %.1f, Goalie %.1f, Overall Rating %.1f\n",
 		xgDiffImpact, talentImpact, possessionImpact, hdcImpact, goalieImpact, advStats.OverallRating)
-	// Player analysis removed - logging disabled
+	fmt.Printf("   ⭐ Player: Star %.1f, TopForm %.1f, Depth %.1f, Total %.1f\n",
+		(factors.StarPowerRating-0.75)*20.0, (factors.TopScorerForm-5.0)*2.0,
+		(factors.DepthForm-5.0)*1.5, playerImpact)
 	fmt.Printf("   🌦️ Weather: Overall %.1f, Travel %.1f, Game %.1f (Outdoor: %v)\n",
 		weatherImpact, factors.WeatherAnalysis.TravelImpact.OverallImpact*2.0,
 		factors.WeatherAnalysis.GameImpact.OverallGameImpact*3.0, factors.WeatherAnalysis.IsOutdoorGame)
 
 	return math.Max(score, 10.0) // Minimum viable score
+}
+
+// calculatePlayerImpact calculates player intelligence impact (star power, form, depth)
+func (m *StatisticalModel) calculatePlayerImpact(factors *models.PredictionFactors) float64 {
+	impact := 0.0
+
+	// Star Power Impact (5% weight)
+	// 0.75 is league average star power, above = positive, below = negative
+	starPowerImpact := (factors.StarPowerRating - 0.75) * 20.0
+	impact += starPowerImpact
+
+	// Top Scorer Form Impact (3% weight)
+	// 5.0 is neutral form (0-10 scale), hot = positive, cold = negative
+	topScorerFormImpact := (factors.TopScorerForm - 5.0) * 2.0
+	impact += topScorerFormImpact
+
+	// Depth Form Impact (2% weight)
+	// 5.0 is neutral form for depth players (4-10)
+	depthFormImpact := (factors.DepthForm - 5.0) * 1.5
+	impact += depthFormImpact
+
+	return impact
 }
 
 // calculateWeatherImpact calculates the impact of weather conditions on team performance

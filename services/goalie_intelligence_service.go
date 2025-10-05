@@ -236,6 +236,173 @@ func (gis *GoalieIntelligenceService) getMatchupRecord(goalieID int, opponentTea
 	return gis.matchups[key]
 }
 
+// ============================================================================
+// NHL API INTEGRATION
+// ============================================================================
+
+// FetchGoalieStats fetches current goalie stats for a team with previous season fallback
+func (gis *GoalieIntelligenceService) FetchGoalieStats(teamCode string, season int) error {
+	log.Printf("🥅 Fetching goalie stats for %s (season %d)...", teamCode, season)
+
+	// Try current season first (using /now endpoint)
+	url := fmt.Sprintf("https://api-web.nhle.com/v1/club-stats/%s/now", teamCode)
+
+	body, err := MakeAPICall(url)
+	if err != nil {
+		return fmt.Errorf("failed to fetch club stats: %w", err)
+	}
+
+	var clubStats models.ClubStatsResponse
+	if err := json.Unmarshal(body, &clubStats); err != nil {
+		return fmt.Errorf("failed to unmarshal club stats: %w", err)
+	}
+
+	// Check if we have goalie data (current season has started)
+	if len(clubStats.Goalies) == 0 {
+		log.Printf("⚠️ No current season goalie data for %s, trying previous season...", teamCode)
+
+		// Try previous season for seed data
+		previousSeason := season - 10001 // e.g., 20252026 -> 20242025
+		prevSeasonStr := fmt.Sprintf("%d%d", previousSeason/10000, previousSeason%10000)
+		url = fmt.Sprintf("https://api-web.nhle.com/v1/club-stats/%s/%s/2", teamCode, prevSeasonStr)
+
+		body, err = MakeAPICall(url)
+		if err == nil {
+			if err := json.Unmarshal(body, &clubStats); err == nil && len(clubStats.Goalies) > 0 {
+				log.Printf("✅ Using previous season (%d) goalie data as seed for %s", previousSeason, teamCode)
+			}
+		}
+	}
+
+	if len(clubStats.Goalies) == 0 {
+		return fmt.Errorf("no goalie data available for %s (current or previous season)", teamCode)
+	}
+
+	// Validate goalies against current roster
+	rosterService := GetRosterValidationService()
+	if rosterService != nil {
+		roster, err := rosterService.FetchRoster(teamCode, season)
+		if err != nil {
+			log.Printf("⚠️ Could not fetch roster for goalie validation: %v", err)
+		} else {
+			// Filter out goalies not on current roster
+			validGoalies := []models.ClubGoalieStats{}
+			for _, goalie := range clubStats.Goalies {
+				if roster.IsOnRoster(goalie.PlayerID) {
+					validGoalies = append(validGoalies, goalie)
+				} else {
+					goalieName := fmt.Sprintf("%s %s", goalie.FirstName.Default, goalie.LastName.Default)
+					log.Printf("🏒 Filtered out goalie %s (ID %d) - not on current %s roster",
+						goalieName, goalie.PlayerID, teamCode)
+				}
+			}
+			clubStats.Goalies = validGoalies
+			log.Printf("🏒 Goalie roster validation: %d/%d goalies on current roster",
+				len(validGoalies), len(clubStats.Goalies))
+		}
+	}
+
+	// Update goalie data
+	gis.mutex.Lock()
+	defer gis.mutex.Unlock()
+
+	// Identify starter and backup (top 2 by games played)
+	var starter, backup *models.ClubGoalieStats
+	for i := range clubStats.Goalies {
+		g := &clubStats.Goalies[i]
+		if starter == nil || g.GamesPlayed > starter.GamesPlayed {
+			backup = starter
+			starter = g
+		} else if backup == nil || g.GamesPlayed > backup.GamesPlayed {
+			backup = g
+		}
+	}
+
+	// Create GoalieInfo for starter
+	if starter != nil {
+		starterInfo := &models.GoalieInfo{
+			PlayerID:             starter.PlayerID,
+			Name:                 fmt.Sprintf("%s %s", starter.FirstName.Default, starter.LastName.Default),
+			TeamCode:             teamCode,
+			SeasonGamesPlayed:    starter.GamesPlayed,
+			SeasonWins:           starter.Wins,
+			SeasonLosses:         starter.Losses,
+			SeasonOTLosses:       starter.OvertimeLosses,
+			SeasonSavePercentage: starter.SavePct,
+			SeasonGAA:            starter.GoalsAgainstAvg,
+			SeasonShutouts:       starter.Shutouts,
+			RecentStarts:         []models.GoalieStart{}, // Would be populated from game logs
+			RecentSavePct:        starter.SavePct,        // Use season avg for now
+			WorkloadFatigueScore: 0.0,                    // Would be calculated based on recent starts
+		}
+		gis.goalies[starter.PlayerID] = starterInfo
+		log.Printf("🥅 Starter: %s - %d GP, %.3f SV%%, %.2f GAA",
+			starterInfo.Name, starter.GamesPlayed, starter.SavePct, starter.GoalsAgainstAvg)
+	}
+
+	// Create GoalieInfo for backup
+	var backupInfo *models.GoalieInfo
+	if backup != nil {
+		backupInfo = &models.GoalieInfo{
+			PlayerID:             backup.PlayerID,
+			Name:                 fmt.Sprintf("%s %s", backup.FirstName.Default, backup.LastName.Default),
+			TeamCode:             teamCode,
+			SeasonGamesPlayed:    backup.GamesPlayed,
+			SeasonWins:           backup.Wins,
+			SeasonLosses:         backup.Losses,
+			SeasonOTLosses:       backup.OvertimeLosses,
+			SeasonSavePercentage: backup.SavePct,
+			SeasonGAA:            backup.GoalsAgainstAvg,
+			SeasonShutouts:       backup.Shutouts,
+			RecentStarts:         []models.GoalieStart{},
+			RecentSavePct:        backup.SavePct,
+			WorkloadFatigueScore: 0.0,
+		}
+		gis.goalies[backup.PlayerID] = backupInfo
+		log.Printf("🥅 Backup: %s - %d GP, %.3f SV%%, %.2f GAA",
+			backupInfo.Name, backup.GamesPlayed, backup.SavePct, backup.GoalsAgainstAvg)
+	}
+
+	// Update team depth
+	if starter != nil {
+		var starterInfoPtr, backupInfoPtr *models.GoalieInfo
+		if starter != nil {
+			starterInfoPtr = gis.goalies[starter.PlayerID]
+		}
+		if backup != nil {
+			backupInfoPtr = gis.goalies[backup.PlayerID]
+		}
+
+		gis.teamDepth[teamCode] = &models.GoalieDepth{
+			TeamCode:        teamCode,
+			Starter:         starterInfoPtr,
+			Backup:          backupInfoPtr,
+			StartingTonight: nil, // Would be updated from injury reports / team news
+		}
+	}
+
+	// Auto-save after update
+	if err := gis.saveGoalieData(); err != nil {
+		log.Printf("⚠️ Failed to save goalie data: %v", err)
+	}
+
+	return nil
+}
+
+// NeedsUpdate checks if goalie data for a team needs updating (older than 1 hour)
+func (gis *GoalieIntelligenceService) NeedsUpdate(teamCode string) bool {
+	gis.mutex.RLock()
+	defer gis.mutex.RUnlock()
+
+	depth, exists := gis.teamDepth[teamCode]
+	if !exists || depth == nil || depth.Starter == nil {
+		return true // No data exists, needs update
+	}
+
+	// Check if data is older than 1 hour
+	return time.Since(depth.Starter.LastUpdated) > time.Hour
+}
+
 // UpdateGoalieAfterGame updates goalie stats after a game
 func (gis *GoalieIntelligenceService) UpdateGoalieAfterGame(game *models.CompletedGame) error {
 	gis.mutex.Lock()
@@ -246,6 +413,13 @@ func (gis *GoalieIntelligenceService) UpdateGoalieAfterGame(game *models.Complet
 
 	// For now, stub implementation
 	log.Printf("🥅 Goalie stats updated for game %d", game.GameID)
+
+	// Auto-save after update
+	gis.mutex.Unlock() // Unlock before calling saveGoalieData which needs its own lock
+	if err := gis.saveGoalieData(); err != nil {
+		log.Printf("⚠️ Failed to save goalie data: %v", err)
+	}
+	gis.mutex.Lock() // Re-lock before defer unlock
 
 	return nil
 }

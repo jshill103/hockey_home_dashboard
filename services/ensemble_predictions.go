@@ -15,6 +15,8 @@ import (
 // EnsemblePredictionService combines multiple prediction models with cross-validation
 type EnsemblePredictionService struct {
 	models          []PredictionModel
+	metaLearner     *MetaLearnerModel // Optional: learns optimal model combination
+	useMetaLearner  bool              // Flag to enable/disable meta-learner
 	teamCode        string
 	accuracyTracker *AccuracyTrackingService
 	dataQuality     *DataQualityService
@@ -24,19 +26,27 @@ type EnsemblePredictionService struct {
 
 // NewEnsemblePredictionService creates a new ensemble service with cross-validation
 func NewEnsemblePredictionService(teamCode string) *EnsemblePredictionService {
+	// Initialize meta-learner
+	metaLearner := NewMetaLearnerModel()
+
 	return &EnsemblePredictionService{
 		teamCode:        teamCode,
+		metaLearner:     metaLearner,
+		useMetaLearner:  metaLearner.trained, // Use if trained, otherwise fall back to weighted average
 		accuracyTracker: NewAccuracyTrackingService(),
 		dataQuality:     NewDataQualityService(teamCode),
 		dynamicWeights:  NewDynamicWeightingService(),
 		crossValidation: NewCrossValidationService(),
 		models: []PredictionModel{
-			NewStatisticalModel(),       // 35% (reduced from 40%)
-			NewBayesianModel(),          // 15% (reduced from 20%)
-			NewMonteCarloModel(),        // 10% (reduced from 15%)
-			NewEloRatingModel(),         // 20%
-			NewPoissonRegressionModel(), // 15% (reduced from 20%)
-			NewNeuralNetworkModel(),     // 5% (new, starting conservative)
+			NewStatisticalModel(),       // 30% (if meta-learner not used)
+			NewBayesianModel(),          // 12%
+			NewMonteCarloModel(),        // 9%
+			NewEloRatingModel(),         // 17%
+			NewPoissonRegressionModel(), // 12%
+			NewNeuralNetworkModel(),     // 6%
+			NewGradientBoostingModel(),  // 7%
+			NewLSTMModel(),              // 7%
+			NewRandomForestModel(),      // 7%
 		},
 	}
 }
@@ -303,8 +313,35 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 	var modelResults []models.ModelResult
 	var totalWeight float64
 
-	// 🚀 NEW: Get current dynamic weights
+	// 🚀 Get current dynamic weights
 	currentWeights := eps.dynamicWeights.GetCurrentWeights()
+
+	// 📊 NEW: Apply data quality boost when we have rich player data
+	hasPlayerData := (homeFactors.TopScorerForm > 0 && awayFactors.TopScorerForm > 0 &&
+		homeFactors.DepthForm > 0 && awayFactors.DepthForm > 0)
+
+	if hasPlayerData {
+		// Boost ML models that use player features
+		currentWeights["Neural Network"] *= 1.15       // NN uses all 75 features
+		currentWeights["Enhanced Statistical"] *= 1.10 // Statistical uses player impact
+		currentWeights["Gradient Boosting"] *= 1.12    // GB uses player features
+
+		// Slightly reduce simpler models
+		currentWeights["Bayesian Inference"] *= 0.95
+		currentWeights["Monte Carlo Simulation"] *= 0.95
+
+		// Normalize weights back to 1.0
+		totalNorm := 0.0
+		for _, w := range currentWeights {
+			totalNorm += w
+		}
+		for name := range currentWeights {
+			currentWeights[name] /= totalNorm
+		}
+
+		fmt.Printf("📊 Data Quality Boost Applied: Full player intelligence available!\n")
+	}
+
 	fmt.Printf("⚖️ Current model weights: Statistical=%.1f%%, Bayesian=%.1f%%, Monte Carlo=%.1f%%, Elo=%.1f%%, Poisson=%.1f%%, Neural Net=%.1f%%\n",
 		currentWeights["Enhanced Statistical"]*100,
 		currentWeights["Bayesian Inference"]*100,
@@ -340,10 +377,21 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 		return nil, fmt.Errorf("all prediction models failed")
 	}
 
-	// Combine predictions using weighted ensemble with dynamic weights
-	combinedResult := eps.combineWeightedPredictions(modelResults, totalWeight, homeFactors, awayFactors)
+	// Combine predictions - use meta-learner if trained, otherwise weighted average
+	var combinedResult *models.PredictionResult
+
+	if eps.useMetaLearner && eps.metaLearner.trained {
+		// Use meta-learner to optimally combine predictions
+		combinedResult = eps.combineWithMetaLearner(modelResults, homeFactors, awayFactors)
+		combinedResult.EnsembleMethod = "Meta-Learner (Stacking)"
+		fmt.Printf("🎯 Using Meta-Learner for optimal model combination\n")
+	} else {
+		// Fall back to weighted average
+		combinedResult = eps.combineWeightedPredictions(modelResults, totalWeight, homeFactors, awayFactors)
+		combinedResult.EnsembleMethod = "Weighted Average with Dynamic Weighting"
+	}
+
 	combinedResult.ModelResults = modelResults
-	combinedResult.EnsembleMethod = "Weighted Average with Dynamic Weighting"
 
 	fmt.Printf("🎯 Ensemble Result: %s wins with %.1f%% probability (Score: %s, Confidence: %.1f%%)\n",
 		combinedResult.Winner, combinedResult.WinProbability*100,
@@ -668,4 +716,110 @@ func (eps *EnsemblePredictionService) GetModelWeights() map[string]float64 {
 // GetAccuracyTracker returns the accuracy tracking service
 func (eps *EnsemblePredictionService) GetAccuracyTracker() *AccuracyTrackingService {
 	return eps.accuracyTracker
+}
+
+// combineWithMetaLearner uses the meta-learner to optimally combine model predictions
+func (eps *EnsemblePredictionService) combineWithMetaLearner(results []models.ModelResult, homeFactors, awayFactors *models.PredictionFactors) *models.PredictionResult {
+	// Extract predictions from each model
+	predictions := &ModelPredictions{}
+
+	for _, result := range results {
+		switch result.ModelName {
+		case "Enhanced Statistical":
+			predictions.Statistical = result.WinProbability
+		case "Bayesian Inference":
+			predictions.Bayesian = result.WinProbability
+		case "Monte Carlo Simulation":
+			predictions.MonteCarlo = result.WinProbability
+		case "Elo Rating":
+			predictions.Elo = result.WinProbability
+		case "Poisson Regression":
+			predictions.Poisson = result.WinProbability
+		case "Neural Network":
+			predictions.NeuralNetwork = result.WinProbability
+		case "Gradient Boosting":
+			predictions.GradientBoosting = result.WinProbability
+		case "LSTM":
+			predictions.LSTM = result.WinProbability
+		case "Random Forest":
+			predictions.RandomForest = result.WinProbability
+		}
+	}
+
+	// Build game context
+	context := &MetaGameContext{
+		IsDivisionalGame: false, // TODO: Determine from team codes
+		IsPlayoffGame:    false, // TODO: Determine from game type
+		IsRivalryGame:    false, // TODO: Determine from matchup
+		HomeTeamHot:      homeFactors.IsHot,
+		AwayTeamHot:      awayFactors.IsHot,
+		HomeTeamCold:     homeFactors.IsCold,
+		AwayTeamCold:     awayFactors.IsCold,
+		RestAdvantage:    float64(homeFactors.RestDays - awayFactors.RestDays),
+		TravelDistance:   awayFactors.TravelFatigue.MilesTraveled,
+		BackToBack:       homeFactors.BackToBackPenalty > 0 || awayFactors.BackToBackPenalty > 0,
+	}
+
+	// Get meta-learner prediction
+	winProb := eps.metaLearner.PredictFromModels(predictions, context)
+
+	// Calculate confidence (based on model agreement)
+	var sumSquaredDiff float64
+	modelCount := 0
+	for _, result := range results {
+		diff := result.WinProbability - winProb
+		sumSquaredDiff += diff * diff
+		modelCount++
+	}
+	variance := sumSquaredDiff / float64(modelCount)
+	confidence := 1.0 - math.Min(variance*2, 0.6) // Lower variance = higher confidence
+	confidence = math.Max(0.40, math.Min(0.95, confidence))
+
+	// Predict score (use weighted average of model scores)
+	var homeGoalsSum, awayGoalsSum float64
+	validScores := 0
+
+	for _, result := range results {
+		if result.PredictedScore != "" {
+			parts := strings.Split(result.PredictedScore, "-")
+			if len(parts) == 2 {
+				if homeGoals, err := strconv.Atoi(parts[0]); err == nil {
+					if awayGoals, err := strconv.Atoi(parts[1]); err == nil {
+						homeGoalsSum += float64(homeGoals)
+						awayGoalsSum += float64(awayGoals)
+						validScores++
+					}
+				}
+			}
+		}
+	}
+
+	predictedScore := "3-2"
+	if validScores > 0 {
+		homeScore := int(math.Round(homeGoalsSum / float64(validScores)))
+		awayScore := int(math.Round(awayGoalsSum / float64(validScores)))
+
+		// Adjust based on win probability
+		if winProb > 0.6 && homeScore <= awayScore {
+			homeScore = awayScore + 1
+		} else if winProb < 0.4 && awayScore <= homeScore {
+			awayScore = homeScore + 1
+		}
+
+		predictedScore = fmt.Sprintf("%d-%d", homeScore, awayScore)
+	}
+
+	// Determine winner
+	winner := homeFactors.TeamCode
+	if winProb < 0.5 {
+		winner = awayFactors.TeamCode
+		winProb = 1.0 - winProb
+	}
+
+	return &models.PredictionResult{
+		Winner:         winner,
+		WinProbability: winProb,
+		Confidence:     confidence,
+		PredictedScore: predictedScore,
+	}
 }

@@ -214,3 +214,33 @@ func HandleAPITest(w http.ResponseWriter, r *http.Request) {
 </body>
 </html>`)
 }
+
+// HandleRateLimiterMetrics provides an endpoint to view NHL API rate limiter metrics
+func HandleRateLimiterMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	rateLimiter := services.GetNHLRateLimiter()
+	metrics := rateLimiter.GetMetrics()
+
+	// Format as JSON
+	fmt.Fprintf(w, `{
+  "totalRequests": %d,
+  "requestsInWindow": %d,
+  "maxRequests": %d,
+  "timeWindow": "%v",
+  "minDelay": "%v",
+  "delayedRequests": %d,
+  "totalWaitTime": "%v",
+  "averageWaitTime": "%v",
+  "currentUtilization": %.2f
+}`,
+		metrics.TotalRequests,
+		metrics.RequestsInWindow,
+		metrics.MaxRequests,
+		metrics.TimeWindow,
+		metrics.MinDelay,
+		metrics.DelayedRequests,
+		metrics.TotalWaitTime,
+		metrics.AverageWaitTime,
+		metrics.CurrentUtilization)
+}

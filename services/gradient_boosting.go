@@ -445,10 +445,9 @@ func (gbm *GradientBoostingModel) prepareTrainingData(games []models.CompletedGa
 	return features, labels
 }
 
-// extractFeatures extracts 65 features from prediction factors
+// extractFeatures extracts 75 features from prediction factors
 func (gbm *GradientBoostingModel) extractFeatures(home, away *models.PredictionFactors) []float64 {
-	// Use simplified features for now (can expand later)
-	features := make([]float64, 65)
+	features := make([]float64, 75) // Expanded to 75 to include player intelligence
 
 	// Basic features (indices 0-9)
 	features[0] = home.WinPercentage
@@ -478,6 +477,18 @@ func (gbm *GradientBoostingModel) extractFeatures(home, away *models.PredictionF
 	features[62] = float64(home.RestDays) / 5.0
 	features[63] = float64(away.RestDays) / 5.0
 	features[64] = 1.0 // Home ice indicator
+
+	// Player Intelligence features (indices 65-74)
+	features[65] = home.StarPowerRating
+	features[66] = away.StarPowerRating
+	features[67] = home.Top3CombinedPPG / 4.0
+	features[68] = away.Top3CombinedPPG / 4.0
+	features[69] = home.TopScorerForm / 10.0
+	features[70] = away.TopScorerForm / 10.0
+	features[71] = home.DepthForm / 10.0
+	features[72] = away.DepthForm / 10.0
+	features[73] = home.StarPowerEdge
+	features[74] = home.DepthEdge
 
 	return features
 }
@@ -550,52 +561,172 @@ func (gbm *GradientBoostingModel) addImportanceFromTree(node *GBTreeNode, import
 
 // Model persistence
 
+// GradientBoostingModelData represents serializable model data
+type GradientBoostingModelData struct {
+	Trees             []SerializedGBTree `json:"trees"`
+	LearningRate      float64            `json:"learningRate"`
+	NumTrees          int                `json:"numTrees"`
+	MaxDepth          int                `json:"maxDepth"`
+	MinSamplesLeaf    int                `json:"minSamplesLeaf"`
+	Weight            float64            `json:"weight"`
+	Trained           bool               `json:"trained"`
+	FeatureNames      []string           `json:"featureNames"`
+	FeatureImportance map[string]float64 `json:"featureImportance"`
+	LastUpdated       time.Time          `json:"lastUpdated"`
+	Version           string             `json:"version"`
+}
+
+// SerializedGBTree represents a serializable decision tree
+type SerializedGBTree struct {
+	Root           *SerializedGBTreeNode `json:"root"`
+	MaxDepth       int                   `json:"maxDepth"`
+	MinSamplesLeaf int                   `json:"minSamplesLeaf"`
+}
+
+// SerializedGBTreeNode represents a serializable tree node
+type SerializedGBTreeNode struct {
+	IsLeaf       bool                  `json:"isLeaf"`
+	Prediction   float64               `json:"prediction"`
+	FeatureIndex int                   `json:"featureIndex"`
+	Threshold    float64               `json:"threshold"`
+	Left         *SerializedGBTreeNode `json:"left,omitempty"`
+	Right        *SerializedGBTreeNode `json:"right,omitempty"`
+	SamplesCount int                   `json:"samplesCount"`
+}
+
 func (gbm *GradientBoostingModel) saveModel() error {
 	filePath := filepath.Join(gbm.dataDir, "gradient_boosting.json")
 
-	// Simplified save (just metadata for now)
-	metadata := map[string]interface{}{
-		"numTrees":     len(gbm.trees),
-		"learningRate": gbm.learningRate,
-		"maxDepth":     gbm.maxDepth,
-		"trained":      gbm.trained,
-		"weight":       gbm.weight,
+	// Serialize trees
+	serializedTrees := make([]SerializedGBTree, len(gbm.trees))
+	for i, tree := range gbm.trees {
+		serializedTrees[i] = SerializedGBTree{
+			Root:           serializeGBTreeNode(tree.Root),
+			MaxDepth:       tree.MaxDepth,
+			MinSamplesLeaf: tree.MinSamplesLeaf,
+		}
 	}
 
-	data, err := json.MarshalIndent(metadata, "", "  ")
+	// Create model data
+	modelData := GradientBoostingModelData{
+		Trees:             serializedTrees,
+		LearningRate:      gbm.learningRate,
+		NumTrees:          gbm.numTrees,
+		MaxDepth:          gbm.maxDepth,
+		MinSamplesLeaf:    gbm.minSamplesLeaf,
+		Weight:            gbm.weight,
+		Trained:           gbm.trained,
+		FeatureNames:      gbm.featureNames,
+		FeatureImportance: gbm.featureImportance,
+		LastUpdated:       time.Now(),
+		Version:           "1.0",
+	}
+
+	data, err := json.MarshalIndent(modelData, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("error marshaling gradient boosting model: %w", err)
 	}
 
 	err = os.WriteFile(filePath, data, 0644)
 	if err != nil {
-		return err
+		return fmt.Errorf("error writing gradient boosting model: %w", err)
 	}
 
-	log.Printf("💾 Gradient Boosting model saved to %s", filePath)
+	log.Printf("💾 Gradient Boosting model saved: %d trees, trained=%v", len(gbm.trees), gbm.trained)
 	return nil
+}
+
+// serializeGBTreeNode recursively serializes a tree node
+func serializeGBTreeNode(node *GBTreeNode) *SerializedGBTreeNode {
+	if node == nil {
+		return nil
+	}
+
+	serialized := &SerializedGBTreeNode{
+		IsLeaf:       node.IsLeaf,
+		Prediction:   node.Prediction,
+		FeatureIndex: node.FeatureIndex,
+		Threshold:    node.Threshold,
+		SamplesCount: node.SamplesCount,
+	}
+
+	if node.Left != nil {
+		serialized.Left = serializeGBTreeNode(node.Left)
+	}
+	if node.Right != nil {
+		serialized.Right = serializeGBTreeNode(node.Right)
+	}
+
+	return serialized
 }
 
 func (gbm *GradientBoostingModel) loadModel() error {
 	filePath := filepath.Join(gbm.dataDir, "gradient_boosting.json")
 
+	// Check if file exists
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		log.Printf("🌳 No saved Gradient Boosting model found, starting fresh")
+		return nil // Not an error
+	}
+
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return err // Not an error if file doesn't exist
+		return fmt.Errorf("error reading gradient boosting model: %w", err)
 	}
 
-	var metadata map[string]interface{}
-	err = json.Unmarshal(data, &metadata)
+	var modelData GradientBoostingModelData
+	err = json.Unmarshal(data, &modelData)
 	if err != nil {
-		return err
+		return fmt.Errorf("error unmarshaling gradient boosting model: %w", err)
 	}
 
-	if trained, ok := metadata["trained"].(bool); ok {
-		gbm.trained = trained
+	// Deserialize trees
+	gbm.trees = make([]*GBTree, len(modelData.Trees))
+	for i, serializedTree := range modelData.Trees {
+		gbm.trees[i] = &GBTree{
+			Root:           deserializeGBTreeNode(serializedTree.Root),
+			MaxDepth:       serializedTree.MaxDepth,
+			MinSamplesLeaf: serializedTree.MinSamplesLeaf,
+		}
 	}
 
-	log.Printf("📂 Loaded Gradient Boosting model metadata")
+	// Load other fields
+	gbm.learningRate = modelData.LearningRate
+	gbm.numTrees = modelData.NumTrees
+	gbm.maxDepth = modelData.MaxDepth
+	gbm.minSamplesLeaf = modelData.MinSamplesLeaf
+	gbm.weight = modelData.Weight
+	gbm.trained = modelData.Trained
+	gbm.featureNames = modelData.FeatureNames
+	gbm.featureImportance = modelData.FeatureImportance
+
+	log.Printf("🌳 Gradient Boosting model loaded: %d trees, trained=%v", len(gbm.trees), gbm.trained)
+	log.Printf("   Last updated: %s", modelData.LastUpdated.Format("2006-01-02 15:04:05"))
 	return nil
+}
+
+// deserializeGBTreeNode recursively deserializes a tree node
+func deserializeGBTreeNode(serialized *SerializedGBTreeNode) *GBTreeNode {
+	if serialized == nil {
+		return nil
+	}
+
+	node := &GBTreeNode{
+		IsLeaf:       serialized.IsLeaf,
+		Prediction:   serialized.Prediction,
+		FeatureIndex: serialized.FeatureIndex,
+		Threshold:    serialized.Threshold,
+		SamplesCount: serialized.SamplesCount,
+	}
+
+	if serialized.Left != nil {
+		node.Left = deserializeGBTreeNode(serialized.Left)
+	}
+	if serialized.Right != nil {
+		node.Right = deserializeGBTreeNode(serialized.Right)
+	}
+
+	return node
 }
 
 // GetName returns the model name

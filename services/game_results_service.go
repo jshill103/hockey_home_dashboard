@@ -490,6 +490,17 @@ func (grs *GameResultsService) feedToModels(game *models.CompletedGame) {
 	// 	grs.accuracyTracker.RecordPrediction(prediction, factors)
 	// 	log.Printf("📈 Accuracy tracker updated for game %d", game.GameID)
 	// }
+
+	// PLAYOFF ODDS: Recalculate playoff odds after game completion
+	playoffSimService := GetPlayoffSimulationService()
+	if playoffSimService != nil {
+		// Recalculate for the main team (the one this server is running for)
+		if err := playoffSimService.RecalculatePlayoffOdds(grs.teamCode); err != nil {
+			log.Printf("⚠️ Failed to recalculate playoff odds: %v", err)
+		} else {
+			log.Printf("🎲 Playoff odds recalculated for %s", grs.teamCode)
+		}
+	}
 }
 
 // convertToGameResult converts CompletedGame to GameResult format

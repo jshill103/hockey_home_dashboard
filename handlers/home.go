@@ -746,52 +746,9 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
         }
 
-        .predictions-tabs {
-            display: flex;
-            margin-bottom: 20px;
-            border-radius: 8px;
-            overflow: hidden;
-            background: rgba(0, 0, 0, 0.3);
-        }
-
-        .predictions-tab {
-            flex: 1;
-            padding: 12px;
-            background: rgba(255, 255, 255, 0.1);
-            color: rgba(255, 255, 255, 0.7);
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            font-weight: bold;
-        }
-
-        .predictions-tab.active {
-            background: rgba(255, 255, 255, 0.2);
-            color: var(--team-accent);
-        }
-
-        .predictions-tab:hover {
-            background: rgba(255, 255, 255, 0.15);
-        }
-
         .predictions-content {
             flex: 1;
             overflow-y: auto;
-        }
-
-        .prediction-panel {
-            display: none;
-        }
-
-        .prediction-panel.active {
-            display: block;
-        }
-        
-        .prediction-loading {
-            text-align: center;
-            color: #888;
-            font-size: 1.2em;
-            padding: 40px 20px;
         }
         
 
@@ -1728,7 +1685,7 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         }
 
         .current-position,
-        .projections,
+        .ml-simulation-insights,
         .whats-needed,
         .odds-breakdown {
             background: linear-gradient(135deg, var(--team-primary-dark), var(--team-secondary));
@@ -1738,13 +1695,71 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         }
 
         .current-position h4,
-        .projections h4,
+        .ml-simulation-insights h4,
         .whats-needed h4,
         .odds-breakdown h4 {
             margin: 0 0 12px 0;
             color: var(--team-accent);
             font-size: 1em;
             text-align: center;
+        }
+
+        /* ML Simulation Insights Styles */
+        .ml-badge {
+            text-align: center;
+            background: rgba(0, 123, 255, 0.2);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.75em;
+            color: #a8c8ec;
+            margin-bottom: 12px;
+            border: 1px solid rgba(0, 123, 255, 0.3);
+        }
+
+        .ml-scenarios-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .ml-scenario {
+            background: rgba(0, 123, 255, 0.1);
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+            border-left: 3px solid;
+        }
+
+        .ml-scenario.best-case {
+            border-left-color: #28a745;
+            background: rgba(40, 167, 69, 0.1);
+        }
+
+        .ml-scenario.average {
+            border-left-color: #007bff;
+            background: rgba(0, 123, 255, 0.15);
+        }
+
+        .ml-scenario.worst-case {
+            border-left-color: #ffc107;
+            background: rgba(255, 193, 7, 0.1);
+        }
+
+        .ml-scenario.games-left {
+            border-left-color: var(--team-accent);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .scenario-label {
+            font-size: 0.8em;
+            color: #a8c8ec;
+            margin-bottom: 4px;
+        }
+
+        .scenario-value {
+            font-size: 1.1em;
+            color: #e0e8f5;
+            font-weight: bold;
         }
 
         .position-grid,
@@ -1990,28 +2005,11 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         </div>
 
         <div class="predictions-section hockey-season-only">
-            <h2>🎯 Predictions & Odds</h2>
-            
-            <div class="predictions-tabs">
-                <div class="predictions-tab active" onclick="switchPredictionTab('ai'); restartPredictionTabCycling();">
-                    🤖 AI Prediction
-                </div>
-                <div class="predictions-tab" onclick="switchPredictionTab('playoff'); restartPredictionTabCycling();">
-                    🏆 Playoff Odds
-                </div>
-            </div>
+            <h2>🏆 Playoff Odds</h2>
             
             <div class="predictions-content">
-                <div class="prediction-panel active" id="ai-panel">
-                    <div id="prediction-widget-content">
-                        <div class="prediction-loading">🤖 Loading AI Prediction...</div>
-                    </div>
-                </div>
-                
-                <div class="prediction-panel" id="playoff-panel">
-                    <div id="playoff-odds-content">
-                        <p>Loading playoff odds...</p>
-                    </div>
+                <div id="playoff-odds-content">
+                    <p>Loading playoff odds...</p>
                 </div>
             </div>
         </div>
@@ -2185,13 +2183,50 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             // Show loading state
             playoffOddsContent.innerHTML = '<p>Loading playoff odds...</p>';
             
-            htmx.ajax('GET', '/playoff-odds', '#playoff-odds-content');
+            // Use fetch for better error handling and to show cache status
+            fetch('/playoff-odds')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to load playoff odds');
+                    }
+                    return response.text();
+                })
+                .then(html => {
+                    playoffOddsContent.innerHTML = html;
+                    console.log('✅ Playoff odds loaded');
+                })
+                .catch(error => {
+                    console.error('Error loading playoff odds:', error);
+                    playoffOddsContent.innerHTML = '<p style="color: #ff6b6b;">Failed to load playoff odds. Please try again later.</p>';
+                });
         }
 
         function loadModelInsights() {
             const modelInsightsContent = document.getElementById('model-insights-content');
             
-            htmx.ajax('GET', '/model-insights', '#model-insights-content');
+            if (!modelInsightsContent) {
+                console.log('Model insights content element not found');
+                return;
+            }
+            
+            // Show loading state
+            modelInsightsContent.innerHTML = '<p style="text-align: center; padding: 20px;">🤖 Loading AI predictions...</p>';
+            
+            fetch('/model-insights')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status);
+                    }
+                    return response.text();
+                })
+                .then(html => {
+                    modelInsightsContent.innerHTML = html;
+                    console.log('Model insights loaded successfully');
+                })
+                .catch(error => {
+                    console.error('Error loading model insights:', error);
+                    modelInsightsContent.innerHTML = '<div style="text-align: center; padding: 20px; color: #ff6b6b;">Unable to load AI predictions</div>';
+                });
         }
 
         function loadNews() {
@@ -2366,6 +2401,15 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             // Load news immediately (always available)
             loadNews();
             
+            // Load model insights immediately (always load data, even if hidden by CSS)
+            loadModelInsights();
+            setInterval(loadModelInsights, 300000); // Update model insights every 5 minutes
+            
+            // Load playoff odds immediately (always load data, even if hidden by CSS)
+            // This is fast now thanks to caching!
+            loadPlayoffOdds();
+            setInterval(loadPlayoffOdds, 300000); // Update playoff odds every 5 minutes (cached, so instant)
+            
             // Then load season status to determine what else to show
             loadSeasonStatus().then(() => {
                 // Load banner content (always shown)
@@ -2376,22 +2420,13 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
                 
                 // Conditionally load content based on season status
                 if (currentSeasonStatus && currentSeasonStatus.isHockeySeason) {
-                    // Hockey season: Load scoreboard, upcoming games, model insights, and playoff odds
+                    // Hockey season: Load scoreboard and upcoming games
                     loadScoreboard();
                     loadUpcomingGames();
-                    loadModelInsights();
-                    loadPlayoffOdds();
-                    loadAIPrediction(); // Load AI prediction for the default active tab
-                    
-                    // Start auto-cycling between prediction tabs
-                    startPredictionTabCycling();
                     
                     // Set up automatic updates
                     setInterval(loadScoreboard, 30000); // Check every 30 seconds
                     setInterval(loadUpcomingGames, 3600000); // Update upcoming games every hour
-                    setInterval(loadPlayerStats, 1800000); // Update player stats every 30 minutes
-                    setInterval(loadGoalieStats, 1800000); // Update goalie stats every 30 minutes
-                    setInterval(loadPlayoffOdds, 1800000); // Update playoff odds every 30 minutes
                 } else {
                     // Offseason: Load news, countdown, and mammoth analysis
                     loadSeasonCountdown();
@@ -2429,80 +2464,6 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             }
         });
 
-        // Auto-cycling tab state
-        let currentPredictionTab = 'ai';
-        let predictionTabInterval;
-
-        // Season toggle functionality for testing
-        function switchPredictionTab(tabType) {
-            // Update tab active states
-            const tabs = document.querySelectorAll('.predictions-tab');
-            const panels = document.querySelectorAll('.prediction-panel');
-            
-            tabs.forEach(tab => tab.classList.remove('active'));
-            panels.forEach(panel => panel.classList.remove('active'));
-            
-            if (tabType === 'ai') {
-                tabs[0].classList.add('active');
-                document.getElementById('ai-panel').classList.add('active');
-                // Load AI prediction content when switching to AI tab
-                loadAIPrediction();
-                currentPredictionTab = 'ai';
-            } else if (tabType === 'playoff') {
-                tabs[1].classList.add('active');
-                document.getElementById('playoff-panel').classList.add('active');
-                // Load playoff odds content when switching to playoff tab
-                loadPlayoffOdds();
-                currentPredictionTab = 'playoff';
-            }
-        }
-
-        // Auto-cycle between prediction tabs every 30 seconds
-        function startPredictionTabCycling() {
-            predictionTabInterval = setInterval(() => {
-                if (currentPredictionTab === 'ai') {
-                    switchPredictionTab('playoff');
-                } else {
-                    switchPredictionTab('ai');
-                }
-            }, 30000); // 30 seconds
-        }
-
-        // Stop auto-cycling (useful if user manually clicks tabs)
-        function stopPredictionTabCycling() {
-            if (predictionTabInterval) {
-                clearInterval(predictionTabInterval);
-            }
-        }
-
-        // Restart cycling after manual tab switch
-        function restartPredictionTabCycling() {
-            stopPredictionTabCycling();
-            startPredictionTabCycling();
-        }
-
-        function loadAIPrediction() {
-            const predictionContent = document.getElementById('prediction-widget-content');
-            if (!predictionContent) return; // Element doesn't exist in offseason
-            
-            // Show loading state
-            predictionContent.innerHTML = '<div class="prediction-loading">🤖 Generating AI Prediction...</div>';
-            
-            fetch('/prediction-widget')
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('HTTP ' + response.status);
-                    }
-                    return response.text();
-                })
-                .then(html => {
-                    predictionContent.innerHTML = html;
-                })
-                .catch(error => {
-                    console.error('Error loading AI prediction:', error);
-                    predictionContent.innerHTML = '<div class="prediction-error">Unable to load AI prediction</div>';
-                });
-        }
 
         function toggleSeasonView() {
             const body = document.body;
@@ -2520,11 +2481,8 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
                 loadUpcomingGames();
                 loadPlayerStats();
                 loadGoalieStats();
-                loadAIPrediction();
+                loadPlayoffOdds();
                 loadScoreboard();
-                
-                // Start auto-cycling between prediction tabs
-                startPredictionTabCycling();
             } else {
                 // Switch to offseason view
                 body.classList.remove('hockey-season');
@@ -2535,9 +2493,6 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
                 // Load offseason-specific content
                 loadSeasonCountdown();
                 loadTeamAnalysis();
-                
-                // Stop auto-cycling when switching to offseason
-                stopPredictionTabCycling();
             }
         }
 

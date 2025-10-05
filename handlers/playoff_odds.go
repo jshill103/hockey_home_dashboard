@@ -12,6 +12,7 @@ import (
 )
 
 // CalculatePlayoffOdds analyzes current standings to determine Utah's playoff chances
+// Now uses ML-powered Monte Carlo simulation for accurate odds
 func CalculatePlayoffOdds() (*models.PlayoffOdds, error) {
 	// Get current standings
 	standings, err := services.GetStandings()
@@ -24,14 +25,15 @@ func CalculatePlayoffOdds() (*models.PlayoffOdds, error) {
 	for i := range standings.Standings {
 		team := &standings.Standings[i]
 		if strings.Contains(strings.ToLower(team.TeamName.Default), "utah") ||
-		   strings.Contains(strings.ToLower(team.TeamName.Default), "mammoth") {
+			strings.Contains(strings.ToLower(team.TeamName.Default), "mammoth") ||
+			team.TeamAbbrev.Default == teamConfig.Code {
 			utahTeam = team
 			break
 		}
 	}
 
 	if utahTeam == nil {
-		return nil, fmt.Errorf("Utah Mammoth not found in standings")
+		return nil, fmt.Errorf("Team not found in standings")
 	}
 
 	// Separate teams by conference
@@ -65,18 +67,18 @@ func CalculatePlayoffOdds() (*models.PlayoffOdds, error) {
 
 	// Calculate playoff positioning
 	playoffSpotType, inPlayoffSpot := determinePlayoffSpot(westernTeams, utahTeam, conferenceRank)
-	
+
 	// Calculate points needed and projections
 	gamesRemaining := 82 - utahTeam.GamesPlayed
 	currentPace := float64(utahTeam.Points) / float64(utahTeam.GamesPlayed)
 	projectedPoints := utahTeam.Points + int(math.Round(currentPace*float64(gamesRemaining)))
-	
+
 	// Historical playoff threshold (typically 90-100 points)
 	historicalThreshold := 96
-	
-	// Calculate playoff odds
-	playoffOdds := calculatePlayoffOddsPercentage(utahTeam, westernTeams, projectedPoints, historicalThreshold)
-	
+
+	// Calculate playoff odds using ML simulation
+	playoffOdds, divisionOdds, wildCardOdds, mlSimulation := calculateMLPlayoffOdds(utahTeam.TeamAbbrev.Default)
+
 	// Determine what Utah needs
 	pointsNeeded := calculatePointsNeeded(westernTeams, utahTeam, historicalThreshold)
 	winsNeeded := int(math.Ceil(float64(pointsNeeded) / 2.0)) // Assume 2 points per win
@@ -92,36 +94,41 @@ func CalculatePlayoffOdds() (*models.PlayoffOdds, error) {
 
 	// Calculate points from playoff line
 	pointsFromPlayoffs := calculatePointsFromPlayoffLine(westernTeams, utahTeam)
-	
+
 	return &models.PlayoffOdds{
 		CurrentSeason:       services.GetCurrentSeason(),
-		TeamName:           utahTeam.TeamName.Default,
-		CurrentRecord:      fmt.Sprintf("%d-%d-%d", utahTeam.Wins, utahTeam.Losses, utahTeam.OtLosses),
-		CurrentPoints:      utahTeam.Points,
-		GamesRemaining:     gamesRemaining,
-		PointsPercentage:   utahTeam.PointPctg * 100,
-		DivisionName:       utahTeam.DivisionName,
-		DivisionRank:       divisionRank,
-		DivisionTeams:      len(centralTeams),
-		ConferenceName:     utahTeam.ConferenceName,
-		ConferenceRank:     conferenceRank,
-		WildCardRank:       calculateWildCardRank(westernTeams, utahTeam),
-		InPlayoffSpot:      inPlayoffSpot,
-		PlayoffSpotType:    playoffSpotType,
-		PointsFromPlayoffs: pointsFromPlayoffs,
-		PointsFrom8thSeed:  calculatePointsFrom8thSeed(westernTeams, utahTeam),
-		ProjectedPoints:    projectedPoints,
-		ProjectedRecord:    calculateProjectedRecord(utahTeam, gamesRemaining, currentPace),
+		TeamName:            utahTeam.TeamName.Default,
+		CurrentRecord:       fmt.Sprintf("%d-%d-%d", utahTeam.Wins, utahTeam.Losses, utahTeam.OtLosses),
+		CurrentPoints:       utahTeam.Points,
+		GamesRemaining:      gamesRemaining,
+		PointsPercentage:    utahTeam.PointPctg * 100,
+		DivisionName:        utahTeam.DivisionName,
+		DivisionRank:        divisionRank,
+		DivisionTeams:       len(centralTeams),
+		ConferenceName:      utahTeam.ConferenceName,
+		ConferenceRank:      conferenceRank,
+		WildCardRank:        calculateWildCardRank(westernTeams, utahTeam),
+		InPlayoffSpot:       inPlayoffSpot,
+		PlayoffSpotType:     playoffSpotType,
+		PointsFromPlayoffs:  pointsFromPlayoffs,
+		PointsFrom8thSeed:   calculatePointsFrom8thSeed(westernTeams, utahTeam),
+		ProjectedPoints:     projectedPoints,
+		ProjectedRecord:     calculateProjectedRecord(utahTeam, gamesRemaining, currentPace),
 		HistoricalThreshold: historicalThreshold,
-		PlayoffOddsPercent: playoffOdds,
-		DivisionOddsPercent: calculateDivisionOdds(centralTeams, utahTeam, divisionRank, projectedPoints),
-		WildCardOddsPercent: calculateWildCardOdds(westernTeams, utahTeam, projectedPoints),
-		PointsNeeded:       pointsNeeded,
-		WinsNeeded:         winsNeeded,
-		RequiredPointPace:  requiredPace,
-		PlayoffStatus:      playoffStatus,
-		KeyInsight:         keyInsight,
-		NextMilestone:      nextMilestone,
+		PlayoffOddsPercent:  playoffOdds,
+		DivisionOddsPercent: divisionOdds,
+		WildCardOddsPercent: wildCardOdds,
+		PointsNeeded:        pointsNeeded,
+		WinsNeeded:          winsNeeded,
+		RequiredPointPace:   requiredPace,
+		PlayoffStatus:       playoffStatus,
+		KeyInsight:          keyInsight,
+		NextMilestone:       nextMilestone,
+		// ML Simulation Data
+		MLSimulations: mlSimulation.TotalSimulations,
+		MLAvgPoints:   mlSimulation.AvgFinalPoints,
+		MLBestCase:    mlSimulation.BestCasePoints,
+		MLWorstCase:   mlSimulation.WorstCasePoints,
 	}, nil
 }
 
@@ -149,7 +156,7 @@ func determinePlayoffSpot(westernTeams []models.TeamStanding, utahTeam *models.T
 				}
 			}
 		}
-		
+
 		if centralRank <= 3 {
 			return "division", true
 		} else if conferenceRank <= 8 {
@@ -161,13 +168,13 @@ func determinePlayoffSpot(westernTeams []models.TeamStanding, utahTeam *models.T
 
 func calculatePlayoffOddsPercentage(utahTeam *models.TeamStanding, westernTeams []models.TeamStanding, projectedPoints, threshold int) float64 {
 	// Simple odds calculation based on projected points vs historical threshold
-	if projectedPoints >= threshold + 5 {
+	if projectedPoints >= threshold+5 {
 		return 95.0
 	} else if projectedPoints >= threshold {
 		return 75.0
-	} else if projectedPoints >= threshold - 5 {
+	} else if projectedPoints >= threshold-5 {
 		return 50.0
-	} else if projectedPoints >= threshold - 10 {
+	} else if projectedPoints >= threshold-10 {
 		return 25.0
 	} else {
 		return 10.0
@@ -249,17 +256,17 @@ func calculateProjectedRecord(utahTeam *models.TeamStanding, gamesRemaining int,
 	if gamesRemaining <= 0 {
 		return fmt.Sprintf("%d-%d-%d", utahTeam.Wins, utahTeam.Losses, utahTeam.OtLosses)
 	}
-	
+
 	// Project additional wins (assuming roughly 50% of points come from regulation wins)
 	additionalPoints := int(currentPace * float64(gamesRemaining))
 	additionalWins := additionalPoints / 2
 	additionalOT := additionalPoints % 2
 	additionalLosses := gamesRemaining - additionalWins - additionalOT
-	
-	return fmt.Sprintf("%d-%d-%d", 
-		utahTeam.Wins + additionalWins,
-		utahTeam.Losses + additionalLosses,
-		utahTeam.OtLosses + additionalOT)
+
+	return fmt.Sprintf("%d-%d-%d",
+		utahTeam.Wins+additionalWins,
+		utahTeam.Losses+additionalLosses,
+		utahTeam.OtLosses+additionalOT)
 }
 
 func calculateDivisionOdds(centralTeams []models.TeamStanding, utahTeam *models.TeamStanding, divisionRank int, projectedPoints int) float64 {
@@ -276,11 +283,11 @@ func calculateWildCardOdds(westernTeams []models.TeamStanding, utahTeam *models.
 	// Count teams that would likely finish ahead
 	teamsAhead := 0
 	for _, team := range westernTeams {
-		if team.Points > utahTeam.Points + 10 { // Teams significantly ahead
+		if team.Points > utahTeam.Points+10 { // Teams significantly ahead
 			teamsAhead++
 		}
 	}
-	
+
 	if teamsAhead <= 6 {
 		return 50.0 // Good wild card chances
 	} else if teamsAhead <= 8 {
@@ -309,7 +316,7 @@ func formatPlayoffOddsHTML(odds models.PlayoffOdds) string {
 
 	// Main playoff status header
 	html.WriteString("<div class='playoff-odds-container'>")
-	
+
 	// Status header with big odds percentage
 	html.WriteString("<div class='playoff-status-header'>")
 	html.WriteString(fmt.Sprintf("<div class='playoff-odds-main'>%.0f%%</div>", odds.PlayoffOddsPercent))
@@ -320,22 +327,22 @@ func formatPlayoffOddsHTML(odds models.PlayoffOdds) string {
 	html.WriteString("<div class='current-position'>")
 	html.WriteString("<h4>Current Position</h4>")
 	html.WriteString("<div class='position-grid'>")
-	
+
 	html.WriteString("<div class='position-item'>")
 	html.WriteString("<div class='position-label'>Record</div>")
 	html.WriteString(fmt.Sprintf("<div class='position-value'>%s (%d pts)</div>", odds.CurrentRecord, odds.CurrentPoints))
 	html.WriteString("</div>")
-	
+
 	html.WriteString("<div class='position-item'>")
 	html.WriteString("<div class='position-label'>Division</div>")
 	html.WriteString(fmt.Sprintf("<div class='position-value'>#%d in %s</div>", odds.DivisionRank, odds.DivisionName))
 	html.WriteString("</div>")
-	
+
 	html.WriteString("<div class='position-item'>")
 	html.WriteString("<div class='position-label'>Conference</div>")
 	html.WriteString(fmt.Sprintf("<div class='position-value'>#%d in %s</div>", odds.ConferenceRank, odds.ConferenceName))
 	html.WriteString("</div>")
-	
+
 	// Playoff spot indicator
 	playoffSpotClass := "out-of-playoffs"
 	playoffSpotText := "Out of Playoffs"
@@ -348,35 +355,58 @@ func formatPlayoffOddsHTML(odds models.PlayoffOdds) string {
 			playoffSpotText = "Wild Card Spot"
 		}
 	}
-	
+
 	html.WriteString(fmt.Sprintf("<div class='position-item %s'>", playoffSpotClass))
 	html.WriteString("<div class='position-label'>Status</div>")
 	html.WriteString(fmt.Sprintf("<div class='position-value'>%s</div>", playoffSpotText))
 	html.WriteString("</div>")
-	
+
 	html.WriteString("</div>")
 	html.WriteString("</div>")
 
-	// Projections section
-	html.WriteString("<div class='projections'>")
-	html.WriteString("<h4>Season Projection</h4>")
-	html.WriteString("<div class='projection-grid'>")
-	
-	html.WriteString("<div class='projection-item'>")
-	html.WriteString("<div class='projection-label'>Games Left</div>")
-	html.WriteString(fmt.Sprintf("<div class='projection-value'>%d</div>", odds.GamesRemaining))
+	// ML Simulation Insights section
+	html.WriteString("<div class='ml-simulation-insights'>")
+	html.WriteString("<h4>🤖 ML Simulation Analysis</h4>")
+
+	// Show simulation count if available
+	if odds.MLSimulations > 0 {
+		html.WriteString("<div class='ml-badge'>")
+		html.WriteString(fmt.Sprintf("Based on %s Monte Carlo simulations", formatNumber(odds.MLSimulations)))
+		html.WriteString("</div>")
+	}
+
+	html.WriteString("<div class='ml-scenarios-grid'>")
+
+	// Best Case Scenario
+	if odds.MLBestCase > 0 {
+		html.WriteString("<div class='ml-scenario best-case'>")
+		html.WriteString("<div class='scenario-label'>🌟 Best Case</div>")
+		html.WriteString(fmt.Sprintf("<div class='scenario-value'>%d pts</div>", odds.MLBestCase))
+		html.WriteString("</div>")
+	}
+
+	// Average Expected Outcome
+	if odds.MLAvgPoints > 0 {
+		html.WriteString("<div class='ml-scenario average'>")
+		html.WriteString("<div class='scenario-label'>📊 Expected</div>")
+		html.WriteString(fmt.Sprintf("<div class='scenario-value'>%.1f pts</div>", odds.MLAvgPoints))
+		html.WriteString("</div>")
+	}
+
+	// Worst Case Scenario
+	if odds.MLWorstCase > 0 {
+		html.WriteString("<div class='ml-scenario worst-case'>")
+		html.WriteString("<div class='scenario-label'>⚠️ Worst Case</div>")
+		html.WriteString(fmt.Sprintf("<div class='scenario-value'>%d pts</div>", odds.MLWorstCase))
+		html.WriteString("</div>")
+	}
+
+	// Games Remaining
+	html.WriteString("<div class='ml-scenario games-left'>")
+	html.WriteString("<div class='scenario-label'>🎮 Games Left</div>")
+	html.WriteString(fmt.Sprintf("<div class='scenario-value'>%d</div>", odds.GamesRemaining))
 	html.WriteString("</div>")
-	
-	html.WriteString("<div class='projection-item'>")
-	html.WriteString("<div class='projection-label'>Projected Points</div>")
-	html.WriteString(fmt.Sprintf("<div class='projection-value'>%d</div>", odds.ProjectedPoints))
-	html.WriteString("</div>")
-	
-	html.WriteString("<div class='projection-item'>")
-	html.WriteString("<div class='projection-label'>Projected Record</div>")
-	html.WriteString(fmt.Sprintf("<div class='projection-value'>%s</div>", odds.ProjectedRecord))
-	html.WriteString("</div>")
-	
+
 	html.WriteString("</div>")
 	html.WriteString("</div>")
 
@@ -385,24 +415,24 @@ func formatPlayoffOddsHTML(odds models.PlayoffOdds) string {
 		html.WriteString("<div class='whats-needed'>")
 		html.WriteString("<h4>What Utah Needs</h4>")
 		html.WriteString("<div class='needs-grid'>")
-		
+
 		html.WriteString("<div class='need-item'>")
 		html.WriteString("<div class='need-label'>Points Needed</div>")
 		html.WriteString(fmt.Sprintf("<div class='need-value'>%d</div>", odds.PointsNeeded))
 		html.WriteString("</div>")
-		
+
 		html.WriteString("<div class='need-item'>")
 		html.WriteString("<div class='need-label'>≈ Wins Needed</div>")
 		html.WriteString(fmt.Sprintf("<div class='need-value'>%d</div>", odds.WinsNeeded))
 		html.WriteString("</div>")
-		
+
 		if odds.GamesRemaining > 0 {
 			html.WriteString("<div class='need-item'>")
 			html.WriteString("<div class='need-label'>Required Pace</div>")
 			html.WriteString(fmt.Sprintf("<div class='need-value'>%.1f pts/game</div>", odds.RequiredPointPace))
 			html.WriteString("</div>")
 		}
-		
+
 		html.WriteString("</div>")
 		html.WriteString("</div>")
 	}
@@ -417,21 +447,61 @@ func formatPlayoffOddsHTML(odds models.PlayoffOdds) string {
 	html.WriteString("<div class='odds-breakdown'>")
 	html.WriteString("<h4>Playoff Paths</h4>")
 	html.WriteString("<div class='odds-grid'>")
-	
+
 	html.WriteString("<div class='odds-item'>")
 	html.WriteString("<div class='odds-label'>Division Top 3</div>")
 	html.WriteString(fmt.Sprintf("<div class='odds-value'>%.0f%%</div>", odds.DivisionOddsPercent))
 	html.WriteString("</div>")
-	
+
 	html.WriteString("<div class='odds-item'>")
 	html.WriteString("<div class='odds-label'>Wild Card</div>")
 	html.WriteString(fmt.Sprintf("<div class='odds-value'>%.0f%%</div>", odds.WildCardOddsPercent))
 	html.WriteString("</div>")
-	
+
 	html.WriteString("</div>")
 	html.WriteString("</div>")
 
 	html.WriteString("</div>") // Close playoff-odds-container
 
 	return html.String()
-} 
+}
+
+// formatNumber formats a number with commas (e.g., 5000 -> "5,000")
+func formatNumber(n int) string {
+	if n < 1000 {
+		return fmt.Sprintf("%d", n)
+	}
+	return fmt.Sprintf("%s,%03d", formatNumber(n/1000), n%1000)
+}
+
+// calculateMLPlayoffOdds uses ML-powered Monte Carlo simulation for accurate odds
+func calculateMLPlayoffOdds(teamCode string) (playoffOdds, divisionOdds, wildCardOdds float64, simulation *services.SeasonSimulation) {
+	// Get the playoff simulation service
+	simService := services.GetPlayoffSimulationService()
+
+	if simService == nil {
+		// Fallback to simple calculation if service not available
+		fmt.Println("⚠️ Playoff simulation service not available, using fallback")
+		return 50.0, 30.0, 20.0, &services.SeasonSimulation{
+			TotalSimulations: 0,
+			AvgFinalPoints:   0,
+			BestCasePoints:   0,
+			WorstCasePoints:  0,
+		}
+	}
+
+	// Run 5000 simulations (good balance of accuracy vs speed)
+	sim, err := simService.SimulatePlayoffOdds(teamCode, 5000)
+	if err != nil {
+		fmt.Printf("⚠️ Playoff simulation error: %v\n", err)
+		// Fallback to simple calculation
+		return 50.0, 30.0, 20.0, &services.SeasonSimulation{
+			TotalSimulations: 0,
+			AvgFinalPoints:   0,
+			BestCasePoints:   0,
+			WorstCasePoints:  0,
+		}
+	}
+
+	return sim.PlayoffOddsPercent, sim.DivisionOddsPercent, sim.WildCardOddsPercent, sim
+}
