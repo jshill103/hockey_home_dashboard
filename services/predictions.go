@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jaredshillingburg/go_uhc/models"
+	"github.com/jaredshillingburg/go_uhc/utils"
 )
 
 // PredictionService handles game predictions using ensemble of AI models
@@ -48,9 +49,9 @@ func (ps *PredictionService) PredictNextGame() (*models.GamePrediction, error) {
 	// ============================================================================
 	// 🔥 FETCH FRESH OPPONENT DATA BEFORE PREDICTION
 	// ============================================================================
-	currentSeason := 20252026 // TODO: Calculate dynamically based on date
+	currentSeason := utils.GetCurrentSeason()
 
-	fmt.Printf("📊 Updating team data for accurate predictions...\n")
+	fmt.Printf("📊 Updating team data for accurate predictions (Season: %s)...\n", utils.FormatSeason(currentSeason))
 
 	// 1. Update Player Impact for both teams (with smart caching)
 	playerService := GetPlayerImpactService()

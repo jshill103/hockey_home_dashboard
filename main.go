@@ -13,6 +13,7 @@ import (
 	"github.com/jaredshillingburg/go_uhc/handlers"
 	"github.com/jaredshillingburg/go_uhc/models"
 	"github.com/jaredshillingburg/go_uhc/services"
+	"github.com/jaredshillingburg/go_uhc/utils"
 )
 
 // Global variables for caching
@@ -276,7 +277,8 @@ func main() {
 	fmt.Println("Fetching goalie stats...")
 	goalieService := services.GetGoalieService()
 	if goalieService != nil {
-		currentSeason := 20252026 // TODO: Calculate dynamically
+		currentSeason := utils.GetCurrentSeason()
+		fmt.Printf("📅 Using season: %s\n", utils.FormatSeason(currentSeason))
 		if err := goalieService.FetchGoalieStats(teamConfig.Code, currentSeason); err != nil {
 			fmt.Printf("⚠️ Could not fetch goalie stats for %s: %v\n", teamConfig.Code, err)
 		} else {
@@ -397,6 +399,8 @@ func main() {
 	http.HandleFunc("/api/performance", handlers.PerformanceDashboardHandler)
 	http.HandleFunc("/api/metrics", handlers.ModelMetricsHandler)
 	http.HandleFunc("/api/rate-limiter", handlers.HandleRateLimiterMetrics)
+	http.HandleFunc("/health", handlers.HandleHealth)
+	http.HandleFunc("/api/health", handlers.HandleHealth) // Alternative endpoint
 
 	// Live Prediction System management endpoints
 	if livePredictionSystem := services.GetLivePredictionSystem(); livePredictionSystem != nil {

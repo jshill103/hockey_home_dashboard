@@ -355,7 +355,7 @@ func (pis *PlayerImpactService) fetchPlayerStats(teamCode string, season int) ([
 		log.Printf("⚠️ No current season data for %s, trying previous season...", teamCode)
 
 		// Try previous season for seed data
-		previousSeason := season - 10001 // e.g., 20252026 -> 20242025
+		previousSeason := season - 10001 // e.g., 20252026 -> 20242025 (or use utils.GetPreviousSeason())
 		prevSeasonStr := fmt.Sprintf("%d%d", previousSeason/10000, previousSeason%10000)
 		url = fmt.Sprintf("https://api-web.nhle.com/v1/club-stats/%s/%s/2", teamCode, prevSeasonStr)
 
