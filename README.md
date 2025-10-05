@@ -165,6 +165,7 @@ Options:
   -weather-key string       WeatherAPI key for weather analysis
   -openweather-key string   OpenWeatherMap API key for weather analysis  
   -accuweather-key string   AccuWeather API key for weather analysis
+  -odds-key string          The Odds API key for betting market data
 ```
 
 ### Supported Team Codes
@@ -323,6 +324,64 @@ When enabled, weather analysis provides:
 - **Outdoor game detection** and special weather considerations
 
 **Note:** If no weather API keys are provided, the application will run normally with weather analysis disabled. All other features remain fully functional.
+
+## Betting Market Configuration 💰
+
+The application includes real-time betting market integration powered by **The Odds API**. This feature enhances predictions by incorporating real betting odds, line movements, and sharp money detection.
+
+### Getting Your API Key
+
+1. Sign up for free at: [https://the-odds-api.com/](https://the-odds-api.com/)
+2. Free tier includes:
+   - **500 requests/month**
+   - Real-time odds from major sportsbooks
+   - Covers NHL and other sports
+3. Copy your API key from the dashboard
+
+### Configuration Methods
+
+**Environment Variable (Recommended for Docker):**
+```bash
+# Set environment variable
+export ODDS_API_KEY=your_api_key_here
+
+# Or in Docker
+docker run -d -p 8080:8080 \
+  -e TEAM_CODE=UTA \
+  -e ODDS_API_KEY=your_api_key_here \
+  jshillingburg/hockey_home_dashboard:latest
+```
+
+**Docker Compose:**
+```yaml
+environment:
+  - TEAM_CODE=UTA
+  - ODDS_API_KEY=your_odds_api_key_here
+```
+
+**Command Line Flag:**
+```bash
+./web_server -team UTA -odds-key your_api_key_here
+```
+
+### Betting Market Features
+
+When enabled, the betting market service provides:
+- **Real-time Odds** - Live betting lines from multiple sportsbooks
+- **Line Movement** - Track how odds change over time
+- **Sharp Money Detection** - Identify professional betting patterns
+- **Market Consensus** - See where the betting public leans
+- **Enhanced AI Predictions** - Predictions enriched with market data
+
+### Free Tier Usage Tips
+
+With 500 requests/month on the free tier:
+- API is called once per prediction request
+- Approximately 16 requests/day available
+- Perfect for following your favorite team
+- Odds are cached to minimize API calls
+
+**Note:** If no API key is provided, the application runs normally with betting market features disabled. All other ML predictions remain fully functional.
 
 ## Configuration ⚙️
 

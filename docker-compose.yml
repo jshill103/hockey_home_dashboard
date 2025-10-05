@@ -12,6 +12,8 @@ services:
       # - OPENWEATHER_API_KEY=your_openweather_api_key_here
       # - WEATHER_API_KEY=your_weather_api_key_here
       # - ACCUWEATHER_API_KEY=your_accuweather_api_key_here
+      # Odds API Key (optional - uncomment and set to enable betting market data)
+      # - ODDS_API_KEY=your_odds_api_key_here
     volumes:
       # Persistent storage for accuracy tracking data
       - nhl-data-uta:/app/data
@@ -33,6 +35,7 @@ services:
   #   environment:
   #     - TEAM_CODE=COL
   #     # - WEATHER_API_KEY=your_weather_api_key_here
+  #     # - ODDS_API_KEY=your_odds_api_key_here
   #   volumes:
   #     - nhl-data-col:/app/data
   #   restart: unless-stopped
@@ -44,6 +47,7 @@ services:
   #   environment:
   #     - TEAM_CODE=VGK
   #     # - WEATHER_API_KEY=your_weather_api_key_here
+  #     # - ODDS_API_KEY=your_odds_api_key_here
   #   volumes:
   #     - nhl-data-vgk:/app/data
   #   restart: unless-stopped

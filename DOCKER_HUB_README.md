@@ -122,6 +122,29 @@ docker run -d \
   jshillingburg/hockey_home_dashboard:latest
 ```
 
+### With Betting Market Data (Optional)
+```bash
+# Add real-time betting odds and market analysis
+docker run -d \
+  -p 8080:8080 \
+  -e TEAM_CODE=UTA \
+  -e ODDS_API_KEY=your_odds_api_key_here \
+  jshillingburg/hockey_home_dashboard:latest
+```
+
+### Full Featured Setup
+```bash
+# Run with all optional features enabled
+docker run -d \
+  -p 8080:8080 \
+  -e TEAM_CODE=UTA \
+  -e WEATHER_API_KEY=your_weather_key \
+  -e ODDS_API_KEY=your_odds_key \
+  -v hockey_ml_data:/app/data \
+  --name uta-dashboard \
+  jshillingburg/hockey_home_dashboard:latest
+```
+
 ---
 
 ## 🐳 Docker Compose
@@ -226,9 +249,10 @@ Shows what all ML models are predicting:
 |----------|-------------|---------|----------|
 | `TEAM_CODE` | 3-letter NHL team code | `UTA` | No |
 | `PORT` | Server port | `8080` | No |
-| `WEATHER_API_KEY` | WeatherAPI.com key | - | No |
-| `OPENWEATHER_API_KEY` | OpenWeatherMap key | - | No |
-| `ACCUWEATHER_API_KEY` | AccuWeather key | - | No |
+| `WEATHER_API_KEY` | WeatherAPI.com key for weather analysis | - | No |
+| `OPENWEATHER_API_KEY` | OpenWeatherMap key for weather analysis | - | No |
+| `ACCUWEATHER_API_KEY` | AccuWeather key for weather analysis | - | No |
+| `ODDS_API_KEY` | The Odds API key for betting market data | - | No |
 
 ### Ports
 - **8080** - HTTP web interface (customizable via PORT env var)

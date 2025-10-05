@@ -55,6 +55,9 @@ func main() {
 	weatherAPIKey := flag.String("weather-key", "", "WeatherAPI key for weather analysis")
 	accuWeatherAPIKey := flag.String("accuweather-key", "", "AccuWeather API key for weather analysis")
 
+	// Odds API key flag (optional - for enabling betting market integration)
+	oddsAPIKey := flag.String("odds-key", "", "The Odds API key for betting market data")
+
 	flag.Parse()
 
 	// Set environment variables from command line flags if provided
@@ -70,6 +73,10 @@ func main() {
 	if *accuWeatherAPIKey != "" {
 		os.Setenv("ACCUWEATHER_API_KEY", *accuWeatherAPIKey)
 		fmt.Printf("🌦️ AccuWeather API key set via command line\n")
+	}
+	if *oddsAPIKey != "" {
+		os.Setenv("ODDS_API_KEY", *oddsAPIKey)
+		fmt.Printf("💰 Odds API key set via command line\n")
 	}
 
 	// Initialize team configuration
