@@ -39,6 +39,12 @@ COPY --from=builder /app/media ./media
 RUN mkdir -p /app/data/accuracy /app/data/models /app/data/results
 # Phase 6: Feature engineering data
 RUN mkdir -p /app/data/matchups /app/data/rolling_stats /app/data/player_impact
+# Pre-game lineup data
+RUN mkdir -p /app/data/lineups \
+    && mkdir -p /app/data/play_by_play \
+    && mkdir -p /app/data/shifts \
+    && mkdir -p /app/data/landing_page \
+    && mkdir -p /app/data/game_summary
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S appgroup && \

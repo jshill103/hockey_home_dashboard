@@ -185,6 +185,27 @@ func GetUpcomingGames() ([]models.Game, error) {
 	return GetTeamUpcomingGames("UTA")
 }
 
+// GetTeamSeasonSchedule fetches the full season schedule (all 82+ games) for a team
+func GetTeamSeasonSchedule(teamCode string, season int) ([]models.Game, error) {
+	fmt.Printf("Fetching full season schedule for %s (season %d)...\n", teamCode, season)
+
+	urlIn := fmt.Sprintf("https://api-web.nhle.com/v1/club-schedule-season/%s/%d", teamCode, season)
+	body, err := MakeAPICall(urlIn)
+	if err != nil {
+		fmt.Printf("Error fetching season schedule: %v\n", err)
+		return nil, err
+	}
+
+	var data models.ScheduleResponse
+	if err := json.Unmarshal(body, &data); err != nil {
+		fmt.Printf("Error unmarshaling season schedule JSON: %v\n", err)
+		return nil, err
+	}
+
+	fmt.Printf("Successfully fetched season schedule: %d games\n", len(data.Games))
+	return data.Games, nil
+}
+
 // GetTeamScoreboard fetches the current scoreboard data for a specific team
 func GetTeamScoreboard(teamCode string) (models.ScoreboardGame, error) {
 	fmt.Printf("Fetching %s scoreboard...\n", teamCode)

@@ -218,6 +218,40 @@ func main() {
 	fmt.Println("Initializing AI prediction service...")
 	handlers.InitPredictions(teamConfig.Code)
 
+	// Initialize Play-by-Play Analytics Service for xG and shot quality metrics
+	fmt.Println("Initializing Play-by-Play Analytics Service (xG Engine)...")
+	services.InitPlayByPlayService()
+	fmt.Println("✅ Play-by-Play Analytics Service initialized (Expected Goals ready)")
+
+	// Initialize Shift Analysis Service for line chemistry and coaching tendencies
+	fmt.Println("Initializing Shift Analysis Service (Line Chemistry Engine)...")
+	services.InitShiftAnalysisService()
+	fmt.Println("✅ Shift Analysis Service initialized (Line Chemistry ready)")
+
+	// Initialize Landing Page Analytics Service for enhanced physical play and zone control
+	fmt.Println("Initializing Landing Page Analytics Service (Enhanced Metrics Engine)...")
+	services.InitLandingPageService()
+	fmt.Println("✅ Landing Page Analytics Service initialized (Enhanced Metrics ready)")
+
+	// Initialize Game Summary Analytics Service for enhanced game context
+	fmt.Println("Initializing Game Summary Analytics Service (Enhanced Context Engine)...")
+	services.InitGameSummaryService()
+	fmt.Println("✅ Game Summary Analytics Service initialized (Enhanced Context ready)")
+
+	// Backfill play-by-play data for the configured team (last 10 games)
+	fmt.Printf("Backfilling xG data for %s (last 10 games)...\n", teamConfig.Code)
+	pbpService := services.GetPlayByPlayService()
+	if pbpService != nil {
+		go func() {
+			// Run backfill in background to not block server startup
+			if err := pbpService.BackfillPlayByPlayData(teamConfig.Code, 10); err != nil {
+				fmt.Printf("⚠️ Warning: Failed to backfill play-by-play data: %v\n", err)
+			} else {
+				fmt.Printf("✅ Play-by-Play backfill complete for %s\n", teamConfig.Code)
+			}
+		}()
+	}
+
 	// Initialize Live Prediction System for real-time model updates
 	fmt.Println("Initializing Live Prediction System...")
 	if err := services.InitializeLivePredictionSystem(teamConfig.Code); err != nil {
@@ -332,6 +366,11 @@ func main() {
 		fmt.Printf("✅ Schedule Context Service initialized\n")
 	}
 
+	// Pre-Game Lineup Service
+	fmt.Println("Initializing Pre-Game Lineup Service...")
+	services.InitPreGameLineupService(teamConfig.Code)
+	fmt.Println("✅ Pre-Game Lineup Service initialized (monitoring upcoming games)")
+
 	fmt.Println("🎉 Phase 4 services ready! Predictions now include:")
 	fmt.Println("   🥅 Goalie Intelligence (+3-4% accuracy)")
 	fmt.Println("   💰 Betting Market Data (+2-3% accuracy)")
@@ -394,6 +433,14 @@ func main() {
 	// Register prediction routes (available regardless of season status for testing)
 	http.HandleFunc("/api/prediction", handlers.HandleGamePrediction)
 	http.HandleFunc("/prediction-widget", handlers.HandlePredictionWidget)
+
+	// Pre-Game Lineup endpoints
+	http.HandleFunc("/api/lineup", handlers.HandleLineup)
+	http.HandleFunc("/lineup", handlers.HandleLineupHTML)
+
+	// Play-by-Play Analytics endpoints
+	http.HandleFunc("/api/backfill-pbp", handlers.HandleBackfillPlayByPlay)
+	http.HandleFunc("/api/pbp-stats", handlers.HandlePlayByPlayStats)
 
 	// Performance Metrics Dashboard endpoints
 	http.HandleFunc("/api/performance", handlers.PerformanceDashboardHandler)

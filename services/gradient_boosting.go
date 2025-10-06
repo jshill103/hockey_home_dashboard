@@ -70,12 +70,12 @@ func NewGradientBoostingModel() *GradientBoostingModel {
 		weight:            0.10, // 10% weight in ensemble
 		trained:           false,
 		dataDir:           dataDir,
-		featureNames:      make([]string, 65), // 65 features
+		featureNames:      make([]string, 111), // 111 features (including xG + shift + landing + summary metrics)
 		featureImportance: make(map[string]float64),
 	}
 
 	// Initialize feature names
-	for i := 0; i < 65; i++ {
+	for i := 0; i < 111; i++ {
 		gbm.featureNames[i] = fmt.Sprintf("feature_%d", i)
 	}
 
@@ -447,7 +447,7 @@ func (gbm *GradientBoostingModel) prepareTrainingData(games []models.CompletedGa
 
 // extractFeatures extracts 75 features from prediction factors
 func (gbm *GradientBoostingModel) extractFeatures(home, away *models.PredictionFactors) []float64 {
-	features := make([]float64, 75) // Expanded to 75 to include player intelligence
+	features := make([]float64, 111) // Expanded to 111 to include xG, play-by-play, shift, landing, and summary analytics
 
 	// Basic features (indices 0-9)
 	features[0] = home.WinPercentage
@@ -489,6 +489,50 @@ func (gbm *GradientBoostingModel) extractFeatures(home, away *models.PredictionF
 	features[72] = away.DepthForm / 10.0
 	features[73] = home.StarPowerEdge
 	features[74] = home.DepthEdge
+
+	// Play-by-Play Analytics: xG and Shot Quality (indices 75-92)
+	features[75] = home.ExpectedGoalsFor / 4.0
+	features[76] = away.ExpectedGoalsFor / 4.0
+	features[77] = home.ExpectedGoalsAgainst / 4.0
+	features[78] = away.ExpectedGoalsAgainst / 4.0
+	features[79] = home.XGDifferential / 2.0
+	features[80] = away.XGDifferential / 2.0
+	features[81] = home.XGPerShot / 0.15
+	features[82] = away.XGPerShot / 0.15
+	features[83] = home.DangerousShotsPerGame / 15.0
+	features[84] = away.DangerousShotsPerGame / 15.0
+	features[85] = home.HighDangerXG / 3.0
+	features[86] = away.HighDangerXG / 3.0
+	features[87] = home.ShotQualityAdvantage / 0.05
+	features[88] = home.CorsiForPct
+	features[89] = away.CorsiForPct
+	features[90] = home.FenwickForPct
+	features[91] = away.FenwickForPct
+	features[92] = home.FaceoffWinPct
+
+	// Shift Analysis: Line Chemistry & Coaching Tendencies (indices 93-100)
+	features[93] = home.AvgShiftLength / 60.0
+	features[94] = away.AvgShiftLength / 60.0
+	features[95] = home.LineConsistency
+	features[96] = away.LineConsistency
+	features[97] = home.ShortBench
+	features[98] = away.ShortBench
+	features[99] = home.FatigueIndicator
+	features[100] = away.FatigueIndicator
+
+	// Landing Page Analytics: Enhanced Physical Play & Zone Control (indices 101-104)
+	features[101] = home.TimeOnAttack / 30.0
+	features[102] = away.TimeOnAttack / 30.0
+	features[103] = home.ZoneControlRatio
+	features[104] = away.ZoneControlRatio
+
+	// Game Summary Analytics: Enhanced Game Context (indices 105-110)
+	features[105] = home.ShotQualityIndex
+	features[106] = away.ShotQualityIndex
+	features[107] = home.PowerPlayTime / 10.0
+	features[108] = away.PowerPlayTime / 10.0
+	features[109] = home.OffensiveZoneTime / 30.0
+	features[110] = away.OffensiveZoneTime / 30.0
 
 	return features
 }

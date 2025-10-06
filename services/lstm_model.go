@@ -89,6 +89,9 @@ func NewLSTMModel() *LSTMModel {
 	// Create data directory
 	os.MkdirAll(model.dataDir, 0755)
 
+	// Try to load existing model
+	model.loadModel()
+
 	// Try to load existing weights
 	if err := model.loadWeights(); err != nil {
 		log.Printf("🔄 Initializing new LSTM model (no saved weights found)")
@@ -437,8 +440,8 @@ func (lstm *LSTMModel) Train(games []models.CompletedGame) error {
 	log.Printf("✅ LSTM training complete!")
 	log.Printf("   Sequences: %d | Time: %.1fs", len(sequences), trainingTime.Seconds())
 
-	// Save model
-	if err := lstm.saveWeights(); err != nil {
+	// Save the trained model
+	if err := lstm.saveModel(); err != nil {
 		log.Printf("⚠️ Failed to save LSTM weights: %v", err)
 	}
 
@@ -728,5 +731,99 @@ func (lstm *LSTMModel) loadWeights() error {
 	lstm.trained = modelData.Trained
 	lstm.lastUpdated = modelData.LastUpdated
 
+	return nil
+}
+
+// loadModel loads the complete LSTM model from disk
+func (lstm *LSTMModel) loadModel() {
+	// Try to load weights first
+	if err := lstm.loadWeights(); err != nil {
+		log.Printf("🔄 No saved LSTM model found, initializing new model")
+		lstm.initializeWeights()
+		return
+	}
+
+	// Try to load game sequences
+	if err := lstm.loadGameSequences(); err != nil {
+		log.Printf("⚠️ Could not load LSTM game sequences: %v", err)
+		lstm.gameSequences = []GameSequence{}
+	}
+
+	log.Printf("✅ LSTM model loaded: %dx%d hidden, %d sequences, trained=%v",
+		lstm.hiddenSize, lstm.inputSize, len(lstm.gameSequences), lstm.trained)
+}
+
+// saveModel saves the complete LSTM model to disk
+func (lstm *LSTMModel) saveModel() error {
+	lstm.mutex.Lock()
+	defer lstm.mutex.Unlock()
+
+	// Save weights
+	if err := lstm.saveWeights(); err != nil {
+		return fmt.Errorf("failed to save LSTM weights: %w", err)
+	}
+
+	// Save game sequences
+	if err := lstm.saveGameSequences(); err != nil {
+		return fmt.Errorf("failed to save LSTM sequences: %w", err)
+	}
+
+	lstm.lastUpdated = time.Now()
+	return nil
+}
+
+// saveGameSequences saves game sequences to disk
+func (lstm *LSTMModel) saveGameSequences() error {
+	filePath := filepath.Join(lstm.dataDir, "lstm_sequences.json")
+
+	data := struct {
+		Sequences   []GameSequence `json:"sequences"`
+		LastUpdated time.Time      `json:"lastUpdated"`
+		Version     string         `json:"version"`
+	}{
+		Sequences:   lstm.gameSequences,
+		LastUpdated: time.Now(),
+		Version:     "1.0",
+	}
+
+	jsonData, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return fmt.Errorf("error marshaling LSTM sequences: %w", err)
+	}
+
+	err = os.WriteFile(filePath, jsonData, 0644)
+	if err != nil {
+		return fmt.Errorf("error writing LSTM sequences file: %w", err)
+	}
+
+	return nil
+}
+
+// loadGameSequences loads game sequences from disk
+func (lstm *LSTMModel) loadGameSequences() error {
+	filePath := filepath.Join(lstm.dataDir, "lstm_sequences.json")
+
+	// Check if file exists
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return fmt.Errorf("no saved sequences found")
+	}
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("error reading LSTM sequences: %w", err)
+	}
+
+	var sequenceData struct {
+		Sequences   []GameSequence `json:"sequences"`
+		LastUpdated time.Time      `json:"lastUpdated"`
+		Version     string         `json:"version"`
+	}
+
+	err = json.Unmarshal(data, &sequenceData)
+	if err != nil {
+		return fmt.Errorf("error unmarshaling LSTM sequences: %w", err)
+	}
+
+	lstm.gameSequences = sequenceData.Sequences
 	return nil
 }

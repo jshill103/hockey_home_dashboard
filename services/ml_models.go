@@ -29,7 +29,7 @@ type NeuralNetworkModel struct {
 
 // NewNeuralNetworkModel creates a new neural network prediction model
 func NewNeuralNetworkModel() *NeuralNetworkModel {
-	layers := []int{81, 32, 16, 3} // Input features (50 original + 15 Phase 4 + 10 Player + 6 Goalie), hidden layers, output (win/loss/ot)
+	layers := []int{111, 32, 16, 3} // Input features (50 original + 15 Phase 4 + 10 Player + 6 Goalie + 12 xG + 8 Shift + 4 Landing + 6 Summary), hidden layers, output (win/loss/ot)
 
 	model := &NeuralNetworkModel{
 		layers:       layers,
@@ -110,7 +110,7 @@ func (nn *NeuralNetworkModel) Predict(homeFactors, awayFactors *models.Predictio
 
 // extractFeatures converts prediction factors to neural network input
 func (nn *NeuralNetworkModel) extractFeatures(home, away *models.PredictionFactors) []float64 {
-	features := make([]float64, 81) // 81 input features (50 original + 15 Phase 4 + 10 Player + 6 Goalie)
+	features := make([]float64, 111) // 111 input features (50 original + 15 Phase 4 + 10 Player + 6 Goalie + 12 xG + 8 Shift + 4 Landing + 6 Summary)
 
 	// Basic team stats
 	features[0] = home.WinPercentage
@@ -256,6 +256,74 @@ func (nn *NeuralNetworkModel) extractFeatures(home, away *models.PredictionFacto
 	// Advanced Goalie Stats - Away (80)
 	// Saves Above Expected from AdvancedStats
 	features[80] = away.AdvancedStats.SavesAboveExpected
+
+	// ============================================================================
+	// PLAY-BY-PLAY ANALYTICS: EXPECTED GOALS & SHOT QUALITY (81-92) - 12 features
+	// ============================================================================
+
+	// Expected Goals (81-84)
+	features[81] = home.ExpectedGoalsFor / 4.0 // Normalize by ~max (4 xGF/game is elite)
+	features[82] = away.ExpectedGoalsFor / 4.0
+	features[83] = home.ExpectedGoalsAgainst / 4.0 // Normalize by ~max (4 xGA/game is poor)
+	features[84] = away.ExpectedGoalsAgainst / 4.0
+
+	// xG Differential & Shot Quality (85-88)
+	features[85] = home.XGDifferential / 2.0 // Normalize by typical range (-2 to +2)
+	features[86] = away.XGDifferential / 2.0
+	features[87] = home.XGPerShot / 0.15 // Normalize by ~max (0.15 xG/shot is elite)
+	features[88] = away.XGPerShot / 0.15
+
+	// Shot Quality Metrics (89-90)
+	features[89] = home.DangerousShotsPerGame / 15.0 // Normalize by ~max (15 high-danger/game)
+	features[90] = away.DangerousShotsPerGame / 15.0
+
+	// Advanced Possession Metrics (91-92)
+	features[91] = home.CorsiForPct // Already 0-1 (percentage)
+	features[92] = away.CorsiForPct
+
+	// ============================================================================
+	// SHIFT ANALYSIS: LINE CHEMISTRY & COACHING TENDENCIES (93-100) - 8 features
+	// ============================================================================
+
+	// Line Chemistry & Usage (93-96)
+	features[93] = home.AvgShiftLength / 60.0 // Normalize by ~max (60 seconds)
+	features[94] = away.AvgShiftLength / 60.0
+	features[95] = home.LineConsistency // Already 0-1
+	features[96] = away.LineConsistency
+
+	// Coaching Tendencies (97-100)
+	features[97] = home.ShortBench // Already 0-1
+	features[98] = away.ShortBench
+	features[99] = home.FatigueIndicator // Already 0-1
+	features[100] = away.FatigueIndicator
+
+	// ============================================================================
+	// LANDING PAGE ANALYTICS: ENHANCED PHYSICAL PLAY & ZONE CONTROL (101-104) - 4 features
+	// ============================================================================
+
+	// Zone Control & Time on Attack (101-102)
+	features[101] = home.TimeOnAttack / 30.0 // Normalize by ~max (30 min attack)
+	features[102] = away.TimeOnAttack / 30.0
+
+	// Zone Control & Special Teams (103-104)
+	features[103] = home.ZoneControlRatio // Already 0-1
+	features[104] = away.ZoneControlRatio
+
+	// ============================================================================
+	// GAME SUMMARY ANALYTICS: ENHANCED GAME CONTEXT (105-110) - 6 features
+	// ============================================================================
+
+	// Enhanced Shot Quality & Discipline (105-106)
+	features[105] = home.ShotQualityIndex // Already 0-1
+	features[106] = away.ShotQualityIndex
+
+	// Enhanced Special Teams Context (107-108)
+	features[107] = home.PowerPlayTime / 10.0 // Normalize by ~max (10 min PP/game)
+	features[108] = away.PowerPlayTime / 10.0
+
+	// Enhanced Zone Control Context (109-110)
+	features[109] = home.OffensiveZoneTime / 30.0 // Normalize by ~max (30 min/game)
+	features[110] = away.OffensiveZoneTime / 30.0
 
 	return features
 }

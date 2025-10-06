@@ -6,6 +6,7 @@ type ScheduleResponse struct {
 }
 
 type Game struct {
+	ID            int         `json:"id"`
 	GameDate      string      `json:"gameDate"`
 	StartTime     string      `json:"startTimeUTC"`
 	FormattedTime string      // Computed field for display

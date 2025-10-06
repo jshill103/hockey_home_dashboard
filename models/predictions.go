@@ -147,6 +147,74 @@ type PredictionFactors struct {
 	DepthForm       float64 `json:"depthForm"`       // 0-10 depth form
 	StarPowerEdge   float64 `json:"starPowerEdge"`   // -1 to +1 vs opponent
 	DepthEdge       float64 `json:"depthEdge"`       // -1 to +1 vs opponent
+
+	// ============================================================================
+	// PLAY-BY-PLAY ANALYTICS: EXPECTED GOALS & SHOT QUALITY (12 features)
+	// ============================================================================
+
+	// Expected Goals (xG)
+	ExpectedGoalsFor     float64 `json:"expectedGoalsFor"`     // xG per game
+	ExpectedGoalsAgainst float64 `json:"expectedGoalsAgainst"` // xGA per game
+	XGDifferential       float64 `json:"xgDifferential"`       // xGF - xGA
+	XGPerShot            float64 `json:"xgPerShot"`            // Shot quality index
+
+	// Shot Quality & Danger
+	DangerousShotsPerGame float64 `json:"dangerousShotsPerGame"` // High-danger chances
+	HighDangerXG          float64 `json:"highDangerXG"`          // xG from high-danger
+	ShotQualityAdvantage  float64 `json:"shotQualityAdvantage"`  // vs opponent
+
+	// Corsi & Fenwick
+	CorsiForPct   float64 `json:"corsiForPct"`   // Shot attempt %
+	FenwickForPct float64 `json:"fenwickForPct"` // Unblocked shot attempt %
+
+	// Physical & Possession
+	FaceoffWinPct     float64 `json:"faceoffWinPct"`     // Faceoff win %
+	PossessionRatio   float64 `json:"possessionRatio"`   // Takeaways / (Takeaways + Giveaways)
+	PhysicalPlayIndex float64 `json:"physicalPlayIndex"` // Hits + Blocks per game
+
+	// ============================================================================
+	// SHIFT ANALYSIS: LINE CHEMISTRY & COACHING TENDENCIES (8 features)
+	// ============================================================================
+
+	// Line Chemistry & Usage
+	AvgShiftLength  float64 `json:"avgShiftLength"`  // Average shift length (seconds)
+	LineConsistency float64 `json:"lineConsistency"` // 0-1 (higher = more stable lines)
+	TopLineMinutes  float64 `json:"topLineMinutes"`  // Top line average TOI
+	PlayersUsed     float64 `json:"playersUsed"`     // Roster depth usage
+
+	// Coaching Tendencies
+	ShortBench       float64 `json:"shortBench"`       // 0-1 (relies heavily on top players)
+	BalancedLines    float64 `json:"balancedLines"`    // 0-1 (even ice time distribution)
+	FatigueIndicator float64 `json:"fatigueIndicator"` // 0-1 (long shifts, overuse)
+	RollerCoaster    float64 `json:"rollerCoaster"`    // 0-1 (frequent line changes)
+
+	// ============================================================================
+	// LANDING PAGE ANALYTICS: ENHANCED PHYSICAL PLAY & ZONE CONTROL (4 features)
+	// ============================================================================
+
+	// Zone Control & Time on Attack
+	TimeOnAttack         float64 `json:"timeOnAttack"`         // Minutes per game
+	ZoneControlRatio     float64 `json:"zoneControlRatio"`     // Offensive / (Offensive + Defensive)
+	TransitionEfficiency float64 `json:"transitionEfficiency"` // Controlled entries / total transitions
+
+	// Special Teams Enhancement
+	SpecialTeamsIndex float64 `json:"specialTeamsIndex"` // Combined PP% + PK%
+
+	// ============================================================================
+	// GAME SUMMARY ANALYTICS: ENHANCED GAME CONTEXT (6 features)
+	// ============================================================================
+
+	// Enhanced Shot Quality & Discipline
+	ShotQualityIndex float64 `json:"shotQualityIndex"` // Weighted shot quality (0-1)
+	DisciplineIndex  float64 `json:"disciplineIndex"`  // Penalty discipline (lower = better)
+
+	// Enhanced Special Teams Context
+	PowerPlayTime   float64 `json:"powerPlayTime"`   // PP time per game (minutes)
+	PenaltyKillTime float64 `json:"penaltyKillTime"` // PK time per game (minutes)
+
+	// Enhanced Zone Control Context
+	OffensiveZoneTime float64 `json:"offensiveZoneTime"` // Offensive zone time per game
+	DefensiveZoneTime float64 `json:"defensiveZoneTime"` // Defensive zone time per game
 }
 
 // MarketAdjustment represents betting market influence on predictions

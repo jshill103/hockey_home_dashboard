@@ -48,6 +48,16 @@ func NewGoalieIntelligenceService() *GoalieIntelligenceService {
 
 // GetGoalieComparison analyzes goalie matchup for a game
 func (gis *GoalieIntelligenceService) GetGoalieComparison(homeTeam, awayTeam string, gameDate time.Time) (*models.GoalieComparison, error) {
+	return gis.GetGoalieComparisonWithConfirmed(homeTeam, awayTeam, gameDate, nil, nil)
+}
+
+// GetGoalieComparisonWithConfirmed analyzes goalie matchup with optional confirmed lineup data
+// Falls back to determineStarter() if confirmed goalies are nil or not found
+func (gis *GoalieIntelligenceService) GetGoalieComparisonWithConfirmed(
+	homeTeam, awayTeam string,
+	gameDate time.Time,
+	confirmedHomeGoalie, confirmedAwayGoalie *models.LineupGoalie,
+) (*models.GoalieComparison, error) {
 	gis.mutex.RLock()
 	defer gis.mutex.RUnlock()
 
@@ -58,9 +68,34 @@ func (gis *GoalieIntelligenceService) GetGoalieComparison(homeTeam, awayTeam str
 		return nil, fmt.Errorf("goalie depth not available for teams")
 	}
 
-	// Determine starting goalies
-	homeGoalie := gis.determineStarter(homeDepth, gameDate)
-	awayGoalie := gis.determineStarter(awayDepth, gameDate)
+	// Try to use confirmed lineup goalies, fall back to determination
+	var homeGoalie, awayGoalie *models.GoalieInfo
+
+	// Home goalie
+	if confirmedHomeGoalie != nil {
+		homeGoalie = gis.findGoalieByID(confirmedHomeGoalie.PlayerID)
+		if homeGoalie != nil {
+			log.Printf("🥅 Using CONFIRMED home starter: %s (#%d)",
+				confirmedHomeGoalie.PlayerName, confirmedHomeGoalie.SweaterNumber)
+		}
+	}
+	if homeGoalie == nil {
+		homeGoalie = gis.determineStarter(homeDepth, gameDate)
+		log.Printf("🎲 Using PREDICTED home starter (lineup not available)")
+	}
+
+	// Away goalie
+	if confirmedAwayGoalie != nil {
+		awayGoalie = gis.findGoalieByID(confirmedAwayGoalie.PlayerID)
+		if awayGoalie != nil {
+			log.Printf("🥅 Using CONFIRMED away starter: %s (#%d)",
+				confirmedAwayGoalie.PlayerName, confirmedAwayGoalie.SweaterNumber)
+		}
+	}
+	if awayGoalie == nil {
+		awayGoalie = gis.determineStarter(awayDepth, gameDate)
+		log.Printf("🎲 Using PREDICTED away starter (lineup not available)")
+	}
 
 	if homeGoalie == nil || awayGoalie == nil {
 		return nil, fmt.Errorf("could not determine starting goalies")
@@ -499,6 +534,30 @@ func (gis *GoalieIntelligenceService) saveGoalieData() error {
 	err = ioutil.WriteFile(filePath, jsonData, 0644)
 	if err != nil {
 		return fmt.Errorf("error writing goalies file: %w", err)
+	}
+
+	return nil
+}
+
+// findGoalieByID finds a goalie in the service's data by player ID
+// Note: This is a helper for integrating with pre-game lineup data
+func (gis *GoalieIntelligenceService) findGoalieByID(playerID int) *models.GoalieInfo {
+	// Search through all team depths to find the goalie
+	for _, depth := range gis.teamDepth {
+		if depth.Starter != nil && depth.Starter.PlayerID == playerID {
+			return depth.Starter
+		}
+		if depth.Backup != nil && depth.Backup.PlayerID == playerID {
+			return depth.Backup
+		}
+		if depth.StartingTonight != nil && depth.StartingTonight.PlayerID == playerID {
+			return depth.StartingTonight
+		}
+	}
+
+	// Also check the main goalies map
+	if goalie, exists := gis.goalies[playerID]; exists {
+		return goalie
 	}
 
 	return nil

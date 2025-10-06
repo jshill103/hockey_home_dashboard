@@ -53,6 +53,40 @@ func (ps *PredictionService) PredictNextGame() (*models.GamePrediction, error) {
 
 	fmt.Printf("📊 Updating team data for accurate predictions (Season: %s)...\n", utils.FormatSeason(currentSeason))
 
+	// 0. Check for pre-game lineup (starting goalies, scratches, etc.)
+	lineupService := GetPreGameLineupService()
+	var lineup *models.PreGameLineup
+	if lineupService != nil {
+		lineup, _ = lineupService.GetLineup(nextGame.ID)
+		if lineup != nil && lineup.IsAvailable {
+			fmt.Println("🏒 Pre-game lineup available! Using confirmed starters...")
+
+			// Log starting goalies
+			if lineup.HomeLineup != nil && lineup.HomeLineup.StartingGoalie != nil {
+				fmt.Printf("🥅 %s starting goalie: %s (#%d)\n",
+					homeTeam,
+					lineup.HomeLineup.StartingGoalie.PlayerName,
+					lineup.HomeLineup.StartingGoalie.SweaterNumber)
+			}
+			if lineup.AwayLineup != nil && lineup.AwayLineup.StartingGoalie != nil {
+				fmt.Printf("🥅 %s starting goalie: %s (#%d)\n",
+					awayTeam,
+					lineup.AwayLineup.StartingGoalie.PlayerName,
+					lineup.AwayLineup.StartingGoalie.SweaterNumber)
+			}
+
+			// Log scratches
+			if lineup.HomeLineup != nil && len(lineup.HomeLineup.Scratches) > 0 {
+				fmt.Printf("⚠️ %s scratches: %d player(s)\n", homeTeam, len(lineup.HomeLineup.Scratches))
+			}
+			if lineup.AwayLineup != nil && len(lineup.AwayLineup.Scratches) > 0 {
+				fmt.Printf("⚠️ %s scratches: %d player(s)\n", awayTeam, len(lineup.AwayLineup.Scratches))
+			}
+		} else {
+			fmt.Println("📋 Pre-game lineup not yet available (check closer to game time)")
+		}
+	}
+
 	// 1. Update Player Impact for both teams (with smart caching)
 	playerService := GetPlayerImpactService()
 	if playerService != nil {
@@ -117,6 +151,9 @@ func (ps *PredictionService) PredictNextGame() (*models.GamePrediction, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error getting away team factors: %v", err)
 	}
+
+	// Set game ID for lineup data integration
+	ps.ensembleService.SetGameID(nextGame.ID)
 
 	// Run ensemble prediction
 	prediction, err := ps.ensembleService.PredictGame(homeFactors, awayFactors)

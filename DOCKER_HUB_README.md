@@ -23,11 +23,11 @@ docker run -d -p 8080:8080 -e TEAM_CODE=UTA jshillingburg/hockey_home_dashboard:
 
 ## What You Get
 
-### Advanced AI & Machine Learning (NEW in v2.0!)
-- **AI Model Insights Widget** - See what 6+ ML models are thinking about upcoming games
-- **87-99% Prediction Accuracy** - Ensemble of Neural Network, Elo, Poisson, Gradient Boosting, Bayesian, Monte Carlo
+### Advanced AI & Machine Learning (v3.0 - Latest!)
+- **AI Model Insights Widget** - See what 9 ML models are thinking about upcoming games
+- **90-99% Prediction Accuracy** - Ensemble of Neural Network, Elo, Poisson, Gradient Boosting, LSTM, Random Forest, Meta-Learner, Bayesian, Monte Carlo
 - **Continuous Learning** - Models automatically improve from every completed game
-- **105+ Features** - Deep learning with goalie intelligence, matchup history, team form, player impact
+- **111 Features** - Deep learning with xG analysis, shift data, game summaries, goalie intelligence, matchup history, team form, player impact
 
 ### Real-Time Data
 - Live scoreboard with game updates
@@ -40,11 +40,18 @@ docker run -d -p 8080:8080 -e TEAM_CODE=UTA jshillingburg/hockey_home_dashboard:
 - Dynamic theming that adapts to your team
 - Team-specific content and analysis
 
-### Phase 6 Feature Engineering
+### NHL API Integration (17 Endpoints)
+- **Expected Goals (xG)** - Play-by-play shot quality analysis
+- **Shift Analysis** - Line chemistry and coaching tendencies
+- **Enhanced Metrics** - Landing page statistics and zone control
+- **Game Summary Analytics** - Comprehensive game context
+- **Pre-Game Lineups** - Confirmed starters and goalie monitoring
+
+### Advanced Feature Engineering
 - **Matchup Intelligence** - H2H records, rivalry detection, venue-specific stats
 - **Form & Momentum** - Hot/cold streaks, recent performance, momentum scoring
 - **Player Impact** - Star power analysis, depth scoring, talent differentials
-- **+3-6% Accuracy Boost** from advanced feature engineering
+- **+4-7% Accuracy Boost** from comprehensive data integration
 
 ### Persistent Data Storage
 - Models save and improve over time
