@@ -1,4 +1,4 @@
-# 🏒 NHL Team Dashboard - AI-Powered Hockey Analytics
+# NHL Team Dashboard - AI-Powered Hockey Analytics
 
 ![Docker Pulls](https://img.shields.io/docker/pulls/jshillingburg/hockey_home_dashboard?style=for-the-badge)
 ![Docker Image Size](https://img.shields.io/docker/image-size/jshillingburg/hockey_home_dashboard/latest?style=for-the-badge)
@@ -8,7 +8,7 @@
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
 # Run with your favorite team (replace UTA with any team code)
@@ -17,36 +17,36 @@ docker run -d -p 8080:8080 -e TEAM_CODE=UTA jshillingburg/hockey_home_dashboard:
 # Then open: http://localhost:8080
 ```
 
-**That's it!** 🎉 Your personalized NHL dashboard is ready!
+**That's it!** Your personalized NHL dashboard is ready!
 
 ---
 
-## ✨ What You Get
+## What You Get
 
-### 🤖 **Advanced AI & Machine Learning** (NEW in v2.0!)
+### Advanced AI & Machine Learning (NEW in v2.0!)
 - **AI Model Insights Widget** - See what 6+ ML models are thinking about upcoming games
 - **87-99% Prediction Accuracy** - Ensemble of Neural Network, Elo, Poisson, Gradient Boosting, Bayesian, Monte Carlo
 - **Continuous Learning** - Models automatically improve from every completed game
 - **105+ Features** - Deep learning with goalie intelligence, matchup history, team form, player impact
 
-### 📊 **Real-Time Data**
+### Real-Time Data
 - Live scoreboard with game updates
 - Current season standings
 - Schedule and countdown to next game
 - NHL news feed (auto-updates)
 
-### 🎯 **Team-Specific Experience**
+### Team-Specific Experience
 - **32 NHL Teams Supported** - Each with custom logos, backgrounds, and colors
 - Dynamic theming that adapts to your team
 - Team-specific content and analysis
 
-### 🧠 **Phase 6 Feature Engineering**
-- **📊 Matchup Intelligence** - H2H records, rivalry detection, venue-specific stats
-- **🔥 Form & Momentum** - Hot/cold streaks, recent performance, momentum scoring
-- **⭐ Player Impact** - Star power analysis, depth scoring, talent differentials
+### Phase 6 Feature Engineering
+- **Matchup Intelligence** - H2H records, rivalry detection, venue-specific stats
+- **Form & Momentum** - Hot/cold streaks, recent performance, momentum scoring
+- **Player Impact** - Star power analysis, depth scoring, talent differentials
 - **+3-6% Accuracy Boost** from advanced feature engineering
 
-### 💾 **Persistent Data Storage**
+### Persistent Data Storage
 - Models save and improve over time
 - Prediction accuracy history tracked
 - Historical game results stored
@@ -54,7 +54,7 @@ docker run -d -p 8080:8080 -e TEAM_CODE=UTA jshillingburg/hockey_home_dashboard:
 
 ---
 
-## 🏒 Supported Teams
+## Supported Teams
 
 All 32 NHL teams with custom assets and theming:
 
@@ -71,7 +71,7 @@ All 32 NHL teams with custom assets and theming:
 
 ---
 
-## 📖 Usage Examples
+## Usage Examples
 
 ### Single Team Dashboard
 ```bash
@@ -147,7 +147,7 @@ docker run -d \
 
 ---
 
-## 🐳 Docker Compose
+## Docker Compose
 
 Create a `docker-compose.yml` file:
 
@@ -179,7 +179,7 @@ docker-compose up -d
 
 ---
 
-## 🎯 Dashboard Features
+## Dashboard Features
 
 ### Main Dashboard
 - **Team Banner** - Dynamic team branding with logos and colors
@@ -187,7 +187,7 @@ docker-compose up -d
 - **Season Countdown** - Days until season start and next game
 - **Upcoming Schedule** - Next 7 days of games
 
-### AI Model Insights Widget (NEW! 🤖)
+### AI Model Insights Widget (NEW!)
 Shows what all ML models are predicting:
 - **Ensemble Prediction** - Combined prediction from all models with confidence
 - **Individual Models** - Breakdown by Elo, Poisson, Neural Network, etc.
@@ -213,7 +213,7 @@ Shows what all ML models are predicting:
 
 ---
 
-## 🧠 Machine Learning System
+## Machine Learning System
 
 ### Models in the Ensemble
 1. **Neural Network** (105 features, backpropagation)
@@ -224,14 +224,14 @@ Shows what all ML models are predicting:
 6. **Monte Carlo Simulation** (scenario modeling)
 
 ### Phase 4 Intelligence
-- 🥅 **Goalie Intelligence** - Save %, form, fatigue tracking
-- 💰 **Betting Market Integration** - Odds analysis, sharp money detection
-- 📅 **Schedule Context** - Travel, rest, back-to-backs
+- **Goalie Intelligence** - Save %, form, fatigue tracking
+- **Betting Market Integration** - Odds analysis, sharp money detection
+- **Schedule Context** - Travel, rest, back-to-backs
 
 ### Phase 6 Feature Engineering (+3-6% accuracy)
-- 📊 **Matchup Database** - 10 H2H features
-- 🔥 **Advanced Rolling Stats** - 20 form/momentum features
-- ⭐ **Player Impact** - 10 talent differential features
+- **Matchup Database** - 10 H2H features
+- **Advanced Rolling Stats** - 20 form/momentum features
+- **Player Impact** - 10 talent differential features
 
 ### Continuous Learning
 - Automatically processes completed games
@@ -241,7 +241,7 @@ Shows what all ML models are predicting:
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 ### Environment Variables
 
@@ -262,7 +262,7 @@ Shows what all ML models are predicting:
 
 ---
 
-## 📊 Data Persistence
+## Data Persistence
 
 When you mount the `/app/data` volume, these files are saved:
 
@@ -293,7 +293,7 @@ When you mount the `/app/data` volume, these files are saved:
 
 ---
 
-## 🔗 Links
+## Links
 
 - **GitHub Repository**: [jshill103/hockey_home_dashboard](https://github.com/jshill103/hockey_home_dashboard)
 - **Issues & Support**: [GitHub Issues](https://github.com/jshill103/hockey_home_dashboard/issues)
@@ -301,16 +301,16 @@ When you mount the `/app/data` volume, these files are saved:
 
 ---
 
-## 📈 Version History
+## Version History
 
 ### v2.0.0 (Latest) - AI Model Insights & Phase 6
-- ✨ NEW: AI Model Insights widget
-- 🧠 Phase 6 Feature Engineering (+3-6% accuracy)
-- 📊 Matchup Database with H2H history
-- 🔥 Advanced Rolling Statistics
-- ⭐ Player Impact Analysis
-- 💾 Complete data persistence
-- 🎯 Expected accuracy: 87-99%
+- NEW: AI Model Insights widget
+- Phase 6 Feature Engineering (+3-6% accuracy)
+- Matchup Database with H2H history
+- Advanced Rolling Statistics
+- Player Impact Analysis
+- Complete data persistence
+- Expected accuracy: 87-99%
 
 ### v1.x - Previous Releases
 - Initial release with basic predictions
@@ -320,7 +320,7 @@ When you mount the `/app/data` volume, these files are saved:
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please:
 1. Fork the repository
@@ -331,40 +331,36 @@ See [CONTRIBUTING.md](https://github.com/jshill103/hockey_home_dashboard/blob/ma
 
 ---
 
-## 📄 License
+## License
 
 MIT License - see [LICENSE](https://github.com/jshill103/hockey_home_dashboard/blob/main/LICENSE) for details.
 
 ---
 
-## 💬 Support
+## Support
 
-- 🐛 **Found a bug?** [Open an issue](https://github.com/jshill103/hockey_home_dashboard/issues)
-- 💡 **Feature request?** [Start a discussion](https://github.com/jshill103/hockey_home_dashboard/discussions)
-- ⭐ **Like the project?** Star it on GitHub!
+- **Found a bug?** [Open an issue](https://github.com/jshill103/hockey_home_dashboard/issues)
+- **Feature request?** [Start a discussion](https://github.com/jshill103/hockey_home_dashboard/discussions)
+- **Like the project?** Star it on GitHub!
 
 ---
 
-## 🏆 Built For Hockey Fans
+## Built For Hockey Fans
 
 This dashboard combines real-time NHL data with cutting-edge machine learning to provide the most accurate predictions and insights available. Whether you're tracking your favorite team or analyzing matchups, the AI-powered analytics give you a professional-grade view of every game.
 
 **Perfect for:**
-- 🏒 Die-hard hockey fans
-- 📊 Fantasy hockey players
-- 🎲 Sports analytics enthusiasts
-- 🤖 Machine learning hobbyists
-- 📈 Data visualization lovers
+- Die-hard hockey fans
+- Fantasy hockey players
+- Sports analytics enthusiasts
+- Machine learning hobbyists
+- Data visualization lovers
 
 ---
 
-<div align="center">
+### If you enjoy this project, please give it a star on GitHub!
 
-### ⭐ If you enjoy this project, please give it a star on GitHub! ⭐
+**Built with love for hockey fans everywhere!**
 
-**Built with ❤️ for hockey fans everywhere!**
-
-[GitHub](https://github.com/jshill103/hockey_home_dashboard) • [Docker Hub](https://hub.docker.com/r/jshillingburg/hockey_home_dashboard) • [Report Bug](https://github.com/jshill103/hockey_home_dashboard/issues) • [Request Feature](https://github.com/jshill103/hockey_home_dashboard/issues)
-
-</div>
+[GitHub](https://github.com/jshill103/hockey_home_dashboard) | [Docker Hub](https://hub.docker.com/r/jshillingburg/hockey_home_dashboard) | [Report Bug](https://github.com/jshill103/hockey_home_dashboard/issues) | [Request Feature](https://github.com/jshill103/hockey_home_dashboard/issues)
 
