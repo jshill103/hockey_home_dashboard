@@ -11,8 +11,33 @@ import (
 )
 
 // MakeAPICall makes a generic HTTP GET request to the specified URL
-// This function is rate-limited to prevent API abuse
+// This function is rate-limited to prevent API abuse and uses caching to reduce API calls
+// It also deduplicates concurrent requests for the same URL
 func MakeAPICall(urlIn string) ([]byte, error) {
+	// Check cache first
+	cache := GetAPICacheService()
+	if cache != nil {
+		if cachedData, found := cache.Get(urlIn); found {
+			fmt.Printf("✅ Cache HIT for: %s\n", urlIn)
+			return cachedData, nil
+		}
+		fmt.Printf("❌ Cache MISS for: %s\n", urlIn)
+	}
+
+	// Use request deduplication to prevent concurrent duplicate calls
+	deduplicator := GetRequestDeduplicator()
+	if deduplicator != nil {
+		return deduplicator.Do(urlIn, func() ([]byte, error) {
+			return makeAPICallInternal(urlIn, cache)
+		})
+	}
+
+	// Fallback if deduplicator not initialized
+	return makeAPICallInternal(urlIn, cache)
+}
+
+// makeAPICallInternal performs the actual API call
+func makeAPICallInternal(urlIn string, cache *APICacheService) ([]byte, error) {
 	// Rate limit BEFORE making the API call
 	rateLimiter := GetNHLRateLimiter()
 	rateLimiter.Wait()
@@ -52,6 +77,13 @@ func MakeAPICall(urlIn string) ([]byte, error) {
 	}
 
 	fmt.Printf("Response body length: %d bytes\n", len(body))
+
+	// Cache the response with appropriate TTL
+	if cache != nil {
+		ttl := GetTTLForEndpoint(urlIn)
+		cache.Set(urlIn, body, ttl)
+		fmt.Printf("💾 Cached response for %s (TTL: %s)\n", urlIn, ttl)
+	}
 
 	return body, nil
 }
@@ -253,10 +285,20 @@ func GetUHCScoreboard() (models.ScoreboardGame, error) {
 	return GetTeamScoreboard("UTA")
 }
 
-// GetStandings fetches the current NHL standings
+// GetStandings fetches the current NHL standings using the cache service
 func GetStandings() (models.StandingsResponse, error) {
-	fmt.Println("Fetching NHL standings...")
+	cache := GetStandingsCacheService()
+	if cache != nil {
+		standings, err := cache.GetStandings()
+		if err != nil {
+			fmt.Printf("Error fetching standings from cache: %v\n", err)
+			return models.StandingsResponse{}, err
+		}
+		return models.StandingsResponse{Standings: standings}, nil
+	}
 
+	// Fallback if cache service not initialized
+	fmt.Println("⚠️ Standings cache not initialized, using direct API call")
 	urlIn := "https://api-web.nhle.com/v1/standings/now"
 	body, err := MakeAPICall(urlIn)
 	if err != nil {
@@ -270,7 +312,6 @@ func GetStandings() (models.StandingsResponse, error) {
 		return models.StandingsResponse{}, err
 	}
 
-	fmt.Println("Successfully fetched NHL standings")
 	return data, nil
 }
 

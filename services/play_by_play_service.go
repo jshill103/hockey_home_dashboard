@@ -16,13 +16,14 @@ import (
 
 // PlayByPlayService analyzes play-by-play data and calculates advanced metrics
 type PlayByPlayService struct {
-	httpClient *http.Client
-	cache      map[int]*models.PlayByPlayCache // gameID -> cached analytics
-	cacheMu    sync.RWMutex
-	teamStats  map[string]*models.TeamPlayByPlayStats // teamCode -> rolling stats
-	statsMu    sync.RWMutex
-	dataDir    string
-	cacheTTL   time.Duration
+	httpClient      *http.Client
+	cache           map[int]*models.PlayByPlayCache // gameID -> cached analytics
+	cacheMu         sync.RWMutex
+	teamStats       map[string]*models.TeamPlayByPlayStats // teamCode -> rolling stats
+	statsMu         sync.RWMutex
+	dataDir         string
+	cacheTTL        time.Duration
+	systemStatsServ *SystemStatsService
 }
 
 var (
@@ -31,9 +32,9 @@ var (
 )
 
 // InitPlayByPlayService initializes the global play-by-play service
-func InitPlayByPlayService() {
+func InitPlayByPlayService(statsServ *SystemStatsService) {
 	playByPlayOnce.Do(func() {
-		playByPlayService = NewPlayByPlayService()
+		playByPlayService = NewPlayByPlayService(statsServ)
 		log.Println("✅ Play-by-Play Analytics Service initialized")
 	})
 }
@@ -63,18 +64,33 @@ func (pbp *PlayByPlayService) BackfillPlayByPlayData(teamCode string, numGames i
 		log.Printf("🏒 [%d/%d] Processing game %d: %s vs %s",
 			i+1, len(completedGames), game.ID, game.AwayTeam.Abbrev, game.HomeTeam.Abbrev)
 
+		startTime := time.Now()
+
 		// Fetch and analyze play-by-play
 		analytics, err := pbp.FetchPlayByPlay(game.ID)
 		if err != nil {
 			log.Printf("⚠️ Failed to fetch play-by-play for game %d: %v", game.ID, err)
 			failCount++
+			if pbp.systemStatsServ != nil {
+				pbp.systemStatsServ.RecordBackfillFailure()
+			}
 			continue
 		}
+
+		processingTime := time.Since(startTime)
+		eventsProcessed := analytics.HomeAnalytics.TotalShots + analytics.AwayAnalytics.TotalShots +
+			analytics.HomeAnalytics.Hits + analytics.AwayAnalytics.Hits +
+			analytics.HomeAnalytics.Giveaways + analytics.AwayAnalytics.Giveaways
 
 		log.Printf("✅ Processed game %d: %s %.2f xG vs %s %.2f xG",
 			game.ID,
 			analytics.HomeTeam, analytics.HomeAnalytics.ExpectedGoals,
 			analytics.AwayTeam, analytics.AwayAnalytics.ExpectedGoals)
+
+		// Record backfill stats
+		if pbp.systemStatsServ != nil {
+			pbp.systemStatsServ.RecordBackfillGame("play-by-play", eventsProcessed, processingTime)
+		}
 
 		successCount++
 
@@ -190,15 +206,16 @@ func (pbp *PlayByPlayService) BackfillAllTeams(numGames int) error {
 }
 
 // NewPlayByPlayService creates a new play-by-play service
-func NewPlayByPlayService() *PlayByPlayService {
+func NewPlayByPlayService(statsServ *SystemStatsService) *PlayByPlayService {
 	service := &PlayByPlayService{
 		httpClient: &http.Client{
 			Timeout: 20 * time.Second,
 		},
-		cache:     make(map[int]*models.PlayByPlayCache),
-		teamStats: make(map[string]*models.TeamPlayByPlayStats),
-		dataDir:   "data/play_by_play",
-		cacheTTL:  24 * time.Hour, // Cache for 24 hours
+		cache:           make(map[int]*models.PlayByPlayCache),
+		teamStats:       make(map[string]*models.TeamPlayByPlayStats),
+		dataDir:         "data/play_by_play",
+		cacheTTL:        24 * time.Hour, // Cache for 24 hours
+		systemStatsServ: statsServ,
 	}
 
 	// Create data directory

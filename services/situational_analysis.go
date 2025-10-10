@@ -634,15 +634,16 @@ func (sa *SituationalAnalyzer) getBasePredictionFactors(teamCode, opponentCode s
 		return nil, fmt.Errorf("team %s not found in standings", teamCode)
 	}
 
-	// Calculate basic factors
+	// Calculate basic factors with safe division to prevent NaN
+	gamesPlayed := float64(teamStanding.GamesPlayed)
 	factors := &models.PredictionFactors{
 		TeamCode:          teamCode,
-		WinPercentage:     float64(teamStanding.Wins) / float64(teamStanding.GamesPlayed),
+		WinPercentage:     safeDiv(float64(teamStanding.Wins), gamesPlayed, 0.5), // Default 50% if no games
 		HomeAdvantage:     sa.calculateHomeAdvantage(teamCode, isHome),
 		RecentForm:        sa.calculateAdvancedRecentForm(teamCode),
 		HeadToHead:        sa.calculateHeadToHead(teamCode, opponentCode),
-		GoalsFor:          float64(teamStanding.GoalFor) / float64(teamStanding.GamesPlayed),
-		GoalsAgainst:      float64(teamStanding.GoalAgainst) / float64(teamStanding.GamesPlayed),
+		GoalsFor:          safeDiv(float64(teamStanding.GoalFor), gamesPlayed, 2.8),     // League avg ~2.8 goals
+		GoalsAgainst:      safeDiv(float64(teamStanding.GoalAgainst), gamesPlayed, 2.8), // League avg
 		PowerPlayPct:      sa.estimatePowerPlayPct(teamCode),
 		PenaltyKillPct:    sa.estimatePenaltyKillPct(teamCode),
 		RestDays:          sa.calculateRestDays(teamCode),

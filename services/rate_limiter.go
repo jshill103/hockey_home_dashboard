@@ -71,6 +71,12 @@ func (rl *NHLRateLimiter) Wait() {
 	now := time.Now()
 	rl.totalRequests++
 
+	// Record API call in system stats
+	systemStatsServ := GetSystemStatsService()
+	if systemStatsServ != nil {
+		systemStatsServ.IncrementAPIRequest()
+	}
+
 	// Step 1: Clean old requests outside the time window
 	validRequests := make([]time.Time, 0, len(rl.requests))
 	for _, reqTime := range rl.requests {

@@ -787,7 +787,7 @@ func (eps *EnsemblePredictionService) combineWeightedPredictions(results []model
 		ensembleConfidence = calibratedConfidence
 	}
 
-	return &models.PredictionResult{
+	result := &models.PredictionResult{
 		Winner:         winner,
 		WinProbability: finalProb,
 		PredictedScore: predictedScore,
@@ -797,6 +797,102 @@ func (eps *EnsemblePredictionService) combineWeightedPredictions(results []model
 		ModelResults:   results,
 		EnsembleMethod: "Weighted Average with Cross-Validation",
 	}
+
+	// Record prediction for future accuracy tracking
+	systemStatsServ := GetSystemStatsService()
+	if systemStatsServ != nil && eps.gameID != 0 {
+		// Build model predictions map from results
+		modelPredictions := make(map[string]models.ModelPredictionRecord)
+		for _, modelResult := range results {
+			// Determine winner from win probability
+			modelWinner := homeFactors.TeamCode
+			if modelResult.WinProbability < 0.5 {
+				modelWinner = awayFactors.TeamCode
+			}
+			modelPredictions[modelResult.ModelName] = models.ModelPredictionRecord{
+				Winner:     modelWinner,
+				Score:      modelResult.PredictedScore,
+				Confidence: modelResult.Confidence,
+			}
+		}
+
+		systemStatsServ.RecordPrediction(
+			eps.gameID,
+			time.Now(),
+			homeFactors.TeamCode,
+			awayFactors.TeamCode,
+			winner,
+			predictedScore,
+			ensembleConfidence,
+			modelPredictions,
+		)
+	}
+
+	return result
+}
+
+// PredictGameWithRecovery wraps PredictGame with error recovery for graceful degradation
+func (eps *EnsemblePredictionService) PredictGameWithRecovery(homeFactors, awayFactors *models.PredictionFactors) (*models.PredictionResult, error) {
+	// Try to run the full prediction
+	result, err := eps.PredictGame(homeFactors, awayFactors)
+	if err == nil {
+		// Success - cache the prediction
+		cache := GetPredictionCache()
+		if cache != nil && eps.gameID != 0 {
+			// Calculate data quality score
+			dataQuality := eps.calculateDataQuality(homeFactors, awayFactors)
+
+			// Convert to GamePrediction for caching
+			// Note: GamePrediction stores a PredictionResult, not individual fields
+			gamePrediction := &models.GamePrediction{
+				Prediction:  *result,
+				Confidence:  result.Confidence,
+				GeneratedAt: time.Now(),
+			}
+
+			cache.CachePrediction(
+				eps.gameID,
+				homeFactors.TeamCode,
+				awayFactors.TeamCode,
+				gamePrediction,
+				dataQuality,
+				false, // Not degraded
+			)
+		}
+		return result, nil
+	}
+
+	// If prediction failed, log the error and return it
+	// The calling function will handle degradation
+	log.Printf("⚠️ Full prediction failed: %v", err)
+	return nil, err
+}
+
+// calculateDataQuality assesses the quality of data available for prediction
+func (eps *EnsemblePredictionService) calculateDataQuality(homeFactors, awayFactors *models.PredictionFactors) float64 {
+	quality := 1.0
+
+	// Reduce quality if using defaults
+	if homeFactors.WinPercentage == 0.5 && awayFactors.WinPercentage == 0.5 {
+		quality *= 0.8 // No real win % data
+	}
+
+	// Check player data availability
+	if homeFactors.TopScorerForm == 0 && awayFactors.TopScorerForm == 0 {
+		quality *= 0.85 // No player form data
+	}
+
+	// Check goalie data
+	if homeFactors.GoalieAdvantage == 0 && awayFactors.GoalieAdvantage == 0 {
+		quality *= 0.9 // Limited goalie intel
+	}
+
+	// Check advanced stats
+	if homeFactors.AdvancedStats.OverallRating == 50.0 && awayFactors.AdvancedStats.OverallRating == 50.0 {
+		quality *= 0.95 // Using default ratings
+	}
+
+	return quality
 }
 
 // RecordPredictionOutcome records the actual game outcome for dynamic weight adjustment

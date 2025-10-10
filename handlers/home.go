@@ -1947,6 +1947,209 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             font-style: italic;
             margin-left: 10px;
         }
+        
+        /* System Stats Popup Styles */
+        .stats-popup-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(5px);
+        }
+        
+        .stats-popup-overlay.active {
+            display: flex;
+        }
+        
+        .system-stats-popup {
+            background: linear-gradient(135deg, rgba(20, 30, 48, 0.98), rgba(30, 40, 60, 0.98));
+            border-radius: 16px;
+            padding: 0;
+            max-width: 800px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 50px rgba(0, 0, 0, 0.5);
+            border: 2px solid var(--team-primary);
+        }
+        
+        .stats-header {
+            background: linear-gradient(135deg, var(--team-primary), var(--team-primary-dark));
+            padding: 20px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-radius: 14px 14px 0 0;
+            border-bottom: 2px solid var(--team-accent);
+        }
+        
+        .stats-header h3 {
+            margin: 0;
+            font-size: 1.8em;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        
+        .close-popup {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            font-size: 1.5em;
+            cursor: pointer;
+            padding: 5px 12px;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+        
+        .close-popup:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(1.1);
+        }
+        
+        .stats-section {
+            padding: 25px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .stats-section:last-child {
+            border-bottom: none;
+        }
+        
+        .stats-section h4 {
+            font-size: 1.3em;
+            margin-bottom: 15px;
+            color: var(--team-accent);
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .stat-item {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 12px 15px;
+            border-radius: 8px;
+            border-left: 3px solid var(--team-primary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s ease;
+        }
+        
+        .stat-item:hover {
+            background: rgba(0, 0, 0, 0.5);
+            transform: translateX(5px);
+        }
+        
+        .stat-item.stat-highlight {
+            background: rgba(var(--team-primary-rgb), 0.2);
+            border-left-color: var(--team-accent);
+        }
+        
+        .stat-label {
+            font-weight: 600;
+            color: #aaa;
+            font-size: 0.9em;
+        }
+        
+        .stat-value {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: white;
+        }
+        
+        .stat-success {
+            color: #28a745;
+        }
+        
+        .stat-warning {
+            color: #ffc107;
+        }
+        
+        .model-stats {
+            margin-top: 15px;
+        }
+        
+        .model-stat-row {
+            display: grid;
+            grid-template-columns: 200px 1fr 80px 100px;
+            gap: 15px;
+            align-items: center;
+            padding: 10px 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            margin-bottom: 10px;
+            transition: all 0.3s ease;
+        }
+        
+        .model-stat-row:hover {
+            background: rgba(0, 0, 0, 0.5);
+        }
+        
+        .model-name {
+            font-weight: 600;
+            color: white;
+        }
+        
+        .model-accuracy-bar {
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 10px;
+            height: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .accuracy-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #28a745, #20c997);
+            border-radius: 10px;
+            transition: width 0.3s ease;
+        }
+        
+        .model-accuracy {
+            font-weight: bold;
+            color: #28a745;
+            text-align: right;
+        }
+        
+        .model-count {
+            color: #aaa;
+            font-size: 0.9em;
+            text-align: right;
+        }
+        
+        .stats-error {
+            color: #dc3545;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        /* Responsive popup */
+        @media (max-width: 768px) {
+            .system-stats-popup {
+                width: 95%;
+                max-height: 85vh;
+            }
+            
+            .model-stat-row {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+            
+            .model-accuracy-bar {
+                grid-column: 1;
+            }
+        }
     </style>
 </head>
 <body>
@@ -1968,7 +2171,7 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         </div>
         
         <div class="upcoming-games-section hockey-season-only">
-            <h2>🗓️ Upcoming Games</h2>
+            <h2>🗓️ Upcoming Games <span id="stats-calendar" style="cursor: pointer; font-size: 0.8em; margin-left: 10px;" title="View System Statistics">📅</span></h2>
             <div id="upcoming-games-content">
                 <p>Loading upcoming games...</p>
             </div>
@@ -2012,6 +2215,13 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             <div class="last-updated">
                 Analysis automatically updates every 30 minutes
             </div>
+        </div>
+    </div>
+    
+    <!-- System Stats Popup Overlay -->
+    <div class="stats-popup-overlay" id="statsPopupOverlay">
+        <div id="statsPopupContent">
+            <p style="color: white; text-align: center;">Loading stats...</p>
         </div>
     </div>
     
@@ -2500,6 +2710,46 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             }
         }
 
+        // System Stats Popup Functions
+        function openStatsPopup() {
+            const overlay = document.getElementById('statsPopupOverlay');
+            const content = document.getElementById('statsPopupContent');
+            
+            // Show overlay
+            overlay.classList.add('active');
+            
+            // Load stats
+            fetch('/system-stats-popup')
+                .then(response => response.text())
+                .then(html => {
+                    content.innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('Error loading system stats:', error);
+                    content.innerHTML = '<div class="stats-error">Failed to load statistics</div>';
+                });
+        }
+        
+        function closeStatsPopup() {
+            const overlay = document.getElementById('statsPopupOverlay');
+            overlay.classList.remove('active');
+        }
+        
+        // Close popup when clicking outside
+        document.addEventListener('click', function(event) {
+            const overlay = document.getElementById('statsPopupOverlay');
+            if (event.target === overlay) {
+                closeStatsPopup();
+            }
+        });
+        
+        // Close popup with Escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeStatsPopup();
+            }
+        });
+
         // Add click event listener to the newspaper emoji
         document.addEventListener('DOMContentLoaded', function() {
             const seasonToggle = document.getElementById('season-toggle');
@@ -2514,6 +2764,22 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
                 
                 seasonToggle.addEventListener('mouseout', function() {
                     seasonToggle.style.transform = 'scale(1)';
+                });
+            }
+            
+            // Add click event listener to the stats calendar emoji
+            const statsCalendar = document.getElementById('stats-calendar');
+            if (statsCalendar) {
+                statsCalendar.addEventListener('click', openStatsPopup);
+                
+                // Add hover effect
+                statsCalendar.addEventListener('mouseover', function() {
+                    statsCalendar.style.transform = 'scale(1.3)';
+                    statsCalendar.style.transition = 'transform 0.2s ease';
+                });
+                
+                statsCalendar.addEventListener('mouseout', function() {
+                    statsCalendar.style.transform = 'scale(1)';
                 });
             }
         });

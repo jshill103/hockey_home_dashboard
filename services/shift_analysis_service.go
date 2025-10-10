@@ -19,13 +19,14 @@ import (
 
 // ShiftAnalysisService analyzes player shifts and line combinations
 type ShiftAnalysisService struct {
-	httpClient  *http.Client
-	cache       map[int]*models.ShiftCache // gameID -> cached analytics
-	cacheMu     sync.RWMutex
-	teamHistory map[string]*models.TeamShiftHistory // teamCode -> history
-	historyMu   sync.RWMutex
-	dataDir     string
-	cacheTTL    time.Duration
+	httpClient      *http.Client
+	cache           map[int]*models.ShiftCache // gameID -> cached analytics
+	cacheMu         sync.RWMutex
+	teamHistory     map[string]*models.TeamShiftHistory // teamCode -> history
+	historyMu       sync.RWMutex
+	dataDir         string
+	cacheTTL        time.Duration
+	systemStatsServ *SystemStatsService
 }
 
 var (
@@ -34,9 +35,9 @@ var (
 )
 
 // InitShiftAnalysisService initializes the global shift analysis service
-func InitShiftAnalysisService() {
+func InitShiftAnalysisService(statsServ *SystemStatsService) {
 	shiftAnalysisOnce.Do(func() {
-		shiftAnalysisService = NewShiftAnalysisService()
+		shiftAnalysisService = NewShiftAnalysisService(statsServ)
 		log.Println("✅ Shift Analysis Service initialized")
 	})
 }
@@ -47,15 +48,16 @@ func GetShiftAnalysisService() *ShiftAnalysisService {
 }
 
 // NewShiftAnalysisService creates a new shift analysis service
-func NewShiftAnalysisService() *ShiftAnalysisService {
+func NewShiftAnalysisService(statsServ *SystemStatsService) *ShiftAnalysisService {
 	service := &ShiftAnalysisService{
 		httpClient: &http.Client{
 			Timeout: 20 * time.Second,
 		},
-		cache:       make(map[int]*models.ShiftCache),
-		teamHistory: make(map[string]*models.TeamShiftHistory),
-		dataDir:     "data/shifts",
-		cacheTTL:    24 * time.Hour,
+		cache:           make(map[int]*models.ShiftCache),
+		teamHistory:     make(map[string]*models.TeamShiftHistory),
+		dataDir:         "data/shifts",
+		cacheTTL:        24 * time.Hour,
+		systemStatsServ: statsServ,
 	}
 
 	// Create data directory
@@ -85,31 +87,34 @@ func (sas *ShiftAnalysisService) FetchShiftData(gameID int) (*models.ShiftAnalyt
 	// Fetch from NHL API
 	log.Printf("📥 Fetching shift data for game %d from NHL API...", gameID)
 
+	startTime := time.Now()
+
 	url := fmt.Sprintf("https://api-web.nhle.com/v1/gamecenter/%d/shifts", gameID)
 
-	// Use rate limiter
-	rateLimiter := GetNHLRateLimiter()
-	if rateLimiter != nil {
-		rateLimiter.Wait()
-	}
-
-	resp, err := sas.httpClient.Get(url)
+	// Use MakeAPICall for caching and rate limiting
+	body, err := MakeAPICall(url)
 	if err != nil {
+		// Record failure
+		if sas.systemStatsServ != nil {
+			sas.systemStatsServ.RecordBackfillFailure()
+		}
 		return nil, fmt.Errorf("failed to fetch shift data: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
 	}
 
 	var apiResp models.ShiftDataResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		// Record failure
+		if sas.systemStatsServ != nil {
+			sas.systemStatsServ.RecordBackfillFailure()
+		}
 		return nil, fmt.Errorf("failed to decode shift data: %w", err)
 	}
 
 	// Analyze the shift data
 	analytics := sas.analyzeShifts(&apiResp)
+
+	processingTime := time.Since(startTime)
+	shiftsProcessed := analytics.HomeAnalytics.TotalShifts + analytics.AwayAnalytics.TotalShifts
 
 	// Cache the results
 	sas.cacheMu.Lock()
@@ -129,8 +134,12 @@ func (sas *ShiftAnalysisService) FetchShiftData(gameID int) (*models.ShiftAnalyt
 		log.Printf("⚠️ Failed to save shift analytics: %v", err)
 	}
 
-	log.Printf("✅ Analyzed %d total shifts for game %d",
-		analytics.HomeAnalytics.TotalShifts+analytics.AwayAnalytics.TotalShifts, gameID)
+	// Record successful processing
+	if sas.systemStatsServ != nil {
+		sas.systemStatsServ.RecordBackfillGame("shift-data", shiftsProcessed, processingTime)
+	}
+
+	log.Printf("✅ Analyzed %d total shifts for game %d", shiftsProcessed, gameID)
 	return analytics, nil
 }
 

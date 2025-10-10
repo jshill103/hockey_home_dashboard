@@ -45,6 +45,10 @@ RUN mkdir -p /app/data/lineups \
     && mkdir -p /app/data/shifts \
     && mkdir -p /app/data/landing_page \
     && mkdir -p /app/data/game_summary
+# Prediction cache for graceful degradation
+RUN mkdir -p /app/data/cache/predictions
+# API response cache for performance optimization
+RUN mkdir -p /app/data/cache/api
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S appgroup && \

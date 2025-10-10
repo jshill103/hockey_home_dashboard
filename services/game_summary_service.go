@@ -15,13 +15,14 @@ import (
 
 // GameSummaryService analyzes game summary data for enhanced game context
 type GameSummaryService struct {
-	httpClient  *http.Client
-	cache       map[int]*models.GameSummaryCache // gameID -> cached analytics
-	cacheMu     sync.RWMutex
-	teamHistory map[string]*models.TeamSummaryHistory // teamCode -> history
-	historyMu   sync.RWMutex
-	dataDir     string
-	cacheTTL    time.Duration
+	httpClient      *http.Client
+	cache           map[int]*models.GameSummaryCache // gameID -> cached analytics
+	cacheMu         sync.RWMutex
+	teamHistory     map[string]*models.TeamSummaryHistory // teamCode -> history
+	historyMu       sync.RWMutex
+	dataDir         string
+	cacheTTL        time.Duration
+	systemStatsServ *SystemStatsService
 }
 
 var (
@@ -30,9 +31,9 @@ var (
 )
 
 // InitGameSummaryService initializes the global game summary service
-func InitGameSummaryService() {
+func InitGameSummaryService(statsServ *SystemStatsService) {
 	gameSummaryOnce.Do(func() {
-		gameSummaryService = NewGameSummaryService()
+		gameSummaryService = NewGameSummaryService(statsServ)
 		log.Println("✅ Game Summary Analytics Service initialized")
 	})
 }
@@ -43,15 +44,16 @@ func GetGameSummaryService() *GameSummaryService {
 }
 
 // NewGameSummaryService creates a new game summary service
-func NewGameSummaryService() *GameSummaryService {
+func NewGameSummaryService(statsServ *SystemStatsService) *GameSummaryService {
 	service := &GameSummaryService{
 		httpClient: &http.Client{
 			Timeout: 20 * time.Second,
 		},
-		cache:       make(map[int]*models.GameSummaryCache),
-		teamHistory: make(map[string]*models.TeamSummaryHistory),
-		dataDir:     "data/game_summary",
-		cacheTTL:    24 * time.Hour,
+		cache:           make(map[int]*models.GameSummaryCache),
+		teamHistory:     make(map[string]*models.TeamSummaryHistory),
+		dataDir:         "data/game_summary",
+		cacheTTL:        24 * time.Hour,
+		systemStatsServ: statsServ,
 	}
 
 	// Create data directory
@@ -81,31 +83,36 @@ func (gss *GameSummaryService) FetchGameSummaryData(gameID int) (*models.GameSum
 	// Fetch from NHL API
 	log.Printf("📥 Fetching game summary data for game %d from NHL API...", gameID)
 
+	startTime := time.Now()
+
 	url := fmt.Sprintf("https://api-web.nhle.com/v1/gamecenter/%d/summary", gameID)
 
-	// Use rate limiter
-	rateLimiter := GetNHLRateLimiter()
-	if rateLimiter != nil {
-		rateLimiter.Wait()
-	}
-
-	resp, err := gss.httpClient.Get(url)
+	// Use MakeAPICall for caching and rate limiting
+	body, err := MakeAPICall(url)
 	if err != nil {
+		// Record failure
+		if gss.systemStatsServ != nil {
+			gss.systemStatsServ.RecordBackfillFailure()
+		}
 		return nil, fmt.Errorf("failed to fetch game summary data: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
 	}
 
 	var apiResp models.GameSummaryResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		// Record failure
+		if gss.systemStatsServ != nil {
+			gss.systemStatsServ.RecordBackfillFailure()
+		}
 		return nil, fmt.Errorf("failed to decode game summary data: %w", err)
 	}
 
 	// Analyze the game summary data
 	analytics := gss.analyzeGameSummary(&apiResp)
+
+	processingTime := time.Since(startTime)
+	// Count metrics processed (shots, hits, penalties, etc.)
+	metricsProcessed := analytics.HomeAnalytics.ShotQualityIndex + analytics.AwayAnalytics.ShotQualityIndex +
+		analytics.HomeAnalytics.DisciplineIndex + analytics.AwayAnalytics.DisciplineIndex
 
 	// Cache the results
 	gss.cacheMu.Lock()
@@ -123,6 +130,11 @@ func (gss *GameSummaryService) FetchGameSummaryData(gameID int) (*models.GameSum
 	// Save to disk
 	if err := gss.saveAnalytics(analytics); err != nil {
 		log.Printf("⚠️ Failed to save game summary analytics: %v", err)
+	}
+
+	// Record successful processing
+	if gss.systemStatsServ != nil {
+		gss.systemStatsServ.RecordBackfillGame("game-summary", int(metricsProcessed), processingTime)
 	}
 
 	log.Printf("✅ Analyzed game summary data for game %d: %s vs %s",

@@ -218,14 +218,39 @@ func main() {
 	fmt.Println("Initializing AI prediction service...")
 	handlers.InitPredictions(teamConfig.Code)
 
+	// Initialize System Stats Service BEFORE other services that use it
+	fmt.Println("\n📊 Initializing System Statistics Service...")
+	systemStatsService := services.NewSystemStatsService()
+	handlers.InitSystemStatsService(systemStatsService)
+
+	// Initialize API Cache Service for NHL API response caching
+	fmt.Println("💾 Initializing API Cache Service...")
+	services.InitAPICacheService()
+	fmt.Println("✅ API Cache Service initialized")
+
+	// Initialize Standings Cache Service to reduce redundant API calls
+	fmt.Println("📊 Initializing Standings Cache Service...")
+	services.InitStandingsCacheService()
+	fmt.Println("✅ Standings Cache Service initialized")
+
+	// Initialize Request Deduplicator to prevent concurrent duplicate API calls
+	fmt.Println("🔄 Initializing Request Deduplicator...")
+	services.InitRequestDeduplicator()
+	fmt.Println("✅ Request Deduplicator initialized")
+
+	// Initialize Health Check Service
+	fmt.Println("🏥 Initializing Health Check Service...")
+	services.InitHealthCheckService("v1.0.0")
+	fmt.Println("✅ Health Check Service initialized")
+
 	// Initialize Play-by-Play Analytics Service for xG and shot quality metrics
 	fmt.Println("Initializing Play-by-Play Analytics Service (xG Engine)...")
-	services.InitPlayByPlayService()
+	services.InitPlayByPlayService(systemStatsService)
 	fmt.Println("✅ Play-by-Play Analytics Service initialized (Expected Goals ready)")
 
 	// Initialize Shift Analysis Service for line chemistry and coaching tendencies
 	fmt.Println("Initializing Shift Analysis Service (Line Chemistry Engine)...")
-	services.InitShiftAnalysisService()
+	services.InitShiftAnalysisService(systemStatsService)
 	fmt.Println("✅ Shift Analysis Service initialized (Line Chemistry ready)")
 
 	// Initialize Landing Page Analytics Service for enhanced physical play and zone control
@@ -235,7 +260,7 @@ func main() {
 
 	// Initialize Game Summary Analytics Service for enhanced game context
 	fmt.Println("Initializing Game Summary Analytics Service (Enhanced Context Engine)...")
-	services.InitGameSummaryService()
+	services.InitGameSummaryService(systemStatsService)
 	fmt.Println("✅ Game Summary Analytics Service initialized (Enhanced Context ready)")
 
 	// Backfill play-by-play data for the configured team (last 10 games)
@@ -447,6 +472,10 @@ func main() {
 	http.HandleFunc("/api/metrics", handlers.ModelMetricsHandler)
 	http.HandleFunc("/api/rate-limiter", handlers.HandleRateLimiterMetrics)
 	http.HandleFunc("/health", handlers.HandleHealth)
+
+	// System Statistics endpoints
+	http.HandleFunc("/system-stats", handlers.HandleSystemStats)
+	http.HandleFunc("/system-stats-popup", handlers.HandleSystemStatsPopup)
 	http.HandleFunc("/api/health", handlers.HandleHealth) // Alternative endpoint
 
 	// Live Prediction System management endpoints
@@ -470,6 +499,17 @@ func main() {
 	go func() {
 		<-c
 		fmt.Println("\n🛑 Shutting down server...")
+
+		// Save API cache before shutdown
+		apiCache := services.GetAPICacheService()
+		if apiCache != nil {
+			fmt.Println("💾 Saving API cache...")
+			if err := apiCache.SaveCache(); err != nil {
+				fmt.Printf("⚠️ Warning: Failed to save API cache: %v\n", err)
+			} else {
+				fmt.Println("✅ API cache saved")
+			}
+		}
 
 		// Stop the game results service
 		if err := services.StopGameResultsService(); err != nil {

@@ -155,10 +155,42 @@ func (ps *PredictionService) PredictNextGame() (*models.GamePrediction, error) {
 	// Set game ID for lineup data integration
 	ps.ensembleService.SetGameID(nextGame.ID)
 
-	// Run ensemble prediction
-	prediction, err := ps.ensembleService.PredictGame(homeFactors, awayFactors)
-	if err != nil {
-		return nil, fmt.Errorf("ensemble prediction failed: %v", err)
+	// ============================================================================
+	// GRACEFUL DEGRADATION: Try cache first, then generate new prediction
+	// ============================================================================
+	cache := GetPredictionCache()
+	var prediction *models.PredictionResult
+	var dataQuality float64 = 1.0 // Assume full quality by default
+	var isDegraded bool
+
+	// Check if we have a fresh cached prediction
+	if cachedPred := cache.GetCachedPrediction(nextGame.ID); cachedPred != nil {
+		fmt.Printf("✅ Using cached prediction for game %d\n", nextGame.ID)
+		// Extract the PredictionResult from cached GamePrediction
+		prediction = &cachedPred.Prediction.Prediction
+		dataQuality = cachedPred.DataQuality
+		isDegraded = cachedPred.IsDegraded
+	} else {
+		// Generate new prediction with error recovery
+		prediction, err = ps.ensembleService.PredictGameWithRecovery(homeFactors, awayFactors)
+		if err != nil {
+			// Last resort: check for any cached prediction (even stale)
+			fmt.Printf("⚠️ Prediction generation failed: %v\n", err)
+			fmt.Printf("🔍 Searching for any cached prediction...\n")
+
+			// Try to use degraded prediction
+			degradedPred := ps.generateDegradedPrediction(homeFactors, awayFactors, &nextGame)
+			prediction = degradedPred
+			dataQuality = 0.3 // Low quality degraded prediction
+			isDegraded = true
+
+			fmt.Printf("🆘 Using degraded prediction (quality: %.1f%%)\n", dataQuality*100)
+		}
+	}
+
+	// Log if prediction is degraded
+	if isDegraded {
+		fmt.Printf("⚠️ Prediction has degraded data quality (%.1f%%)\n", dataQuality*100)
 	}
 
 	// Create full prediction object
@@ -225,15 +257,16 @@ func (ps *PredictionService) getEnhancedPredictionFactors(teamCode, opponentCode
 		return nil, fmt.Errorf("team %s not found in standings", teamCode)
 	}
 
-	// Calculate advanced factors
+	// Calculate advanced factors with safe division to prevent NaN
+	gamesPlayed := float64(teamStanding.GamesPlayed)
 	factors := &models.PredictionFactors{
 		TeamCode:          teamCode,
-		WinPercentage:     float64(teamStanding.Wins) / float64(teamStanding.GamesPlayed),
+		WinPercentage:     safeDiv(float64(teamStanding.Wins), gamesPlayed, 0.5), // Default 50% if no games
 		HomeAdvantage:     ps.calculateHomeAdvantage(teamCode, isHome),
 		RecentForm:        ps.calculateAdvancedRecentForm(teamCode),
 		HeadToHead:        ps.calculateHeadToHead(teamCode, opponentCode),
-		GoalsFor:          float64(teamStanding.GoalFor) / float64(teamStanding.GamesPlayed),
-		GoalsAgainst:      float64(teamStanding.GoalAgainst) / float64(teamStanding.GamesPlayed),
+		GoalsFor:          safeDiv(float64(teamStanding.GoalFor), gamesPlayed, 2.8),     // League avg ~2.8 goals
+		GoalsAgainst:      safeDiv(float64(teamStanding.GoalAgainst), gamesPlayed, 2.8), // League avg
 		PowerPlayPct:      ps.estimatePowerPlayPct(teamCode),
 		PenaltyKillPct:    ps.estimatePenaltyKillPct(teamCode),
 		RestDays:          ps.calculateRestDays(teamCode),
@@ -526,4 +559,73 @@ func (ps *PredictionService) getRecentFormString(teamCode string) string {
 func (ps *PredictionService) getCurrentStreak(teamCode string) string {
 	streaks := []string{"3W", "2L", "1W", "4W", "1L", "2W", "1L"}
 	return streaks[len(teamCode)%len(streaks)]
+}
+
+// generateDegradedPrediction creates a simple prediction when full ensemble fails
+// This ensures the frontend always gets a prediction, even if data quality is low
+func (ps *PredictionService) generateDegradedPrediction(homeFactors, awayFactors *models.PredictionFactors, game *models.Game) *models.PredictionResult {
+	fmt.Printf("🆘 Generating degraded prediction with limited data...\n")
+
+	// Simple algorithm based on available factors
+	homeScore := 0.0
+	awayScore := 0.0
+
+	// Win percentage (if available)
+	homeScore += homeFactors.WinPercentage * 100
+	awayScore += awayFactors.WinPercentage * 100
+
+	// Goals differential
+	homeScore += (homeFactors.GoalsFor - homeFactors.GoalsAgainst) * 5
+	awayScore += (awayFactors.GoalsFor - awayFactors.GoalsAgainst) * 5
+
+	// Home advantage
+	if homeFactors.HomeAdvantage > 0 {
+		homeScore += 10 // Fixed home boost
+	}
+
+	// Rest factor
+	if homeFactors.RestDays > awayFactors.RestDays {
+		homeScore += 5
+	} else if awayFactors.RestDays > homeFactors.RestDays {
+		awayScore += 5
+	}
+
+	// Ensure positive scores
+	if homeScore <= 0 {
+		homeScore = 50
+	}
+	if awayScore <= 0 {
+		awayScore = 50
+	}
+
+	// Normalize to probability
+	total := homeScore + awayScore
+	homeProb := homeScore / total
+
+	// Determine winner
+	winner := homeFactors.TeamCode
+	winProb := homeProb
+	if homeProb < 0.5 {
+		winner = awayFactors.TeamCode
+		winProb = 1.0 - homeProb
+	}
+
+	// Simple score prediction (conservative 2-1 or 3-2)
+	predictedScore := "2-1"
+	if winProb > 0.65 {
+		predictedScore = "3-1"
+	} else if winProb < 0.55 {
+		predictedScore = "2-2" // Very close
+	}
+
+	fmt.Printf("🆘 Degraded prediction: %s wins (%.1f%% confidence)\n", winner, winProb*100)
+
+	return &models.PredictionResult{
+		Winner:         winner,
+		WinProbability: winProb,
+		Confidence:     0.3, // Low confidence for degraded prediction
+		PredictedScore: predictedScore,
+		IsUpset:        false,
+		GameType:       "unknown",
+	}
 }

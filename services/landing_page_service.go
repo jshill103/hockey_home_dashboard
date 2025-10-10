@@ -83,24 +83,14 @@ func (lps *LandingPageService) FetchLandingPageData(gameID int) (*models.Landing
 
 	url := fmt.Sprintf("https://api-web.nhle.com/v1/gamecenter/%d/landing", gameID)
 
-	// Use rate limiter
-	rateLimiter := GetNHLRateLimiter()
-	if rateLimiter != nil {
-		rateLimiter.Wait()
-	}
-
-	resp, err := lps.httpClient.Get(url)
+	// Use MakeAPICall for caching and rate limiting
+	body, err := MakeAPICall(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch landing page data: %w", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
-	}
 
 	var apiResp models.LandingPageResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+	if err := json.Unmarshal(body, &apiResp); err != nil {
 		return nil, fmt.Errorf("failed to decode landing page data: %w", err)
 	}
 
