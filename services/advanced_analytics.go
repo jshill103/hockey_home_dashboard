@@ -101,13 +101,35 @@ func (s *AdvancedAnalyticsService) calculateAdvancedAnalytics(team *models.TeamS
 	// Determine strengths and weaknesses
 	strengths, weaknesses := s.analyzeStrengthsWeaknesses(team, xgForPerGame, xgAgainstPerGame, corsiForPct)
 
+	// Safeguard: Calculate shooting talent safely
+	shootingTalent := 0.0
+	if xgForPerGame > 0.01 {
+		shootingTalent = (goalsFor/gamesPlayed - xgForPerGame) / xgForPerGame
+		// Clamp to reasonable range
+		shootingTalent = math.Max(-1.0, math.Min(1.0, shootingTalent))
+	}
+	if math.IsNaN(shootingTalent) || math.IsInf(shootingTalent, 0) {
+		shootingTalent = 0.0
+	}
+
+	// Safeguard: Calculate goaltending talent safely
+	goaltendingTalent := 0.0
+	if xgAgainstPerGame > 0.01 {
+		goaltendingTalent = (xgAgainstPerGame - goalsAgainst/gamesPlayed) / xgAgainstPerGame
+		// Clamp to reasonable range
+		goaltendingTalent = math.Max(-1.0, math.Min(1.0, goaltendingTalent))
+	}
+	if math.IsNaN(goaltendingTalent) || math.IsInf(goaltendingTalent, 0) {
+		goaltendingTalent = 0.0
+	}
+
 	return &models.AdvancedAnalytics{
 		// Expected Goals Performance
 		XGForPerGame:      xgForPerGame,
 		XGAgainstPerGame:  xgAgainstPerGame,
 		XGDifferential:    xgForPerGame - xgAgainstPerGame,
-		ShootingTalent:    (goalsFor/gamesPlayed - xgForPerGame) / xgForPerGame,
-		GoaltendingTalent: (xgAgainstPerGame - goalsAgainst/gamesPlayed) / xgAgainstPerGame,
+		ShootingTalent:    shootingTalent,
+		GoaltendingTalent: goaltendingTalent,
 
 		// Possession Dominance
 		CorsiForPct:       corsiForPct,

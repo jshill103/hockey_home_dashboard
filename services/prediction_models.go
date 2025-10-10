@@ -40,15 +40,55 @@ func (m *StatisticalModel) Predict(homeFactors, awayFactors *models.PredictionFa
 	homeScore := m.calculateAdvancedScore(homeFactors, true)
 	awayScore := m.calculateAdvancedScore(awayFactors, false)
 
+	// Safeguard: Ensure scores are valid numbers
+	if math.IsNaN(homeScore) || math.IsInf(homeScore, 0) {
+		homeScore = 50.0 // Default neutral score
+	}
+	if math.IsNaN(awayScore) || math.IsInf(awayScore, 0) {
+		awayScore = 50.0 // Default neutral score
+	}
+
+	// Ensure scores are positive
+	if homeScore <= 0 {
+		homeScore = 0.1
+	}
+	if awayScore <= 0 {
+		awayScore = 0.1
+	}
+
 	// Normalize scores to get probability
 	totalScore := homeScore + awayScore
+
+	// Safeguard: Prevent division by zero
+	if totalScore <= 0 || math.IsNaN(totalScore) || math.IsInf(totalScore, 0) {
+		totalScore = 100.0
+		homeScore = 50.0
+		awayScore = 50.0
+	}
+
 	homeWinProb := homeScore / totalScore
+
+	// Safeguard: Ensure probability is valid
+	if math.IsNaN(homeWinProb) || math.IsInf(homeWinProb, 0) {
+		homeWinProb = 0.5 // Default to 50-50
+	}
+
+	// Clamp probability to valid range [0, 1]
+	homeWinProb = math.Max(0.0, math.Min(1.0, homeWinProb))
 
 	// Determine predicted score with more realistic distribution
 	homeGoals, awayGoals := m.predictRealisticScore(homeFactors, awayFactors, homeWinProb)
 
 	// Confidence based on score difference and data quality
 	confidence := m.calculateConfidence(homeScore, awayScore, homeFactors, awayFactors)
+
+	// Safeguard: Ensure confidence is valid
+	if math.IsNaN(confidence) || math.IsInf(confidence, 0) || confidence < 0 {
+		confidence = 0.5 // Default moderate confidence
+	}
+
+	// Clamp confidence to valid range [0, 1]
+	confidence = math.Max(0.0, math.Min(1.0, confidence))
 
 	// Determine final probability (for the home team)
 	if homeWinProb < 0.5 {
@@ -305,15 +345,49 @@ func (m *BayesianModel) Predict(homeFactors, awayFactors *models.PredictionFacto
 	homeLikelihood := m.calculateLikelihood(homeFactors, true)
 	awayLikelihood := m.calculateLikelihood(awayFactors, false)
 
+	// Safeguard: Ensure likelihoods are valid
+	if math.IsNaN(homeLikelihood) || math.IsInf(homeLikelihood, 0) || homeLikelihood <= 0 {
+		homeLikelihood = 0.5
+	}
+	if math.IsNaN(awayLikelihood) || math.IsInf(awayLikelihood, 0) || awayLikelihood <= 0 {
+		awayLikelihood = 0.5
+	}
+
+	// Clamp likelihoods to reasonable range
+	homeLikelihood = math.Max(0.01, math.Min(2.0, homeLikelihood))
+	awayLikelihood = math.Max(0.01, math.Min(2.0, awayLikelihood))
+
 	// Bayes' theorem: P(Home Win | Evidence) = P(Evidence | Home Win) * P(Home Win) / P(Evidence)
 	evidence := homeLikelihood*priorHomeWin + awayLikelihood*(1-priorHomeWin)
+
+	// Safeguard: Prevent division by zero in Bayes' theorem
+	if evidence <= 0 || math.IsNaN(evidence) || math.IsInf(evidence, 0) {
+		evidence = 1.0
+	}
+
 	posteriorHomeWin := (homeLikelihood * priorHomeWin) / evidence
+
+	// Safeguard: Ensure posterior is valid
+	if math.IsNaN(posteriorHomeWin) || math.IsInf(posteriorHomeWin, 0) {
+		posteriorHomeWin = 0.5
+	}
+
+	// Clamp posterior to valid range [0, 1]
+	posteriorHomeWin = math.Max(0.0, math.Min(1.0, posteriorHomeWin))
 
 	// Predict score using Bayesian expectations
 	homeGoals, awayGoals := m.bayesianScorePrediction(homeFactors, awayFactors, posteriorHomeWin)
 
 	// Confidence from Bayesian credible interval
 	confidence := m.calculateBayesianConfidence(posteriorHomeWin, evidence)
+
+	// Safeguard: Ensure confidence is valid
+	if math.IsNaN(confidence) || math.IsInf(confidence, 0) || confidence < 0 {
+		confidence = 0.5
+	}
+
+	// Clamp confidence to valid range [0, 1]
+	confidence = math.Max(0.0, math.Min(1.0, confidence))
 
 	// Determine final probability (for the home team)
 	if posteriorHomeWin < 0.5 {
@@ -334,16 +408,53 @@ func (m *BayesianModel) calculateLikelihood(factors *models.PredictionFactors, i
 	// Calculate how likely the current evidence is given team performance
 	likelihood := factors.WinPercentage
 
+	// Safeguard: Ensure win percentage is valid
+	if math.IsNaN(likelihood) || math.IsInf(likelihood, 0) {
+		likelihood = 0.5
+	}
+	likelihood = math.Max(0.0, math.Min(1.0, likelihood))
+
 	// Weight recent performance more heavily (Bayesian updating)
-	likelihood = 0.7*likelihood + 0.3*factors.RecentForm
+	recentForm := factors.RecentForm
+	if math.IsNaN(recentForm) || math.IsInf(recentForm, 0) {
+		recentForm = 0.5
+	}
+	recentForm = math.Max(0.0, math.Min(1.0, recentForm))
+	likelihood = 0.7*likelihood + 0.3*recentForm
 
 	// Incorporate goal differential with uncertainty
-	goalFactor := 1.0 + (factors.GoalsFor-factors.GoalsAgainst)/10.0
+	goalsFor := factors.GoalsFor
+	goalsAgainst := factors.GoalsAgainst
+	if math.IsNaN(goalsFor) || math.IsInf(goalsFor, 0) {
+		goalsFor = 2.8 // League average
+	}
+	if math.IsNaN(goalsAgainst) || math.IsInf(goalsAgainst, 0) {
+		goalsAgainst = 2.8 // League average
+	}
+
+	goalFactor := 1.0 + (goalsFor-goalsAgainst)/10.0
+	// Clamp goal factor to reasonable range
+	goalFactor = math.Max(0.5, math.Min(1.5, goalFactor))
 	likelihood *= goalFactor
+
+	// Safeguard after goal factor multiplication
+	if math.IsNaN(likelihood) || math.IsInf(likelihood, 0) || likelihood <= 0 {
+		likelihood = 0.5
+	}
 
 	// Home advantage in likelihood
 	if isHome {
-		likelihood *= (1.0 + factors.HomeAdvantage)
+		homeAdv := factors.HomeAdvantage
+		if math.IsNaN(homeAdv) || math.IsInf(homeAdv, 0) {
+			homeAdv = 0.05 // Default 5% home advantage
+		}
+		homeAdv = math.Max(0.0, math.Min(0.2, homeAdv))
+		likelihood *= (1.0 + homeAdv)
+	}
+
+	// Safeguard after home advantage
+	if math.IsNaN(likelihood) || math.IsInf(likelihood, 0) || likelihood <= 0 {
+		likelihood = 0.5
 	}
 
 	// NEW: Bayesian integration of situational factors
@@ -399,11 +510,22 @@ func (m *BayesianModel) calculateLikelihood(factors *models.PredictionFactors, i
 
 	// NEW: Weather Impact on Bayesian Likelihood
 	weatherFactor := m.calculateWeatherLikelihoodFactor(&factors.WeatherAnalysis)
+	// Safeguard: Ensure weather factor is valid
+	if math.IsNaN(weatherFactor) || math.IsInf(weatherFactor, 0) || weatherFactor <= 0 {
+		weatherFactor = 1.0
+	}
+	weatherFactor = math.Max(0.5, math.Min(weatherFactor, 1.5))
 	likelihood *= weatherFactor
+
+	// Final safeguard: Ensure likelihood is a valid number
+	if math.IsNaN(likelihood) || math.IsInf(likelihood, 0) || likelihood <= 0 {
+		likelihood = 0.5
+		fmt.Printf("⚠️ %s Bayesian Likelihood was invalid, defaulting to 0.5\n", factors.TeamCode)
+	}
 
 	fmt.Printf("🧠 %s Bayesian Likelihood: %.3f (with situational adjustments)\n", factors.TeamCode, likelihood)
 
-	return math.Max(0.1, math.Min(likelihood, 0.9))
+	return math.Max(0.1, math.Min(likelihood, 2.0))
 }
 
 // calculateWeatherLikelihoodFactor calculates weather impact on Bayesian likelihood

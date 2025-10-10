@@ -27,11 +27,25 @@ func GetCurrentSeason() string {
 }
 
 // GetSeasonStatus determines if we're currently in hockey season
+// This function checks both calendar dates AND actual NHL game data
 func GetSeasonStatus() models.SeasonStatus {
 	now := time.Now()
 	currentSeason := GetCurrentSeason()
 
-	// Define season phases based on typical NHL calendar
+	// First, check if there are active NHL games via API
+	// This ensures we detect season start within an hour
+	hasActiveGames, err := ValidateSeasonWithAPI()
+	if err == nil && hasActiveGames {
+		// If there are active games, we're definitely in season
+		seasonPhase := determineSeasonPhase(now)
+		return models.SeasonStatus{
+			IsHockeySeason: true,
+			CurrentSeason:  currentSeason,
+			SeasonPhase:    seasonPhase,
+		}
+	}
+
+	// Fallback to calendar-based detection if API check fails
 	var seasonPhase string
 	var isHockeySeason bool
 
@@ -40,14 +54,19 @@ func GetSeasonStatus() models.SeasonStatus {
 		seasonPhase = "offseason"
 		isHockeySeason = false
 	case time.September:
+		// Check API during September for early season starts
 		seasonPhase = "preseason"
-		isHockeySeason = false
+		isHockeySeason = hasActiveGames // If API says yes, override
 	case time.October:
-		// Early October is preseason until around Oct 9
-		if now.Day() <= 9 {
+		// During October, rely more on API than hardcoded dates
+		if hasActiveGames {
+			seasonPhase = "regular"
+			isHockeySeason = true
+		} else if now.Day() <= 9 {
 			seasonPhase = "preseason"
 			isHockeySeason = false
 		} else {
+			// After Oct 9, assume season has started
 			seasonPhase = "regular"
 			isHockeySeason = true
 		}
@@ -72,6 +91,27 @@ func GetSeasonStatus() models.SeasonStatus {
 		IsHockeySeason: isHockeySeason,
 		CurrentSeason:  currentSeason,
 		SeasonPhase:    seasonPhase,
+	}
+}
+
+// determineSeasonPhase determines which phase of the season we're in
+func determineSeasonPhase(now time.Time) string {
+	switch now.Month() {
+	case time.July, time.August:
+		return "offseason"
+	case time.September:
+		return "preseason"
+	case time.October, time.November, time.December, time.January, time.February, time.March:
+		return "regular"
+	case time.April, time.May:
+		return "playoffs"
+	case time.June:
+		if now.Day() <= 15 {
+			return "playoffs"
+		}
+		return "offseason"
+	default:
+		return "regular"
 	}
 }
 

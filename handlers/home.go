@@ -2067,7 +2067,18 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             return fetch('/season-status')
                 .then(response => response.json())
                 .then(data => {
+                    const previousStatus = currentSeasonStatus ? currentSeasonStatus.isHockeySeason : null;
                     currentSeasonStatus = data.seasonStatus;
+                    
+                    // If season status changed, reload the page for fresh content
+                    if (previousStatus !== null && previousStatus !== currentSeasonStatus.isHockeySeason) {
+                        console.log('🔄 Season status changed! Reloading page for fresh content...');
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1000); // Small delay for user to see the message
+                        return currentSeasonStatus;
+                    }
+                    
                     updateSectionVisibility();
                     return currentSeasonStatus;
                 })
@@ -2077,6 +2088,16 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
                     currentSeasonStatus = { isHockeySeason: true, seasonPhase: 'unknown' };
                     updateSectionVisibility();
                 });
+        }
+        
+        // Schedule automatic season status checks every hour (3600000 ms)
+        // This ensures we detect season start within 1 hour
+        function scheduleSeasonStatusChecks() {
+            console.log('📅 Scheduling hourly season status checks...');
+            setInterval(() => {
+                console.log('🔍 Performing scheduled season status check...');
+                loadSeasonStatus();
+            }, 3600000); // Check every hour (60 * 60 * 1000 ms)
         }
 
         function updateSectionVisibility() {
@@ -2392,6 +2413,9 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             
             // Then load season status to determine what else to show
             loadSeasonStatus().then(() => {
+                // Start automatic hourly season status checks
+                scheduleSeasonStatusChecks();
+                
                 // Load banner content (always shown)
                 loadBanner();
                 
