@@ -274,16 +274,17 @@ func main() {
 	services.InitGameSummaryService(systemStatsService)
 	fmt.Println("✅ Game Summary Analytics Service initialized (Enhanced Context ready)")
 
-	// Backfill play-by-play data for the configured team (last 10 games)
-	fmt.Printf("Backfilling xG data for %s (last 10 games)...\n", teamConfig.Code)
+	// Backfill play-by-play data for ALL NHL teams (league-wide)
+	fmt.Println("🌐 Starting league-wide xG backfill (last 10 games per team, 32 teams)...")
+	fmt.Println("⏱️ This will take ~10-15 minutes but provides 32x more training data")
 	pbpService := services.GetPlayByPlayService()
 	if pbpService != nil {
 		go func() {
-			// Run backfill in background to not block server startup
-			if err := pbpService.BackfillPlayByPlayData(teamConfig.Code, 10); err != nil {
+			// Run league-wide backfill in background to not block server startup
+			if err := pbpService.BackfillAllTeams(10); err != nil {
 				fmt.Printf("⚠️ Warning: Failed to backfill play-by-play data: %v\n", err)
 			} else {
-				fmt.Printf("✅ Play-by-Play backfill complete for %s\n", teamConfig.Code)
+				fmt.Println("✅ League-wide Play-by-Play backfill complete (320 games processed)")
 			}
 		}()
 	}
