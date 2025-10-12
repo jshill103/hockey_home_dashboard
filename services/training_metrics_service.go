@@ -197,7 +197,12 @@ func (tms *TrainingMetricsService) getTrainingType(modelName string) string {
 	}
 }
 
-// saveMetrics persists training metrics to disk
+// SaveMetrics persists training metrics to disk (public for graceful shutdown)
+func (tms *TrainingMetricsService) SaveMetrics() error {
+	return tms.saveMetrics()
+}
+
+// saveMetrics persists training metrics to disk (internal implementation)
 func (tms *TrainingMetricsService) saveMetrics() error {
 	tms.mutex.RLock()
 	defer tms.mutex.RUnlock()

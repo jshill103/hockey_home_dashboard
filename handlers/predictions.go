@@ -868,3 +868,173 @@ func HandleDailyPredictionStats(w http.ResponseWriter, r *http.Request) {
 	stats := dailyPredictionService.GetStats()
 	json.NewEncoder(w).Encode(stats)
 }
+
+// HandlePredictionsStatsPopup returns the HTML for the predictions stats popup
+func HandlePredictionsStatsPopup(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	predictionStorage := services.GetPredictionStorageService()
+	if predictionStorage == nil {
+		fmt.Fprint(w, `<div class="stats-error">Prediction stats unavailable</div>`)
+		return
+	}
+
+	// Get all predictions
+	allPredictions, err := predictionStorage.GetAllPredictions()
+	if err != nil {
+		fmt.Fprint(w, `<div class="stats-error">Failed to load predictions</div>`)
+		return
+	}
+
+	// Get accuracy stats
+	accuracyStats := predictionStorage.GetAccuracyStats()
+
+	// Generate HTML
+	html := generatePredictionsPopupHTML(allPredictions, accuracyStats)
+	fmt.Fprint(w, html)
+}
+
+// generatePredictionsPopupHTML generates the HTML for the predictions stats popup
+func generatePredictionsPopupHTML(allPredictions []*services.StoredPrediction, accuracyStats interface{}) string {
+	// Count upcoming and completed games
+	upcomingCount := 0
+	completedCount := 0
+	correctCount := 0
+
+	for _, pred := range allPredictions {
+		if pred.ActualResult == nil {
+			upcomingCount++
+		} else {
+			completedCount++
+			if pred.Accuracy != nil && pred.Accuracy.WinnerCorrect {
+				correctCount++
+			}
+		}
+	}
+
+	// Calculate accuracy percentage
+	accuracyPct := 0.0
+	if completedCount > 0 {
+		accuracyPct = float64(correctCount) / float64(completedCount) * 100
+	}
+
+	html := `
+<div class="system-stats-popup">
+	<div class="stats-header">
+		<h3>📊 Prediction Statistics</h3>
+		<button class="close-popup" onclick="closePredictionsPopup()">✕</button>
+	</div>
+	
+	<div class="stats-section">
+		<h4>📈 Overall Accuracy</h4>
+		<div class="stats-grid">
+			<div class="stat-item">
+				<span class="stat-label">Total Predictions:</span>
+				<span class="stat-value">` + fmt.Sprintf("%d", len(allPredictions)) + `</span>
+			</div>
+			<div class="stat-item">
+				<span class="stat-label">Completed Games:</span>
+				<span class="stat-value">` + fmt.Sprintf("%d", completedCount) + `</span>
+			</div>
+			<div class="stat-item">
+				<span class="stat-label">Correct Predictions:</span>
+				<span class="stat-value stat-success">` + fmt.Sprintf("%d", correctCount) + `</span>
+			</div>
+			<div class="stat-item">
+				<span class="stat-label">Accuracy Rate:</span>
+				<span class="stat-value stat-success">` + fmt.Sprintf("%.1f%%", accuracyPct) + `</span>
+			</div>
+			<div class="stat-item">
+				<span class="stat-label">Upcoming Games:</span>
+				<span class="stat-value">` + fmt.Sprintf("%d", upcomingCount) + `</span>
+			</div>
+		</div>
+	</div>
+
+	<div class="stats-section">
+		<h4>🎯 Upcoming Predictions</h4>
+		<div class="predictions-list">`
+
+	// Add upcoming predictions
+	upcomingAdded := 0
+	for _, pred := range allPredictions {
+		if pred.ActualResult == nil && upcomingAdded < 10 {
+			winningTeam := pred.HomeTeam
+			winProb := pred.Prediction.HomeTeam.WinProbability
+			if pred.Prediction.AwayTeam.WinProbability > pred.Prediction.HomeTeam.WinProbability {
+				winningTeam = pred.AwayTeam
+				winProb = pred.Prediction.AwayTeam.WinProbability
+			}
+
+			html += `
+			<div class="prediction-item">
+				<div class="prediction-game">` + pred.AwayTeam + ` @ ` + pred.HomeTeam + `</div>
+				<div class="prediction-details">
+					<span class="prediction-winner">Predicted: ` + winningTeam + `</span>
+					<span class="prediction-confidence">` + fmt.Sprintf("%.1f%% confidence", winProb*100) + `</span>
+				</div>
+				<div class="prediction-date">` + pred.GameDate.Format("Jan 2, 2006") + `</div>
+			</div>`
+			upcomingAdded++
+		}
+	}
+
+	if upcomingAdded == 0 {
+		html += `<p style="text-align: center; color: #aaa; font-style: italic;">No upcoming predictions</p>`
+	}
+
+	html += `
+		</div>
+	</div>
+
+	<div class="stats-section">
+		<h4>✅ Recent Results</h4>
+		<div class="predictions-list">`
+
+	// Add recent completed predictions
+	recentAdded := 0
+	for i := len(allPredictions) - 1; i >= 0 && recentAdded < 10; i-- {
+		pred := allPredictions[i]
+		if pred.ActualResult != nil {
+			isCorrect := pred.Accuracy != nil && pred.Accuracy.WinnerCorrect
+			correctIcon := "❌"
+			correctClass := "incorrect"
+			if isCorrect {
+				correctIcon = "✅"
+				correctClass = "correct"
+			}
+
+			winningTeam := pred.HomeTeam
+			winProb := pred.Prediction.HomeTeam.WinProbability
+			if pred.Prediction.AwayTeam.WinProbability > pred.Prediction.HomeTeam.WinProbability {
+				winningTeam = pred.AwayTeam
+				winProb = pred.Prediction.AwayTeam.WinProbability
+			}
+
+			actualWinner := pred.ActualResult.WinningTeam
+
+			html += `
+			<div class="prediction-item ` + correctClass + `">
+				<div class="prediction-game">` + pred.AwayTeam + ` @ ` + pred.HomeTeam + ` ` + correctIcon + `</div>
+				<div class="prediction-details">
+					<span class="prediction-winner">Predicted: ` + winningTeam + ` (` + fmt.Sprintf("%.1f%%", winProb*100) + `)</span>
+					<span class="prediction-actual">Actual: ` + actualWinner + `</span>
+				</div>
+				<div class="prediction-date">` + pred.GameDate.Format("Jan 2") + `</div>
+			</div>`
+			recentAdded++
+		}
+	}
+
+	if recentAdded == 0 {
+		html += `<p style="text-align: center; color: #aaa; font-style: italic;">No completed predictions yet</p>`
+	}
+
+	html += `
+		</div>
+	</div>
+</div>
+`
+
+	return html
+}

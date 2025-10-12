@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -485,6 +486,7 @@ func main() {
 	http.HandleFunc("/api/predictions/all", handlers.HandleLeagueWidePredictions)
 	http.HandleFunc("/api/predictions/accuracy", handlers.HandlePredictionAccuracy)
 	http.HandleFunc("/api/predictions/daily-stats", handlers.HandleDailyPredictionStats)
+	http.HandleFunc("/predictions-stats-popup", handlers.HandlePredictionsStatsPopup)
 
 	// Pre-Game Lineup endpoints
 	http.HandleFunc("/api/lineup", handlers.HandleLineup)
@@ -547,6 +549,17 @@ func main() {
 			}
 		}
 
+		// Save training metrics before shutdown
+		trainingMetrics := services.GetTrainingMetricsService()
+		if trainingMetrics != nil {
+			fmt.Println("💾 Saving training metrics...")
+			if err := trainingMetrics.SaveMetrics(); err != nil {
+				fmt.Printf("⚠️ Warning: Failed to save training metrics: %v\n", err)
+			} else {
+				fmt.Println("✅ Training metrics saved")
+			}
+		}
+
 		// Stop the daily prediction service
 		if dailyPredictionService != nil {
 			dailyPredictionService.Stop()
@@ -576,7 +589,11 @@ func main() {
 	fmt.Println("Scoreboard will be updated every 10 minutes (30 seconds when game is live)")
 	fmt.Println("🤖 Live prediction models will update automatically every hour")
 	fmt.Println("Press Ctrl+C to shutdown gracefully")
-	http.ListenAndServe(":8080", nil)
+
+	// Start HTTP server with proper error handling
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Fatalf("❌ Server failed to start: %v", err)
+	}
 }
 
 func scheduleFetcher() {

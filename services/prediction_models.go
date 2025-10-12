@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"time"
@@ -189,9 +190,17 @@ func (m *StatisticalModel) calculateAdvancedScore(factors *models.PredictionFact
 	weatherImpact := m.calculateWeatherImpact(&factors.WeatherAnalysis)
 	score += weatherImpact
 
+	// Defensive NaN check for WinPercentage before logging
+	baseScore := factors.WinPercentage * 100
+	if math.IsNaN(baseScore) || math.IsInf(baseScore, 0) {
+		log.Printf("⚠️ WARNING: WinPercentage is NaN for %s, using default 50.0", factors.TeamCode)
+		factors.WinPercentage = 0.5
+		baseScore = 50.0
+	}
+
 	fmt.Printf("📊 %s Advanced Score Breakdown:\n", factors.TeamCode)
 	fmt.Printf("   Base: %.1f, Travel: %.1f, Altitude: %.1f, Schedule: %.1f, Injuries: %.1f, Momentum: %.1f\n",
-		factors.WinPercentage*100,
+		baseScore,
 		-factors.TravelFatigue.FatigueScore*8.0,
 		factors.AltitudeAdjust.AdjustmentFactor*12.0,
 		factors.ScheduleStrength.RestAdvantage*4.0-factors.ScheduleStrength.ScheduleDensity*6.0,

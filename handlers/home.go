@@ -2134,6 +2134,72 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             padding: 20px;
         }
         
+        /* Predictions Popup Specific Styles */
+        .predictions-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 15px;
+        }
+        
+        .prediction-item {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 3px solid var(--team-primary);
+            transition: all 0.3s ease;
+        }
+        
+        .prediction-item:hover {
+            background: rgba(0, 0, 0, 0.5);
+            transform: translateX(5px);
+        }
+        
+        .prediction-item.correct {
+            border-left-color: #28a745;
+        }
+        
+        .prediction-item.incorrect {
+            border-left-color: #dc3545;
+        }
+        
+        .prediction-game {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: white;
+            margin-bottom: 8px;
+        }
+        
+        .prediction-details {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .prediction-winner {
+            color: var(--team-accent);
+            font-weight: 600;
+        }
+        
+        .prediction-confidence {
+            color: #aaa;
+            font-size: 0.9em;
+        }
+        
+        .prediction-actual {
+            color: #20c997;
+            font-weight: 600;
+        }
+        
+        .prediction-date {
+            color: #aaa;
+            font-size: 0.9em;
+            font-style: italic;
+        }
+        
         /* Responsive popup */
         @media (max-width: 768px) {
             .system-stats-popup {
@@ -2181,6 +2247,7 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         </div>
         
         <div class="model-insights-section hockey-season-only">
+            <h2 style="margin: 0 0 15px 0; font-size: 1.4em;">🤖 AI Insights <span id="predictions-stats-icon" style="cursor: pointer; font-size: 0.8em; margin-left: 10px;" title="View Prediction Statistics">📊</span></h2>
             <div id="model-insights-content">
                 <p>Loading AI model insights...</p>
             </div>
@@ -2782,7 +2849,60 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
                     statsCalendar.style.transform = 'scale(1)';
                 });
             }
+            
+            // Predictions stats icon functionality
+            const predictionsIcon = document.getElementById('predictions-stats-icon');
+            if (predictionsIcon) {
+                predictionsIcon.addEventListener('click', openPredictionsPopup);
+                
+                // Add hover effect
+                predictionsIcon.addEventListener('mouseover', function() {
+                    predictionsIcon.style.transform = 'scale(1.3)';
+                    predictionsIcon.style.transition = 'transform 0.2s ease';
+                });
+                
+                predictionsIcon.addEventListener('mouseout', function() {
+                    predictionsIcon.style.transform = 'scale(1)';
+                });
+            }
         });
+        
+        // Functions for predictions popup
+        function openPredictionsPopup() {
+            fetch('/predictions-stats-popup')
+                .then(response => response.text())
+                .then(html => {
+                    // Create overlay
+                    let overlay = document.getElementById('predictions-popup-overlay');
+                    if (!overlay) {
+                        overlay = document.createElement('div');
+                        overlay.id = 'predictions-popup-overlay';
+                        overlay.className = 'stats-popup-overlay';
+                        document.body.appendChild(overlay);
+                        
+                        // Close on overlay click
+                        overlay.addEventListener('click', function(e) {
+                            if (e.target === overlay) {
+                                closePredictionsPopup();
+                            }
+                        });
+                    }
+                    
+                    overlay.innerHTML = html;
+                    overlay.classList.add('active');
+                })
+                .catch(error => {
+                    console.error('Failed to load predictions stats:', error);
+                    alert('Failed to load prediction statistics');
+                });
+        }
+        
+        function closePredictionsPopup() {
+            const overlay = document.getElementById('predictions-popup-overlay');
+            if (overlay) {
+                overlay.classList.remove('active');
+            }
+        }
     </script>
 </body>
 </html>`
