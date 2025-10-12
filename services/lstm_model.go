@@ -66,43 +66,58 @@ type LSTMState struct {
 	c []float64 // Cell state
 }
 
+var (
+	lstmModelInstance     *LSTMModel
+	lstmModelInstanceOnce sync.Once
+)
+
 // NewLSTMModel creates a new LSTM prediction model
 func NewLSTMModel() *LSTMModel {
-	inputSize := 30   // Features per game (goals, shots, power play, etc.)
-	hiddenSize := 64  // LSTM hidden state size
-	outputSize := 3   // Win/Loss/OT
-	sequenceLen := 10 // Last 10 games
+	lstmModelInstanceOnce.Do(func() {
+		inputSize := 30   // Features per game (goals, shots, power play, etc.)
+		hiddenSize := 64  // LSTM hidden state size
+		outputSize := 3   // Win/Loss/OT
+		sequenceLen := 10 // Last 10 games
 
-	model := &LSTMModel{
-		inputSize:     inputSize,
-		hiddenSize:    hiddenSize,
-		outputSize:    outputSize,
-		sequenceLen:   sequenceLen,
-		learningRate:  0.001,
-		weight:        0.08, // 8% weight in ensemble
-		trained:       false,
-		dataDir:       "data/models",
-		lastUpdated:   time.Now(),
-		gameSequences: []GameSequence{},
+		lstmModelInstance = &LSTMModel{
+			inputSize:     inputSize,
+			hiddenSize:    hiddenSize,
+			outputSize:    outputSize,
+			sequenceLen:   sequenceLen,
+			learningRate:  0.001,
+			weight:        0.08, // 8% weight in ensemble
+			trained:       false,
+			dataDir:       "data/models",
+			lastUpdated:   time.Now(),
+			gameSequences: []GameSequence{},
+		}
+
+		// Create data directory
+		os.MkdirAll(lstmModelInstance.dataDir, 0755)
+
+		// Try to load existing model
+		lstmModelInstance.loadModel()
+
+		// Try to load existing weights
+		if err := lstmModelInstance.loadWeights(); err != nil {
+			log.Printf("🔄 Initializing new LSTM model (no saved weights found)")
+			lstmModelInstance.initializeWeights()
+		} else {
+			log.Printf("🔄 LSTM model loaded from disk")
+			log.Printf("   Hidden size: %d, Sequence length: %d", hiddenSize, sequenceLen)
+			log.Printf("   Last updated: %s", lstmModelInstance.lastUpdated.Format("2006-01-02 15:04:05"))
+		}
+	})
+
+	return lstmModelInstance
+}
+
+// GetLSTMModel returns the singleton instance
+func GetLSTMModel() *LSTMModel {
+	if lstmModelInstance == nil {
+		return NewLSTMModel()
 	}
-
-	// Create data directory
-	os.MkdirAll(model.dataDir, 0755)
-
-	// Try to load existing model
-	model.loadModel()
-
-	// Try to load existing weights
-	if err := model.loadWeights(); err != nil {
-		log.Printf("🔄 Initializing new LSTM model (no saved weights found)")
-		model.initializeWeights()
-	} else {
-		log.Printf("🔄 LSTM model loaded from disk")
-		log.Printf("   Hidden size: %d, Sequence length: %d", hiddenSize, sequenceLen)
-		log.Printf("   Last updated: %s", model.lastUpdated.Format("2006-01-02 15:04:05"))
-	}
-
-	return model
+	return lstmModelInstance
 }
 
 // initializeWeights initializes LSTM weights with Xavier initialization

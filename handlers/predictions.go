@@ -821,3 +821,50 @@ func getGameTypeIcon(gameType string) string {
 		return "🏒"
 	}
 }
+
+// HandleLeagueWidePredictions returns all stored predictions
+func HandleLeagueWidePredictions(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	predictionStorage := services.GetPredictionStorageService()
+	if predictionStorage == nil {
+		http.Error(w, `{"error": "Prediction Storage Service not initialized"}`, http.StatusInternalServerError)
+		return
+	}
+
+	predictions, err := predictionStorage.GetAllPredictions()
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(predictions)
+}
+
+// HandlePredictionAccuracy returns accuracy statistics
+func HandlePredictionAccuracy(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	predictionStorage := services.GetPredictionStorageService()
+	if predictionStorage == nil {
+		http.Error(w, `{"error": "Prediction Storage Service not initialized"}`, http.StatusInternalServerError)
+		return
+	}
+
+	stats := predictionStorage.GetAccuracyStats()
+	json.NewEncoder(w).Encode(stats)
+}
+
+// HandleDailyPredictionStats returns daily prediction service statistics
+func HandleDailyPredictionStats(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	dailyPredictionService := services.GetDailyPredictionService()
+	if dailyPredictionService == nil {
+		http.Error(w, `{"error": "Daily Prediction Service not initialized"}`, http.StatusInternalServerError)
+		return
+	}
+
+	stats := dailyPredictionService.GetStats()
+	json.NewEncoder(w).Encode(stats)
+}

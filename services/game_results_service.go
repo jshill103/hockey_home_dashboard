@@ -474,12 +474,24 @@ func (grs *GameResultsService) feedToModels(game *models.CompletedGame) {
 		}
 	}
 
-	// Update accuracy tracking if we had a prediction
-	// TODO: Implement prediction tracking once we store predictions before games
-	// if grs.accuracyTracker != nil && gameResult.WasPredicted {
-	// 	grs.accuracyTracker.RecordPrediction(prediction, factors)
-	// 	log.Printf("📈 Accuracy tracker updated for game %d", game.GameID)
-	// }
+	// Update stored prediction with actual result
+	predictionStorage := GetPredictionStorageService()
+	if predictionStorage != nil {
+		if err := predictionStorage.UpdateWithResult(game.GameID, game); err != nil {
+			log.Printf("⚠️ Failed to update prediction with result: %v", err)
+		} else {
+			log.Printf("✅ Prediction updated with actual result for game %d", game.GameID)
+		}
+	}
+
+	// Auto-train Meta-Learner if conditions are met
+	metaLearner := GetMetaLearnerModel()
+	if metaLearner != nil {
+		metaLearner.RecordGameProcessed()
+		if err := metaLearner.AutoTrain(); err != nil {
+			log.Printf("⚠️ Meta-Learner auto-training failed: %v", err)
+		}
+	}
 
 	// PLAYOFF ODDS: Recalculate playoff odds after game completion
 	playoffSimService := GetPlayoffSimulationService()

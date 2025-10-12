@@ -29,10 +29,16 @@ type ModelEvaluationService struct {
 	eloModel     *EloRatingModel
 	poissonModel *PoissonRegressionModel
 
-	// Batch training
-	batchSize    int
-	pendingBatch []models.CompletedGame
-	batchMutex   sync.Mutex
+	// Batch training (Phase 2: Model-specific batches)
+	batchSize    int                    // Default/legacy batch size
+	pendingBatch []models.CompletedGame // Legacy single batch
+
+	// Model-specific batch queues (Phase 2 optimization)
+	nnBatch    []models.CompletedGame // Neural Network: batch size 10
+	gbBatch    []models.CompletedGame // Gradient Boosting: batch size 20
+	lstmBatch  []models.CompletedGame // LSTM: batch size 5
+	rfBatch    []models.CompletedGame // Random Forest: batch size 10
+	batchMutex sync.Mutex
 }
 
 // NewModelEvaluationService creates a new evaluation service
@@ -45,8 +51,13 @@ func NewModelEvaluationService(neuralNet *NeuralNetworkModel, elo *EloRatingMode
 		neuralNet:    neuralNet,
 		eloModel:     elo,
 		poissonModel: poisson,
-		batchSize:    10, // Train on batches of 10 games
+		batchSize:    10, // Default batch size (will be adaptive)
 		pendingBatch: []models.CompletedGame{},
+		// Phase 2: Initialize model-specific batches
+		nnBatch:   []models.CompletedGame{},
+		gbBatch:   []models.CompletedGame{},
+		lstmBatch: []models.CompletedGame{},
+		rfBatch:   []models.CompletedGame{},
 	}
 
 	// Create directories
@@ -152,27 +163,192 @@ func (mes *ModelEvaluationService) EvaluateOnTestSet(testGames []models.Complete
 // BATCH TRAINING
 // ============================================================================
 
-// AddGameToBatch adds a game to the pending batch for training
+// getAdaptiveBatchSize returns optimal batch size based on total games processed
+// PHASE 1 OPTIMIZATION: Adaptive batch sizing
+func (mes *ModelEvaluationService) getAdaptiveBatchSize() int {
+	gameCount := len(mes.completedGames)
+
+	if gameCount < 20 {
+		// Early season: Fast learning with small batches
+		return 5
+	} else if gameCount > 1000 {
+		// Playoffs/end of season: Rapid adaptation
+		return 3
+	}
+	// Regular season: Balanced batch size
+	return 10
+}
+
+// getModelBatchSize returns the optimal batch size for a specific model
+// PHASE 2 OPTIMIZATION: Model-specific batch sizing
+func (mes *ModelEvaluationService) getModelBatchSize(modelName string) int {
+	gameCount := len(mes.completedGames)
+
+	// Apply adaptive sizing first for context
+	baseMultiplier := 1.0
+	if gameCount < 20 {
+		baseMultiplier = 0.5 // Half size early season
+	} else if gameCount > 1000 {
+		baseMultiplier = 0.3 // Smaller for playoffs
+	}
+
+	// Model-specific batch sizes
+	switch modelName {
+	case "GradientBoosting":
+		// GB benefits from larger batches (better tree splits)
+		return int(20 * baseMultiplier)
+	case "LSTM":
+		// LSTM needs frequent updates for sequence learning
+		return int(5 * baseMultiplier)
+	case "NeuralNetwork":
+		// NN standard batch size
+		return int(10 * baseMultiplier)
+	case "RandomForest":
+		// RF similar to NN
+		return int(10 * baseMultiplier)
+	default:
+		return int(10 * baseMultiplier)
+	}
+}
+
+// AddGameToBatch adds a game to model-specific pending batches for training
+// PHASE 2: Model-specific batch queues
 func (mes *ModelEvaluationService) AddGameToBatch(game models.CompletedGame) error {
 	mes.batchMutex.Lock()
 	defer mes.batchMutex.Unlock()
 
-	mes.pendingBatch = append(mes.pendingBatch, game)
+	// Add to all model-specific batches
+	mes.nnBatch = append(mes.nnBatch, game)
+	mes.gbBatch = append(mes.gbBatch, game)
+	mes.lstmBatch = append(mes.lstmBatch, game)
+	mes.rfBatch = append(mes.rfBatch, game)
 
-	// Train when batch is full
-	if len(mes.pendingBatch) >= mes.batchSize {
-		log.Printf("📦 Batch full (%d games), starting batch training...", len(mes.pendingBatch))
+	// Check each model's batch and train if ready
+	trained := []string{}
 
-		if err := mes.trainBatch(); err != nil {
-			log.Printf("⚠️ Batch training failed: %v", err)
-			return err
+	// Neural Network
+	nnBatchSize := mes.getModelBatchSize("NeuralNetwork")
+	if len(mes.nnBatch) >= nnBatchSize {
+		if err := mes.trainModelBatch("NeuralNetwork", mes.nnBatch); err != nil {
+			log.Printf("⚠️ Neural Network batch training failed: %v", err)
+		} else {
+			trained = append(trained, "NN")
+			mes.nnBatch = []models.CompletedGame{}
+		}
+	}
+
+	// Gradient Boosting
+	gbBatchSize := mes.getModelBatchSize("GradientBoosting")
+	if len(mes.gbBatch) >= gbBatchSize {
+		if err := mes.trainModelBatch("GradientBoosting", mes.gbBatch); err != nil {
+			log.Printf("⚠️ Gradient Boosting batch training failed: %v", err)
+		} else {
+			trained = append(trained, "GB")
+			mes.gbBatch = []models.CompletedGame{}
+		}
+	}
+
+	// LSTM
+	lstmBatchSize := mes.getModelBatchSize("LSTM")
+	if len(mes.lstmBatch) >= lstmBatchSize {
+		if err := mes.trainModelBatch("LSTM", mes.lstmBatch); err != nil {
+			log.Printf("⚠️ LSTM batch training failed: %v", err)
+		} else {
+			trained = append(trained, "LSTM")
+			mes.lstmBatch = []models.CompletedGame{}
+		}
+	}
+
+	// Random Forest
+	rfBatchSize := mes.getModelBatchSize("RandomForest")
+	if len(mes.rfBatch) >= rfBatchSize {
+		if err := mes.trainModelBatch("RandomForest", mes.rfBatch); err != nil {
+			log.Printf("⚠️ Random Forest batch training failed: %v", err)
+		} else {
+			trained = append(trained, "RF")
+			mes.rfBatch = []models.CompletedGame{}
+		}
+	}
+
+	// Log batch status
+	if len(trained) > 0 {
+		log.Printf("✅ Batch training complete for: %v (total games: %d)", trained, len(mes.completedGames))
+	} else {
+		log.Printf("📦 Game added to batches | NN:%d/%d GB:%d/%d LSTM:%d/%d RF:%d/%d",
+			len(mes.nnBatch), nnBatchSize,
+			len(mes.gbBatch), gbBatchSize,
+			len(mes.lstmBatch), lstmBatchSize,
+			len(mes.rfBatch), rfBatchSize)
+	}
+
+	return nil
+}
+
+// trainModelBatch trains a specific model on its batch
+// PHASE 2: Model-specific training
+func (mes *ModelEvaluationService) trainModelBatch(modelName string, batch []models.CompletedGame) error {
+	if len(batch) == 0 {
+		return nil
+	}
+
+	trainingMetrics := GetTrainingMetricsService()
+	start := time.Now()
+	successCount := 0
+	batchSize := len(batch)
+
+	log.Printf("📦 Training %s on batch of %d games...", modelName, batchSize)
+
+	switch modelName {
+	case "NeuralNetwork":
+		if mes.neuralNet != nil {
+			for _, game := range batch {
+				homeFactors := mes.buildFactors(game, true)
+				awayFactors := mes.buildFactors(game, false)
+				gameResult := mes.convertToGameResult(&game)
+
+				if err := mes.neuralNet.TrainOnGameResult(gameResult, homeFactors, awayFactors); err == nil {
+					successCount++
+				}
+			}
 		}
 
-		// Clear batch
-		mes.pendingBatch = []models.CompletedGame{}
-		log.Printf("✅ Batch training complete")
-	} else {
-		log.Printf("📦 Game added to batch (%d/%d)", len(mes.pendingBatch), mes.batchSize)
+	case "GradientBoosting":
+		gbModel := GetGradientBoostingModel()
+		if gbModel != nil {
+			for _, game := range batch {
+				if err := gbModel.TrainOnGameResult(game); err == nil {
+					successCount++
+				}
+			}
+		}
+
+	case "LSTM":
+		lstmModel := GetLSTMModel()
+		if lstmModel != nil {
+			for _, game := range batch {
+				if err := lstmModel.TrainOnGameResult(game); err == nil {
+					successCount++
+				}
+			}
+		}
+
+	case "RandomForest":
+		rfModel := GetRandomForestModel()
+		if rfModel != nil {
+			for _, game := range batch {
+				if err := rfModel.TrainOnGameResult(game); err == nil {
+					successCount++
+				}
+			}
+		}
+	}
+
+	duration := time.Since(start).Seconds()
+	log.Printf("✅ %s trained on %d/%d games in %.2fs", modelName, successCount, batchSize, duration)
+
+	// Record training metrics
+	if trainingMetrics != nil {
+		trainingMetrics.RecordTraining(modelName, "batch", batchSize, duration, 0)
 	}
 
 	return nil
@@ -186,9 +362,12 @@ func (mes *ModelEvaluationService) trainBatch() error {
 
 	successCount := 0
 	errorCount := 0
+	batchSize := len(mes.pendingBatch)
+	trainingMetrics := GetTrainingMetricsService()
 
 	// Train Neural Network on batch
 	if mes.neuralNet != nil {
+		start := time.Now()
 		for _, game := range mes.pendingBatch {
 			homeFactors := mes.buildFactors(game, true)
 			awayFactors := mes.buildFactors(game, false)
@@ -200,7 +379,13 @@ func (mes *ModelEvaluationService) trainBatch() error {
 				successCount++
 			}
 		}
+		duration := time.Since(start).Seconds()
 		log.Printf("🧠 Neural Network trained on %d games (batch)", successCount)
+
+		// Record training metrics
+		if trainingMetrics != nil {
+			trainingMetrics.RecordTraining("Neural Network", "batch", batchSize, duration, 0)
+		}
 	}
 
 	// Recalculate and save metrics after batch training

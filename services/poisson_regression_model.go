@@ -712,15 +712,32 @@ func (pr *PoissonRegressionModel) processGameResult(gameResult *models.GameResul
 func (pr *PoissonRegressionModel) calculateAdaptiveLearningRate(gameResult *models.GameResult, teamCode string, isHome bool) float64 {
 	baseLearningRate := pr.learningRate
 
-	// Increase learning rate for unusual results (blowouts, shutouts)
+	// PHASE 2: Calculate expected vs actual for surprise-based learning
 	var teamScore, opponentScore int
+	var expected float64
+
 	if isHome {
 		teamScore = gameResult.HomeScore
 		opponentScore = gameResult.AwayScore
+		// Calculate expected based on current rates
+		homeOffensive := pr.getOffensiveRate(gameResult.HomeTeam)
+		awayDefensive := pr.getDefensiveRate(gameResult.AwayTeam)
+		expected = homeOffensive * awayDefensive * pr.leagueAvgGoalsPerGame * pr.homeAdvantage
 	} else {
 		teamScore = gameResult.AwayScore
 		opponentScore = gameResult.HomeScore
+		// Calculate expected based on current rates
+		awayOffensive := pr.getOffensiveRate(gameResult.AwayTeam)
+		homeDefensive := pr.getDefensiveRate(gameResult.HomeTeam)
+		expected = awayOffensive * homeDefensive * pr.leagueAvgGoalsPerGame
 	}
+
+	// PHASE 2: Surprise-based learning boost
+	// Learn more from unexpected results
+	actual := float64(teamScore)
+	surprise := math.Abs(expected - actual)
+	surpriseBoost := 1.0 + math.Min(surprise/3.0, 1.0) // Up to 2x for 3+ goal surprise
+	baseLearningRate *= surpriseBoost
 
 	scoreDiff := int(math.Abs(float64(teamScore - opponentScore)))
 
@@ -743,21 +760,26 @@ func (pr *PoissonRegressionModel) calculateAdaptiveLearningRate(gameResult *mode
 		baseLearningRate *= 1.4
 	}
 
+	// PHASE 2: Learning rate decay based on games played
+	gamesPlayed := len(pr.rateHistory[teamCode])
+	decayFactor := 1.0 / (1.0 + float64(gamesPlayed)/40.0) // Decay over ~40 games
+	baseLearningRate *= (0.6 + 0.4*decayFactor)            // Never go below 60% of base rate
+
 	// Adjust based on team's rate confidence
 	confidence := pr.confidenceTracking[teamCode]
 	if confidence == 0 {
 		confidence = 0.5 // Default medium confidence
 	}
 
-	// Lower confidence = higher learning rate
-	confidenceAdjustment := 2.0 - confidence
+	// Lower confidence = higher learning rate (reduced weight for Phase 2)
+	confidenceAdjustment := 1.5 - (0.5 * confidence)
 	baseLearningRate *= confidenceAdjustment
 
 	// Bound the learning rate
-	if baseLearningRate > 0.3 {
-		baseLearningRate = 0.3
-	} else if baseLearningRate < 0.05 {
-		baseLearningRate = 0.05
+	if baseLearningRate > 0.4 {
+		baseLearningRate = 0.4
+	} else if baseLearningRate < 0.03 {
+		baseLearningRate = 0.03
 	}
 
 	return baseLearningRate

@@ -29,7 +29,7 @@ type NeuralNetworkModel struct {
 
 // NewNeuralNetworkModel creates a new neural network prediction model
 func NewNeuralNetworkModel() *NeuralNetworkModel {
-	layers := []int{111, 32, 16, 3} // Input features (50 original + 15 Phase 4 + 10 Player + 6 Goalie + 12 xG + 8 Shift + 4 Landing + 6 Summary), hidden layers, output (win/loss/ot)
+	layers := []int{156, 64, 32, 3} // Input features (140 Phase 1 + 16 Phase 2), hidden layers, output (win/loss/ot)
 
 	model := &NeuralNetworkModel{
 		layers:       layers,
@@ -110,7 +110,7 @@ func (nn *NeuralNetworkModel) Predict(homeFactors, awayFactors *models.Predictio
 
 // extractFeatures converts prediction factors to neural network input
 func (nn *NeuralNetworkModel) extractFeatures(home, away *models.PredictionFactors) []float64 {
-	features := make([]float64, 111) // 111 input features (50 original + 15 Phase 4 + 10 Player + 6 Goalie + 12 xG + 8 Shift + 4 Landing + 6 Summary)
+	features := make([]float64, 156) // 156 input features (140 Phase 1 + 16 Phase 2)
 
 	// Basic team stats
 	features[0] = home.WinPercentage
@@ -324,6 +324,115 @@ func (nn *NeuralNetworkModel) extractFeatures(home, away *models.PredictionFacto
 	// Enhanced Zone Control Context (109-110)
 	features[109] = home.OffensiveZoneTime / 30.0 // Normalize by ~max (30 min/game)
 	features[110] = away.OffensiveZoneTime / 30.0
+
+	// ============================================================================
+	// PHASE 1 EXPANSION: ROLLING STATISTICS (111-130) - 20 features
+	// ============================================================================
+
+	// Hot/Cold Streak Detection (111-116)
+	if home.IsHot {
+		features[111] = 1.0
+	}
+	if away.IsHot {
+		features[112] = 1.0
+	}
+	if home.IsCold {
+		features[113] = 1.0
+	}
+	if away.IsCold {
+		features[114] = 1.0
+	}
+	if home.IsStreaking {
+		features[115] = 1.0
+	}
+	if away.IsStreaking {
+		features[116] = 1.0
+	}
+
+	// Time-Weighted Performance (117-122)
+	features[117] = home.WeightedWinPct
+	features[118] = away.WeightedWinPct
+	features[119] = home.WeightedGoalsFor / 5.0 // Normalize by ~max (5 goals/game)
+	features[120] = away.WeightedGoalsFor / 5.0
+	features[121] = home.WeightedGoalsAgainst / 5.0
+	features[122] = away.WeightedGoalsAgainst / 5.0
+
+	// Quality of Competition (123-126)
+	features[123] = home.VsPlayoffTeamsPct
+	features[124] = away.VsPlayoffTeamsPct
+	features[125] = home.ClutchPerformance
+	features[126] = away.ClutchPerformance
+
+	// Recent Points & Goal Differential (127-130)
+	features[127] = float64(home.Last5GamesPoints) / 10.0 // Normalize by max (10 points)
+	features[128] = float64(away.Last5GamesPoints) / 10.0
+	features[129] = float64(home.GoalDifferential5) / 20.0 // Normalize by ~max (+/-20 goals)
+	features[130] = float64(away.GoalDifferential5) / 20.0
+
+	// ============================================================================
+	// PHASE 1 EXPANSION: MATCHUP CONTEXT (131-139) - 9 features
+	// ============================================================================
+
+	// Rivalry & Division Context (131-135)
+	if home.IsRivalryGame {
+		features[131] = 1.0
+	}
+	features[132] = home.RivalryIntensity
+	if home.IsDivisionGame {
+		features[133] = 1.0
+	}
+	if home.IsPlayoffRematch {
+		features[134] = 1.0
+	}
+	features[135] = home.HeadToHeadAdvantage
+
+	// Matchup History (136-139)
+	features[136] = home.RecentMatchupTrend
+	features[137] = home.VenueSpecificRecord
+	features[138] = float64(home.DaysSinceLastMeeting) / 365.0 // Normalize by max (1 year)
+	features[139] = home.AverageGoalDiff / 5.0                 // Normalize by ~max (+/-5 goals)
+
+	// ============================================================================
+	// PHASE 2 EXPANSION: PLAYER/GOALIE EDGES (140-142) - 3 features
+	// ============================================================================
+
+	// Relative Advantages (140-142)
+	features[140] = home.StarPowerEdge     // -1 to +1 star power advantage
+	features[141] = home.DepthEdge         // -1 to +1 depth advantage
+	features[142] = home.GoalieFatigueDiff // Goalie workload differential
+
+	// ============================================================================
+	// PHASE 2 EXPANSION: SITUATIONAL CONTEXT (143-147) - 5 features
+	// ============================================================================
+
+	// Motivation & Context (143-145)
+	features[143] = home.TrapGameFactor    // 0-1 trap game likelihood
+	features[144] = home.PlayoffImportance // 0-1 playoff stakes
+	features[145] = home.TransitionEfficiency
+
+	// Special Teams & Discipline (146-147)
+	features[146] = home.SpecialTeamsIndex // Combined PP% + PK%
+	features[147] = home.DisciplineIndex   // Penalty discipline
+
+	// ============================================================================
+	// PHASE 2 EXPANSION: WEATHER & ADVANCED (148-155) - 8 features
+	// ============================================================================
+
+	// Weather Impacts (148-153)
+	features[148] = home.WeatherAnalysis.TravelImpact.OverallImpact / 5.0 // Normalize by max impact
+	features[149] = away.WeatherAnalysis.TravelImpact.OverallImpact / 5.0
+	features[150] = home.WeatherAnalysis.OverallImpact / 10.0 // Game day impact
+	features[151] = away.WeatherAnalysis.OverallImpact / 10.0
+	if home.WeatherAnalysis.IsOutdoorGame {
+		features[152] = 1.0
+	}
+	if away.WeatherAnalysis.IsOutdoorGame {
+		features[153] = 1.0
+	}
+
+	// Advanced Features (154-155)
+	features[154] = home.MarketConfidenceVal      // Market confidence
+	features[155] = home.DefensiveZoneTime / 30.0 // Defensive zone time
 
 	return features
 }

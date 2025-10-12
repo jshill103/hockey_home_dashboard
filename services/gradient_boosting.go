@@ -56,33 +56,48 @@ type SplitCandidate struct {
 	RightIndices []int
 }
 
+var (
+	gradientBoostingModel     *GradientBoostingModel
+	gradientBoostingModelOnce sync.Once
+)
+
 // NewGradientBoostingModel creates a new gradient boosting model
 func NewGradientBoostingModel() *GradientBoostingModel {
-	dataDir := "data/models"
-	os.MkdirAll(dataDir, 0755)
+	gradientBoostingModelOnce.Do(func() {
+		dataDir := "data/models"
+		os.MkdirAll(dataDir, 0755)
 
-	gbm := &GradientBoostingModel{
-		trees:             []*GBTree{},
-		learningRate:      0.1,
-		numTrees:          100,
-		maxDepth:          3,
-		minSamplesLeaf:    5,
-		weight:            0.10, // 10% weight in ensemble
-		trained:           false,
-		dataDir:           dataDir,
-		featureNames:      make([]string, 111), // 111 features (including xG + shift + landing + summary metrics)
-		featureImportance: make(map[string]float64),
+		gradientBoostingModel = &GradientBoostingModel{
+			trees:             []*GBTree{},
+			learningRate:      0.1,
+			numTrees:          100,
+			maxDepth:          3,
+			minSamplesLeaf:    5,
+			weight:            0.10, // 10% weight in ensemble
+			trained:           false,
+			dataDir:           dataDir,
+			featureNames:      make([]string, 156), // 156 features (140 Phase 1 + 16 Phase 2)
+			featureImportance: make(map[string]float64),
+		}
+
+		// Initialize feature names
+		for i := 0; i < 156; i++ {
+			gradientBoostingModel.featureNames[i] = fmt.Sprintf("feature_%d", i)
+		}
+
+		// Try to load existing model
+		gradientBoostingModel.loadModel()
+	})
+
+	return gradientBoostingModel
+}
+
+// GetGradientBoostingModel returns the singleton instance
+func GetGradientBoostingModel() *GradientBoostingModel {
+	if gradientBoostingModel == nil {
+		return NewGradientBoostingModel()
 	}
-
-	// Initialize feature names
-	for i := 0; i < 111; i++ {
-		gbm.featureNames[i] = fmt.Sprintf("feature_%d", i)
-	}
-
-	// Try to load existing model
-	gbm.loadModel()
-
-	return gbm
+	return gradientBoostingModel
 }
 
 // Predict makes a prediction using gradient boosting
@@ -445,9 +460,9 @@ func (gbm *GradientBoostingModel) prepareTrainingData(games []models.CompletedGa
 	return features, labels
 }
 
-// extractFeatures extracts 75 features from prediction factors
+// extractFeatures extracts 156 features from prediction factors
 func (gbm *GradientBoostingModel) extractFeatures(home, away *models.PredictionFactors) []float64 {
-	features := make([]float64, 111) // Expanded to 111 to include xG, play-by-play, shift, landing, and summary analytics
+	features := make([]float64, 156) // Expanded to 156 to include Phase 2 features
 
 	// Basic features (indices 0-9)
 	features[0] = home.WinPercentage
@@ -533,6 +548,105 @@ func (gbm *GradientBoostingModel) extractFeatures(home, away *models.PredictionF
 	features[108] = away.PowerPlayTime / 10.0
 	features[109] = home.OffensiveZoneTime / 30.0
 	features[110] = away.OffensiveZoneTime / 30.0
+
+	// ============================================================================
+	// PHASE 1 EXPANSION: ROLLING STATISTICS (111-130) - 20 features
+	// ============================================================================
+
+	// Hot/Cold Streak Detection (111-116)
+	if home.IsHot {
+		features[111] = 1.0
+	}
+	if away.IsHot {
+		features[112] = 1.0
+	}
+	if home.IsCold {
+		features[113] = 1.0
+	}
+	if away.IsCold {
+		features[114] = 1.0
+	}
+	if home.IsStreaking {
+		features[115] = 1.0
+	}
+	if away.IsStreaking {
+		features[116] = 1.0
+	}
+
+	// Time-Weighted Performance (117-122)
+	features[117] = home.WeightedWinPct
+	features[118] = away.WeightedWinPct
+	features[119] = home.WeightedGoalsFor / 5.0
+	features[120] = away.WeightedGoalsFor / 5.0
+	features[121] = home.WeightedGoalsAgainst / 5.0
+	features[122] = away.WeightedGoalsAgainst / 5.0
+
+	// Quality of Competition (123-126)
+	features[123] = home.VsPlayoffTeamsPct
+	features[124] = away.VsPlayoffTeamsPct
+	features[125] = home.ClutchPerformance
+	features[126] = away.ClutchPerformance
+
+	// Recent Points & Goal Differential (127-130)
+	features[127] = float64(home.Last5GamesPoints) / 10.0
+	features[128] = float64(away.Last5GamesPoints) / 10.0
+	features[129] = float64(home.GoalDifferential5) / 20.0
+	features[130] = float64(away.GoalDifferential5) / 20.0
+
+	// ============================================================================
+	// PHASE 1 EXPANSION: MATCHUP CONTEXT (131-139) - 9 features
+	// ============================================================================
+
+	// Rivalry & Division Context (131-135)
+	if home.IsRivalryGame {
+		features[131] = 1.0
+	}
+	features[132] = home.RivalryIntensity
+	if home.IsDivisionGame {
+		features[133] = 1.0
+	}
+	if home.IsPlayoffRematch {
+		features[134] = 1.0
+	}
+	features[135] = home.HeadToHeadAdvantage
+
+	// Matchup History (136-139)
+	features[136] = home.RecentMatchupTrend
+	features[137] = home.VenueSpecificRecord
+	features[138] = float64(home.DaysSinceLastMeeting) / 365.0
+	features[139] = home.AverageGoalDiff / 5.0
+
+	// ============================================================================
+	// PHASE 2 EXPANSION: PLAYER/GOALIE EDGES (140-142) - 3 features
+	// ============================================================================
+	features[140] = home.StarPowerEdge
+	features[141] = home.DepthEdge
+	features[142] = home.GoalieFatigueDiff
+
+	// ============================================================================
+	// PHASE 2 EXPANSION: SITUATIONAL CONTEXT (143-147) - 5 features
+	// ============================================================================
+	features[143] = home.TrapGameFactor
+	features[144] = home.PlayoffImportance
+	features[145] = home.TransitionEfficiency
+	features[146] = home.SpecialTeamsIndex
+	features[147] = home.DisciplineIndex
+
+	// ============================================================================
+	// PHASE 2 EXPANSION: WEATHER & ADVANCED (148-155) - 8 features
+	// ============================================================================
+	features[148] = home.WeatherAnalysis.TravelImpact.OverallImpact / 5.0
+	features[149] = away.WeatherAnalysis.TravelImpact.OverallImpact / 5.0
+	features[150] = home.WeatherAnalysis.OverallImpact / 10.0
+	features[151] = away.WeatherAnalysis.OverallImpact / 10.0
+	if home.WeatherAnalysis.IsOutdoorGame {
+		features[152] = 1.0
+	}
+	if away.WeatherAnalysis.IsOutdoorGame {
+		features[153] = 1.0
+	}
+	features[154] = home.MarketConfidenceVal
+	features[155] = home.DefensiveZoneTime / 30.0
 
 	return features
 }

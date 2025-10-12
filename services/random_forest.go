@@ -51,35 +51,50 @@ type RFTreeNode struct {
 }
 
 // NewRandomForestModel creates a new random forest model
+var (
+	randomForestModel     *RandomForestModel
+	randomForestModelOnce sync.Once
+)
+
 func NewRandomForestModel() *RandomForestModel {
-	dataDir := "data/models"
-	os.MkdirAll(dataDir, 0755)
+	randomForestModelOnce.Do(func() {
+		dataDir := "data/models"
+		os.MkdirAll(dataDir, 0755)
 
-	numFeatures := 65
-	maxFeatures := int(math.Sqrt(float64(numFeatures))) // sqrt(65) ≈ 8
+		numFeatures := 156
+		maxFeatures := int(math.Sqrt(float64(numFeatures))) // sqrt(156) ≈ 12
 
-	rfm := &RandomForestModel{
-		trees:             []*RFTree{},
-		numTrees:          100, // 100 trees in forest
-		maxDepth:          6,   // Deeper than GB (less overfitting risk)
-		minSamplesLeaf:    3,   // Allow smaller leaves
-		maxFeatures:       maxFeatures,
-		weight:            0.07, // 7% weight in ensemble
-		trained:           false,
-		dataDir:           dataDir,
-		featureNames:      make([]string, numFeatures),
-		featureImportance: make(map[string]float64),
+		randomForestModel = &RandomForestModel{
+			trees:             []*RFTree{},
+			numTrees:          100, // 100 trees in forest
+			maxDepth:          6,   // Deeper than GB (less overfitting risk)
+			minSamplesLeaf:    3,   // Allow smaller leaves
+			maxFeatures:       maxFeatures,
+			weight:            0.07, // 7% weight in ensemble
+			trained:           false,
+			dataDir:           dataDir,
+			featureNames:      make([]string, numFeatures),
+			featureImportance: make(map[string]float64),
+		}
+
+		// Initialize feature names
+		for i := 0; i < numFeatures; i++ {
+			randomForestModel.featureNames[i] = fmt.Sprintf("feature_%d", i)
+		}
+
+		// Try to load existing model
+		randomForestModel.loadModel()
+	})
+
+	return randomForestModel
+}
+
+// GetRandomForestModel returns the singleton instance
+func GetRandomForestModel() *RandomForestModel {
+	if randomForestModel == nil {
+		return NewRandomForestModel()
 	}
-
-	// Initialize feature names
-	for i := 0; i < numFeatures; i++ {
-		rfm.featureNames[i] = fmt.Sprintf("feature_%d", i)
-	}
-
-	// Try to load existing model
-	rfm.loadModel()
-
-	return rfm
+	return randomForestModel
 }
 
 // Predict makes a prediction using random forest
@@ -522,50 +537,259 @@ func (rfm *RandomForestModel) extractGameFeatures(game *models.CompletedGame, is
 	return features
 }
 
-// extractFeatures extracts features for prediction
-func (rfm *RandomForestModel) extractFeatures(homeFactors, awayFactors *models.PredictionFactors) []float64 {
-	features := make([]float64, 65)
-	idx := 0
+// extractFeatures extracts 156 features for prediction (same as Neural Network)
+func (rfm *RandomForestModel) extractFeatures(home, away *models.PredictionFactors) []float64 {
+	features := make([]float64, 156) // 156 input features (140 Phase 1 + 16 Phase 2)
 
-	// Home team features
-	features[idx] = homeFactors.WinPercentage
-	idx++
-	features[idx] = homeFactors.GoalsFor / 5.0
-	idx++
-	features[idx] = homeFactors.GoalsAgainst / 5.0
-	idx++
-	features[idx] = homeFactors.PowerPlayPct
-	idx++
-	features[idx] = homeFactors.PenaltyKillPct
-	idx++
+	// Basic team stats
+	features[0] = home.WinPercentage
+	features[1] = away.WinPercentage
+	features[2] = home.GoalsFor / 82.0
+	features[3] = home.GoalsAgainst / 82.0
+	features[4] = away.GoalsFor / 82.0
+	features[5] = away.GoalsAgainst / 82.0
 
-	// Away team features
-	features[idx] = awayFactors.WinPercentage
-	idx++
-	features[idx] = awayFactors.GoalsFor / 5.0
-	idx++
-	features[idx] = awayFactors.GoalsAgainst / 5.0
-	idx++
-	features[idx] = awayFactors.PowerPlayPct
-	idx++
-	features[idx] = awayFactors.PenaltyKillPct
-	idx++
+	// Advanced analytics
+	features[6] = home.AdvancedStats.XGDifferential
+	features[7] = away.AdvancedStats.XGDifferential
+	features[8] = home.AdvancedStats.CorsiForPct / 100.0
+	features[9] = away.AdvancedStats.CorsiForPct / 100.0
 
-	// Advanced features
-	features[idx] = homeFactors.MomentumScore
-	idx++
-	features[idx] = awayFactors.MomentumScore
-	idx++
-	features[idx] = homeFactors.GoalieAdvantage
-	idx++
-	features[idx] = awayFactors.GoalieAdvantage
-	idx++
+	// Situational factors
+	features[10] = home.TravelFatigue.FatigueScore
+	features[11] = away.TravelFatigue.FatigueScore
+	features[12] = home.InjuryImpact.ImpactScore / 50.0
+	features[13] = away.InjuryImpact.ImpactScore / 50.0
 
-	// Pad remaining
-	for idx < 65 {
-		features[idx] = 0.5
-		idx++
+	// Weather impact
+	features[14] = home.WeatherAnalysis.OverallImpact
+	features[15] = away.WeatherAnalysis.OverallImpact
+
+	// Momentum and form
+	features[20] = home.MomentumFactors.MomentumScore
+	features[21] = away.MomentumFactors.MomentumScore
+	features[22] = home.RecentForm
+	features[23] = away.RecentForm
+
+	// Special teams
+	features[24] = home.PowerPlayPct / 100.0
+	features[25] = away.PowerPlayPct / 100.0
+	features[26] = home.PenaltyKillPct / 100.0
+	features[27] = away.PenaltyKillPct / 100.0
+
+	// Rest and schedule
+	features[28] = float64(home.RestDays) / 7.0
+	features[29] = float64(away.RestDays) / 7.0
+	features[30] = home.BackToBackPenalty
+	features[31] = away.BackToBackPenalty
+
+	// Head-to-head and historical
+	features[32] = home.HeadToHead
+	features[33] = away.HeadToHead
+
+	// Advanced goaltending
+	features[34] = home.AdvancedStats.GoalieSvPctOverall
+	features[35] = away.AdvancedStats.GoalieSvPctOverall
+	features[36] = home.AdvancedStats.SavesAboveExpected
+	features[37] = away.AdvancedStats.SavesAboveExpected
+
+	// Game state performance
+	features[38] = home.AdvancedStats.LeadingPerformance
+	features[39] = away.AdvancedStats.LeadingPerformance
+	features[40] = home.AdvancedStats.TrailingPerformance
+	features[41] = away.AdvancedStats.TrailingPerformance
+
+	// Zone play and transitions
+	features[42] = home.AdvancedStats.OffensiveZoneTime / 100.0
+	features[43] = away.AdvancedStats.OffensiveZoneTime / 100.0
+	features[44] = home.AdvancedStats.ControlledEntries / 100.0
+	features[45] = away.AdvancedStats.ControlledEntries / 100.0
+
+	// Overall team ratings
+	features[46] = home.AdvancedStats.OverallRating / 100.0
+	features[47] = away.AdvancedStats.OverallRating / 100.0
+
+	// Home ice advantage indicator
+	features[48] = 1.0 // Home team
+	features[49] = 0.0 // Away team
+
+	// Goalie Intelligence (50-53)
+	features[50] = home.GoalieAdvantage
+	features[51] = away.GoalieAdvantage
+	features[52] = home.GoalieSavePctDiff
+	features[53] = home.GoalieRecentFormDiff
+
+	// Betting Market Data (54-57)
+	features[54] = home.MarketConsensus
+	features[55] = away.MarketConsensus
+	features[56] = home.SharpMoneyIndicator
+	features[57] = home.MarketLineMovement
+
+	// Schedule Context (58-64)
+	features[58] = home.TravelDistance / 3000.0
+	features[59] = away.TravelDistance / 3000.0
+	features[60] = home.BackToBackIndicator
+	features[61] = away.BackToBackIndicator
+	features[62] = home.ScheduleDensity / 7.0
+	features[63] = away.ScheduleDensity / 7.0
+	features[64] = home.RestAdvantage / 5.0
+
+	// Player Intelligence: Top 10 Tracking (65-74)
+	features[65] = home.StarPowerRating
+	features[66] = away.StarPowerRating
+	features[67] = home.TopScorerPPG / 2.0
+	features[68] = away.TopScorerPPG / 2.0
+	features[69] = home.Top3CombinedPPG / 4.0
+	features[70] = away.Top3CombinedPPG / 4.0
+	features[71] = home.DepthScoring
+	features[72] = away.DepthScoring
+	features[73] = home.ScoringBalance
+	features[74] = away.ScoringBalance
+
+	// Play-by-Play Analytics: xG (75-86)
+	features[75] = home.ExpectedGoalsFor / 4.0
+	features[76] = away.ExpectedGoalsFor / 4.0
+	features[77] = home.ExpectedGoalsAgainst / 4.0
+	features[78] = away.ExpectedGoalsAgainst / 4.0
+	features[79] = home.XGDifferential / 2.0
+	features[80] = away.XGDifferential / 2.0
+	features[81] = home.XGPerShot / 0.15
+	features[82] = away.XGPerShot / 0.15
+	features[83] = home.DangerousShotsPerGame / 15.0
+	features[84] = away.DangerousShotsPerGame / 15.0
+	features[85] = home.HighDangerXG / 3.0
+	features[86] = away.HighDangerXG / 3.0
+
+	// Shot Quality & Corsi/Fenwick (87-92)
+	features[87] = home.ShotQualityAdvantage / 0.05
+	features[88] = home.CorsiForPct
+	features[89] = away.CorsiForPct
+	features[90] = home.FenwickForPct
+	features[91] = away.FenwickForPct
+	features[92] = home.FaceoffWinPct
+
+	// Shift Analysis (93-100)
+	features[93] = home.AvgShiftLength / 60.0
+	features[94] = away.AvgShiftLength / 60.0
+	features[95] = home.LineConsistency
+	features[96] = away.LineConsistency
+	features[97] = home.ShortBench
+	features[98] = away.ShortBench
+	features[99] = home.FatigueIndicator
+	features[100] = away.FatigueIndicator
+
+	// Landing Page Analytics (101-104)
+	features[101] = home.TimeOnAttack / 30.0
+	features[102] = away.TimeOnAttack / 30.0
+	features[103] = home.ZoneControlRatio
+	features[104] = away.ZoneControlRatio
+
+	// Game Summary Analytics (105-110)
+	features[105] = home.ShotQualityIndex
+	features[106] = away.ShotQualityIndex
+	features[107] = home.PowerPlayTime / 10.0
+	features[108] = away.PowerPlayTime / 10.0
+	features[109] = home.OffensiveZoneTime / 30.0
+	features[110] = away.OffensiveZoneTime / 30.0
+
+	// ============================================================================
+	// PHASE 1 EXPANSION: ROLLING STATISTICS (111-130) - 20 features
+	// ============================================================================
+
+	// Hot/Cold Streak Detection (111-116)
+	if home.IsHot {
+		features[111] = 1.0
 	}
+	if away.IsHot {
+		features[112] = 1.0
+	}
+	if home.IsCold {
+		features[113] = 1.0
+	}
+	if away.IsCold {
+		features[114] = 1.0
+	}
+	if home.IsStreaking {
+		features[115] = 1.0
+	}
+	if away.IsStreaking {
+		features[116] = 1.0
+	}
+
+	// Time-Weighted Performance (117-122)
+	features[117] = home.WeightedWinPct
+	features[118] = away.WeightedWinPct
+	features[119] = home.WeightedGoalsFor / 5.0
+	features[120] = away.WeightedGoalsFor / 5.0
+	features[121] = home.WeightedGoalsAgainst / 5.0
+	features[122] = away.WeightedGoalsAgainst / 5.0
+
+	// Quality of Competition (123-126)
+	features[123] = home.VsPlayoffTeamsPct
+	features[124] = away.VsPlayoffTeamsPct
+	features[125] = home.ClutchPerformance
+	features[126] = away.ClutchPerformance
+
+	// Recent Points & Goal Differential (127-130)
+	features[127] = float64(home.Last5GamesPoints) / 10.0
+	features[128] = float64(away.Last5GamesPoints) / 10.0
+	features[129] = float64(home.GoalDifferential5) / 20.0
+	features[130] = float64(away.GoalDifferential5) / 20.0
+
+	// ============================================================================
+	// PHASE 1 EXPANSION: MATCHUP CONTEXT (131-139) - 9 features
+	// ============================================================================
+
+	// Rivalry & Division Context (131-135)
+	if home.IsRivalryGame {
+		features[131] = 1.0
+	}
+	features[132] = home.RivalryIntensity
+	if home.IsDivisionGame {
+		features[133] = 1.0
+	}
+	if home.IsPlayoffRematch {
+		features[134] = 1.0
+	}
+	features[135] = home.HeadToHeadAdvantage
+
+	// Matchup History (136-139)
+	features[136] = home.RecentMatchupTrend
+	features[137] = home.VenueSpecificRecord
+	features[138] = float64(home.DaysSinceLastMeeting) / 365.0
+	features[139] = home.AverageGoalDiff / 5.0
+
+	// ============================================================================
+	// PHASE 2 EXPANSION: PLAYER/GOALIE EDGES (140-142) - 3 features
+	// ============================================================================
+	features[140] = home.StarPowerEdge
+	features[141] = home.DepthEdge
+	features[142] = home.GoalieFatigueDiff
+
+	// ============================================================================
+	// PHASE 2 EXPANSION: SITUATIONAL CONTEXT (143-147) - 5 features
+	// ============================================================================
+	features[143] = home.TrapGameFactor
+	features[144] = home.PlayoffImportance
+	features[145] = home.TransitionEfficiency
+	features[146] = home.SpecialTeamsIndex
+	features[147] = home.DisciplineIndex
+
+	// ============================================================================
+	// PHASE 2 EXPANSION: WEATHER & ADVANCED (148-155) - 8 features
+	// ============================================================================
+	features[148] = home.WeatherAnalysis.TravelImpact.OverallImpact / 5.0
+	features[149] = away.WeatherAnalysis.TravelImpact.OverallImpact / 5.0
+	features[150] = home.WeatherAnalysis.OverallImpact / 10.0
+	features[151] = away.WeatherAnalysis.OverallImpact / 10.0
+	if home.WeatherAnalysis.IsOutdoorGame {
+		features[152] = 1.0
+	}
+	if away.WeatherAnalysis.IsOutdoorGame {
+		features[153] = 1.0
+	}
+	features[154] = home.MarketConfidenceVal
+	features[155] = home.DefensiveZoneTime / 30.0
 
 	return features
 }

@@ -223,6 +223,16 @@ func main() {
 	systemStatsService := services.NewSystemStatsService()
 	handlers.InitSystemStatsService(systemStatsService)
 
+	// Initialize Feature Importance Service for ML model analysis
+	fmt.Println("🔍 Initializing Feature Importance Service...")
+	services.InitFeatureImportanceService()
+	fmt.Println("✅ Feature Importance Service initialized")
+
+	// Initialize Training Metrics Service for training frequency tracking
+	fmt.Println("📊 Initializing Training Metrics Service...")
+	services.InitTrainingMetricsService()
+	fmt.Println("✅ Training Metrics Service initialized")
+
 	// Initialize API Cache Service for NHL API response caching
 	fmt.Println("💾 Initializing API Cache Service...")
 	services.InitAPICacheService()
@@ -299,13 +309,25 @@ func main() {
 		}
 	}
 
+	// Initialize Prediction Storage Service for league-wide predictions
+	fmt.Println("📝 Initializing Prediction Storage Service...")
+	predictionStorage := services.InitPredictionStorageService()
+	fmt.Println("✅ Prediction Storage Service initialized")
+
+	// Initialize Daily Prediction Service for all NHL games
+	fmt.Println("🎯 Initializing Daily Prediction Service...")
+	ensembleService := services.NewEnsemblePredictionService(teamConfig.Code)
+	dailyPredictionService := services.InitDailyPredictionService(predictionStorage, ensembleService)
+	dailyPredictionService.Start()
+	fmt.Println("✅ Daily Prediction Service started (generates predictions for all NHL games)")
+
 	// Initialize Game Results Collection Service for automatic model learning
 	fmt.Println("Initializing Game Results Collection Service...")
 	if err := services.InitializeGameResultsService(teamConfig.Code); err != nil {
 		fmt.Printf("⚠️ Warning: Failed to initialize game results service: %v\n", err)
 		fmt.Println("Models will not learn automatically from completed games")
 	} else {
-		fmt.Printf("✅ Game Results Service initialized for %s\n", teamConfig.Code)
+		fmt.Printf("✅ Game Results Service initialized (league-wide collection, primary: %s)\n", teamConfig.Code)
 	}
 
 	// Initialize Rolling Stats Service
@@ -459,6 +481,11 @@ func main() {
 	http.HandleFunc("/api/prediction", handlers.HandleGamePrediction)
 	http.HandleFunc("/prediction-widget", handlers.HandlePredictionWidget)
 
+	// League-wide prediction endpoints
+	http.HandleFunc("/api/predictions/all", handlers.HandleLeagueWidePredictions)
+	http.HandleFunc("/api/predictions/accuracy", handlers.HandlePredictionAccuracy)
+	http.HandleFunc("/api/predictions/daily-stats", handlers.HandleDailyPredictionStats)
+
 	// Pre-Game Lineup endpoints
 	http.HandleFunc("/api/lineup", handlers.HandleLineup)
 	http.HandleFunc("/lineup", handlers.HandleLineupHTML)
@@ -477,6 +504,15 @@ func main() {
 	http.HandleFunc("/system-stats", handlers.HandleSystemStats)
 	http.HandleFunc("/system-stats-popup", handlers.HandleSystemStatsPopup)
 	http.HandleFunc("/api/health", handlers.HandleHealth) // Alternative endpoint
+
+	// Feature Importance Analysis endpoints
+	http.HandleFunc("/api/feature-importance", handlers.HandleFeatureImportance)
+	http.HandleFunc("/api/feature-importance/markdown", handlers.HandleFeatureImportanceMarkdown)
+
+	// Training Metrics endpoints
+	http.HandleFunc("/api/training-metrics", handlers.HandleTrainingMetrics)
+	http.HandleFunc("/api/training-metrics/model", handlers.HandleModelTrainingMetrics)
+	http.HandleFunc("/api/training-metrics/events", handlers.HandleRecentTrainingEvents)
 
 	// Live Prediction System management endpoints
 	if livePredictionSystem := services.GetLivePredictionSystem(); livePredictionSystem != nil {
@@ -509,6 +545,11 @@ func main() {
 			} else {
 				fmt.Println("✅ API cache saved")
 			}
+		}
+
+		// Stop the daily prediction service
+		if dailyPredictionService != nil {
+			dailyPredictionService.Stop()
 		}
 
 		// Stop the game results service

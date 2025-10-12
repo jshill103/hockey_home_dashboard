@@ -49,6 +49,10 @@ RUN mkdir -p /app/data/lineups \
 RUN mkdir -p /app/data/cache/predictions
 # API response cache for performance optimization
 RUN mkdir -p /app/data/cache/api
+# League-wide prediction storage
+RUN mkdir -p /app/data/predictions
+# Training metrics and roster data (Phase 1 optimization)
+RUN mkdir -p /app/data/metrics /app/data/rosters
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S appgroup && \

@@ -36,6 +36,12 @@ type MetaLearnerModel struct {
 	// Performance tracking
 	trainAccuracy float64
 	valAccuracy   float64
+
+	// Auto-training
+	lastAutoTrain     time.Time
+	trainingCount     int
+	gamesProcessed    int
+	autoTrainInterval int // Train every N games after initial threshold
 }
 
 // ModelPredictions holds predictions from all base models
@@ -65,38 +71,57 @@ type MetaGameContext struct {
 	BackToBack       bool    // Either team on back-to-back
 }
 
+var (
+	metaLearnerModel     *MetaLearnerModel
+	metaLearnerModelOnce sync.Once
+)
+
 // NewMetaLearnerModel creates a new meta-learner
 func NewMetaLearnerModel() *MetaLearnerModel {
-	dataDir := "data/models"
-	os.MkdirAll(dataDir, 0755)
+	metaLearnerModelOnce.Do(func() {
+		dataDir := "data/models"
+		os.MkdirAll(dataDir, 0755)
 
-	numBaseModels := 9    // 9 base prediction models
-	numContextFeats := 10 // 10 context features
-	totalFeatures := numBaseModels + numContextFeats
+		numBaseModels := 9    // 9 base prediction models
+		numContextFeats := 10 // 10 context features
+		totalFeatures := numBaseModels + numContextFeats
 
-	mlm := &MetaLearnerModel{
-		weights:         make([]float64, totalFeatures),
-		bias:            0.0,
-		learningRate:    0.01,
-		numBaseModels:   numBaseModels,
-		numContextFeats: numContextFeats,
-		trained:         false,
-		weight:          1.0, // Meta-learner gets 100% weight (it combines others)
-		dataDir:         dataDir,
-		lastUpdated:     time.Now(),
+		metaLearnerModel = &MetaLearnerModel{
+			weights:           make([]float64, totalFeatures),
+			bias:              0.0,
+			learningRate:      0.01,
+			numBaseModels:     numBaseModels,
+			numContextFeats:   numContextFeats,
+			trained:           false,
+			weight:            1.0, // Meta-learner gets 100% weight (it combines others)
+			dataDir:           dataDir,
+			lastUpdated:       time.Now(),
+			autoTrainInterval: 50, // Train every 50 games after initial 20
+			lastAutoTrain:     time.Time{},
+			trainingCount:     0,
+			gamesProcessed:    0,
+		}
+
+		// Try to load existing model
+		if err := metaLearnerModel.loadModel(); err != nil {
+			log.Printf("🎯 Initializing new Meta-Learner (no saved model found)")
+			metaLearnerModel.initializeWeights()
+		} else {
+			log.Printf("🎯 Meta-Learner loaded from disk")
+			log.Printf("   Train Acc: %.2f%%, Val Acc: %.2f%%", metaLearnerModel.trainAccuracy*100, metaLearnerModel.valAccuracy*100)
+			log.Printf("   Last updated: %s", metaLearnerModel.lastUpdated.Format("2006-01-02 15:04:05"))
+		}
+	})
+
+	return metaLearnerModel
+}
+
+// GetMetaLearnerModel returns the singleton instance
+func GetMetaLearnerModel() *MetaLearnerModel {
+	if metaLearnerModel == nil {
+		return NewMetaLearnerModel()
 	}
-
-	// Try to load existing model
-	if err := mlm.loadModel(); err != nil {
-		log.Printf("🎯 Initializing new Meta-Learner (no saved model found)")
-		mlm.initializeWeights()
-	} else {
-		log.Printf("🎯 Meta-Learner loaded from disk")
-		log.Printf("   Train Acc: %.2f%%, Val Acc: %.2f%%", mlm.trainAccuracy*100, mlm.valAccuracy*100)
-		log.Printf("   Last updated: %s", mlm.lastUpdated.Format("2006-01-02 15:04:05"))
-	}
-
-	return mlm
+	return metaLearnerModel
 }
 
 // initializeWeights initializes meta-learner weights
@@ -471,4 +496,158 @@ func (mlm *MetaLearnerModel) loadModel() error {
 	mlm.lastUpdated = modelData.LastUpdated
 
 	return nil
+}
+
+// ============================================================================
+// AUTO-TRAINING (PHASE 1 OPTIMIZATION)
+// ============================================================================
+
+// ShouldAutoTrain determines if the Meta-Learner should train now
+func (mlm *MetaLearnerModel) ShouldAutoTrain() bool {
+	mlm.mutex.RLock()
+	defer mlm.mutex.RUnlock()
+
+	// Need at least 20 games before first training
+	if mlm.gamesProcessed < 20 {
+		return false
+	}
+
+	// After initial training, train every N games
+	gamesSinceLastTrain := mlm.gamesProcessed - mlm.trainingCount*mlm.autoTrainInterval
+	return gamesSinceLastTrain >= mlm.autoTrainInterval
+}
+
+// RecordGameProcessed increments the games processed counter
+func (mlm *MetaLearnerModel) RecordGameProcessed() {
+	mlm.mutex.Lock()
+	defer mlm.mutex.Unlock()
+	mlm.gamesProcessed++
+}
+
+// AutoTrain automatically trains the Meta-Learner if conditions are met
+// This should be called by the GameResultsService after processing each game
+func (mlm *MetaLearnerModel) AutoTrain() error {
+	if !mlm.ShouldAutoTrain() {
+		return nil // Not time to train yet
+	}
+
+	log.Printf("🎯 AUTO-TRAINING Meta-Learner triggered (games: %d, training: %d)",
+		mlm.gamesProcessed, mlm.trainingCount+1)
+
+	// Get training data from stored predictions
+	predictionStorage := GetPredictionStorageService()
+	if predictionStorage == nil {
+		return fmt.Errorf("prediction storage service not available")
+	}
+
+	predictions, err := predictionStorage.GetAllPredictions()
+	if err != nil {
+		return fmt.Errorf("failed to load predictions: %w", err)
+	}
+
+	if len(predictions) < 20 {
+		return fmt.Errorf("insufficient predictions for training: have %d, need 20", len(predictions))
+	}
+
+	// Convert stored predictions to training examples
+	trainingData := []MetaTrainingExample{}
+	for _, pred := range predictions {
+		if pred.ActualResult == nil || pred.Accuracy == nil {
+			continue // Skip predictions without results
+		}
+
+		// Extract base model predictions
+		modelPreds := ModelPredictions{}
+		for _, modelResult := range pred.Prediction.Prediction.ModelResults {
+			switch modelResult.ModelName {
+			case "Enhanced Statistical Model":
+				modelPreds.Statistical = modelResult.WinProbability
+			case "Bayesian Inference Model":
+				modelPreds.Bayesian = modelResult.WinProbability
+			case "Monte Carlo Simulation":
+				modelPreds.MonteCarlo = modelResult.WinProbability
+			case "Elo Rating Model":
+				modelPreds.Elo = modelResult.WinProbability
+			case "Poisson Regression Model":
+				modelPreds.Poisson = modelResult.WinProbability
+			case "Neural Network":
+				modelPreds.NeuralNetwork = modelResult.WinProbability
+			case "Gradient Boosting":
+				modelPreds.GradientBoosting = modelResult.WinProbability
+			case "LSTM":
+				modelPreds.LSTM = modelResult.WinProbability
+			case "Random Forest":
+				modelPreds.RandomForest = modelResult.WinProbability
+			}
+		}
+
+		// Determine actual outcome (1.0 if home team won, 0.0 if away team won)
+		actualOutcome := 0.0
+		if pred.ActualResult.WinningTeam == pred.HomeTeam {
+			actualOutcome = 1.0
+		}
+
+		// Extract context features (use defaults for now)
+		context := MetaGameContext{
+			IsDivisionalGame: false,
+			IsPlayoffGame:    false,
+			IsRivalryGame:    false,
+			HomeTeamHot:      false,
+			AwayTeamHot:      false,
+			HomeTeamCold:     false,
+			AwayTeamCold:     false,
+			RestAdvantage:    0.0,
+			TravelDistance:   0.0,
+			BackToBack:       false,
+		}
+
+		trainingData = append(trainingData, MetaTrainingExample{
+			Predictions:   modelPreds,
+			Context:       context,
+			ActualOutcome: actualOutcome,
+			GameID:        pred.GameID,
+			GameDate:      pred.GameDate,
+		})
+	}
+
+	if len(trainingData) < 20 {
+		return fmt.Errorf("insufficient valid training examples: have %d, need 20", len(trainingData))
+	}
+
+	// Train the model
+	log.Printf("🎯 Training Meta-Learner on %d examples...", len(trainingData))
+	start := time.Now()
+
+	err = mlm.Train(trainingData)
+	if err != nil {
+		return fmt.Errorf("training failed: %w", err)
+	}
+
+	// Update training counters
+	mlm.mutex.Lock()
+	mlm.trainingCount++
+	mlm.lastAutoTrain = time.Now()
+	mlm.mutex.Unlock()
+
+	duration := time.Since(start)
+	log.Printf("✅ Meta-Learner auto-training complete!")
+	log.Printf("   Training #%d completed in %.1fs", mlm.trainingCount, duration.Seconds())
+	log.Printf("   Next auto-train at: %d games", mlm.gamesProcessed+mlm.autoTrainInterval)
+
+	return nil
+}
+
+// GetAutoTrainStatus returns the current auto-training status
+func (mlm *MetaLearnerModel) GetAutoTrainStatus() map[string]interface{} {
+	mlm.mutex.RLock()
+	defer mlm.mutex.RUnlock()
+
+	return map[string]interface{}{
+		"gamesProcessed":    mlm.gamesProcessed,
+		"trainingCount":     mlm.trainingCount,
+		"lastAutoTrain":     mlm.lastAutoTrain,
+		"autoTrainInterval": mlm.autoTrainInterval,
+		"nextTrainAt":       mlm.trainingCount*mlm.autoTrainInterval + mlm.autoTrainInterval,
+		"shouldTrain":       mlm.gamesProcessed >= 20 && mlm.gamesProcessed >= (mlm.trainingCount*mlm.autoTrainInterval+mlm.autoTrainInterval),
+	}
 }
