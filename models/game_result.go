@@ -283,7 +283,7 @@ type BoxscoreResponse struct {
 	AwayTeam     BoxscoreTeam      `json:"awayTeam"`
 	GameOutcome  GameOutcome       `json:"gameOutcome"`
 	Summary      *BoxscoreSummary  `json:"summary,omitempty"`
-	PlayerByGame []PlayerGameStats `json:"playerByGameStats,omitempty"`
+	PlayerByGame interface{} `json:"playerByGameStats,omitempty"` // Can be object or array, ignoring for now
 	BoxScore     *DetailedBoxscore `json:"boxscore,omitempty"`
 }
 
@@ -357,7 +357,7 @@ type PlayerGameStats struct {
 // DetailedBoxscore contains more granular game statistics
 type DetailedBoxscore struct {
 	LinesScore  *LinesScore          `json:"linescore,omitempty"`
-	PlayerStats *BoxscorePlayerStats `json:"playerByGameStats,omitempty"`
+	PlayerStats interface{} `json:"playerByGameStats,omitempty"` // Can be object or array, ignoring for now
 	GameInfo    *GameInfo            `json:"gameInfo,omitempty"`
 }
 

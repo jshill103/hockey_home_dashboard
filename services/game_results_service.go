@@ -88,9 +88,10 @@ func (grs *GameResultsService) Start() {
 	grs.isRunning = true
 	grs.mutex.Unlock()
 
-	log.Printf("📊 Game Results Service started for %s", grs.teamCode)
+	log.Printf("📊 Game Results Service started (League-wide collection, primary team: %s)", grs.teamCode)
 	log.Printf("📊 Loaded %d processed games from index", len(grs.processedGames))
-	log.Printf("📊 Checking for completed games every %v", grs.checkInterval)
+	log.Printf("📊 Checking for completed NHL games every %v", grs.checkInterval)
+	log.Printf("🌍 Processing ALL NHL games for maximum ML training data")
 
 	// Start background monitoring goroutine
 	go grs.monitorGames()
@@ -129,14 +130,14 @@ func (grs *GameResultsService) monitorGames() {
 	}
 }
 
-// checkForCompletedGames checks for new completed games
+// checkForCompletedGames checks for new completed games (league-wide)
 func (grs *GameResultsService) checkForCompletedGames() {
-	log.Printf("🔍 Checking for completed games...")
+	log.Printf("🔍 Checking for completed NHL games (league-wide)...")
 
-	// Get team schedule from NHL API using existing schedule structure
+	// Get league-wide scoreboard from NHL API
 	schedule, err := grs.fetchWeekSchedule()
 	if err != nil {
-		log.Printf("❌ Failed to fetch team schedule: %v", err)
+		log.Printf("❌ Failed to fetch league scoreboard: %v", err)
 		return
 	}
 
@@ -151,11 +152,11 @@ func (grs *GameResultsService) checkForCompletedGames() {
 	}
 
 	if len(newGames) == 0 {
-		log.Printf("✅ No new completed games found")
+		log.Printf("✅ No new completed games found (league-wide scan)")
 		return
 	}
 
-	log.Printf("📊 Found %d new completed game(s)", len(newGames))
+	log.Printf("🌍 Found %d new completed NHL game(s) to process!", len(newGames))
 
 	// Process each new game
 	for _, game := range newGames {
@@ -173,37 +174,26 @@ func (grs *GameResultsService) checkForCompletedGames() {
 	}
 }
 
-// fetchWeekSchedule fetches the team's weekly schedule using scoreboard structure
+// fetchWeekSchedule fetches ALL NHL games (league-wide) for the current week
 func (grs *GameResultsService) fetchWeekSchedule() (*models.ScoreboardResponse, error) {
-	url := fmt.Sprintf("https://api-web.nhle.com/v1/club-schedule/%s/week/now", grs.teamCode)
+	// Use the league-wide scoreboard endpoint to get all games
+	// This fetches all NHL games, not just one team
+	url := "https://api-web.nhle.com/v1/scoreboard/now"
 
-	resp, err := grs.httpClient.Get(url)
+	// Use MakeAPICall for caching and rate limiting
+	body, err := MakeAPICall(url)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch schedule: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("failed to fetch league scoreboard: %w", err)
 	}
 
-	// The club-schedule endpoint returns games in a structure similar to scoreboard
-	// We'll parse it into ScoreboardResponse format
-	var scheduleData struct {
-		Games []models.ScoreboardGame `json:"games"`
+	// Parse the scoreboard response which includes all NHL games
+	var scheduleData models.ScoreboardResponse
+	if err := json.Unmarshal(body, &scheduleData); err != nil {
+		return nil, fmt.Errorf("failed to decode league scoreboard: %w", err)
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&scheduleData); err != nil {
-		return nil, fmt.Errorf("failed to decode schedule: %w", err)
-	}
-
-	return &models.ScoreboardResponse{
-		GamesByDate: []models.GamesByDate{
-			{
-				Games: scheduleData.Games,
-			},
-		},
-	}, nil
+	// Return the full scoreboard with all NHL games
+	return &scheduleData, nil
 }
 
 // isGameCompleted checks if a game is completed
