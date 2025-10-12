@@ -53,11 +53,8 @@ func makeAPICallInternal(urlIn string, cache *APICacheService) ([]byte, error) {
 	// Add User-Agent header to avoid being blocked
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; UHC-Bot/1.0)")
 
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	res, err := client.Do(req)
+	// Use shared HTTP client with connection pooling
+	res, err := SharedHTTPClient.Do(req)
 	if err != nil {
 		fmt.Printf("Error making request: %v\n", err)
 		return nil, err

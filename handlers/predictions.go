@@ -918,7 +918,9 @@ func generatePredictionsPopupHTML(allPredictions []*services.StoredPrediction, a
 		accuracyPct = float64(correctCount) / float64(completedCount) * 100
 	}
 
-	html := `
+	// Use strings.Builder for efficient string concatenation
+	var html strings.Builder
+	html.WriteString(`
 <div class="system-stats-popup">
 	<div class="stats-header">
 		<h3>📊 Prediction Statistics</h3>
@@ -953,7 +955,7 @@ func generatePredictionsPopupHTML(allPredictions []*services.StoredPrediction, a
 
 	<div class="stats-section">
 		<h4>🎯 Upcoming Predictions</h4>
-		<div class="predictions-list">`
+		<div class="predictions-list">`)
 
 	// Add upcoming predictions
 	upcomingAdded := 0
@@ -966,30 +968,38 @@ func generatePredictionsPopupHTML(allPredictions []*services.StoredPrediction, a
 				winProb = pred.Prediction.AwayTeam.WinProbability
 			}
 
-			html += `
+			html.WriteString(`
 			<div class="prediction-item">
-				<div class="prediction-game">` + pred.AwayTeam + ` @ ` + pred.HomeTeam + `</div>
+				<div class="prediction-game">`)
+			html.WriteString(pred.AwayTeam + ` @ ` + pred.HomeTeam)
+			html.WriteString(`</div>
 				<div class="prediction-details">
-					<span class="prediction-winner">Predicted: ` + winningTeam + `</span>
-					<span class="prediction-confidence">` + fmt.Sprintf("%.1f%% confidence", winProb*100) + `</span>
+					<span class="prediction-winner">Predicted: `)
+			html.WriteString(winningTeam)
+			html.WriteString(`</span>
+					<span class="prediction-confidence">`)
+			html.WriteString(fmt.Sprintf("%.1f%% confidence", winProb*100))
+			html.WriteString(`</span>
 				</div>
-				<div class="prediction-date">` + pred.GameDate.Format("Jan 2, 2006") + `</div>
-			</div>`
+				<div class="prediction-date">`)
+			html.WriteString(pred.GameDate.Format("Jan 2, 2006"))
+			html.WriteString(`</div>
+			</div>`)
 			upcomingAdded++
 		}
 	}
 
 	if upcomingAdded == 0 {
-		html += `<p style="text-align: center; color: #aaa; font-style: italic;">No upcoming predictions</p>`
+		html.WriteString(`<p style="text-align: center; color: #aaa; font-style: italic;">No upcoming predictions</p>`)
 	}
 
-	html += `
+	html.WriteString(`
 		</div>
 	</div>
 
 	<div class="stats-section">
 		<h4>✅ Recent Results</h4>
-		<div class="predictions-list">`
+		<div class="predictions-list">`)
 
 	// Add recent completed predictions
 	recentAdded := 0
@@ -1013,28 +1023,38 @@ func generatePredictionsPopupHTML(allPredictions []*services.StoredPrediction, a
 
 			actualWinner := pred.ActualResult.WinningTeam
 
-			html += `
-			<div class="prediction-item ` + correctClass + `">
-				<div class="prediction-game">` + pred.AwayTeam + ` @ ` + pred.HomeTeam + ` ` + correctIcon + `</div>
+			html.WriteString(`
+			<div class="prediction-item `)
+			html.WriteString(correctClass)
+			html.WriteString(`">
+				<div class="prediction-game">`)
+			html.WriteString(pred.AwayTeam + ` @ ` + pred.HomeTeam + ` ` + correctIcon)
+			html.WriteString(`</div>
 				<div class="prediction-details">
-					<span class="prediction-winner">Predicted: ` + winningTeam + ` (` + fmt.Sprintf("%.1f%%", winProb*100) + `)</span>
-					<span class="prediction-actual">Actual: ` + actualWinner + `</span>
+					<span class="prediction-winner">Predicted: `)
+			html.WriteString(winningTeam + ` (` + fmt.Sprintf("%.1f%%", winProb*100) + `)`)
+			html.WriteString(`</span>
+					<span class="prediction-actual">Actual: `)
+			html.WriteString(actualWinner)
+			html.WriteString(`</span>
 				</div>
-				<div class="prediction-date">` + pred.GameDate.Format("Jan 2") + `</div>
-			</div>`
+				<div class="prediction-date">`)
+			html.WriteString(pred.GameDate.Format("Jan 2"))
+			html.WriteString(`</div>
+			</div>`)
 			recentAdded++
 		}
 	}
 
 	if recentAdded == 0 {
-		html += `<p style="text-align: center; color: #aaa; font-style: italic;">No completed predictions yet</p>`
+		html.WriteString(`<p style="text-align: center; color: #aaa; font-style: italic;">No completed predictions yet</p>`)
 	}
 
-	html += `
+	html.WriteString(`
 		</div>
 	</div>
 </div>
-`
+`)
 
-	return html
+	return html.String()
 }

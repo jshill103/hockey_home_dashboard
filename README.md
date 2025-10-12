@@ -91,6 +91,9 @@ The application supports all 32 NHL teams with custom assets:
    docker run -d -p 8080:8080 -e TEAM_CODE=UTA jshillingburg/hockey_home_dashboard:latest
    docker run -d -p 8080:8080 -e TEAM_CODE=COL jshillingburg/hockey_home_dashboard:latest
    docker run -d -p 8080:8080 -e TEAM_CODE=TOR jshillingburg/hockey_home_dashboard:latest
+   
+   # Enable debug mode for verbose logging (development)
+   docker run -d -p 8080:8080 -e TEAM_CODE=UTA -e DEBUG=true jshillingburg/hockey_home_dashboard:latest
    ```
 
 **📦 Or Build from Source:**
@@ -160,6 +163,30 @@ The application supports all 32 NHL teams with custom assets:
    ```
 
 ## Usage 💻
+
+### Environment Variables
+
+The application supports the following environment variables:
+
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `TEAM_CODE` | NHL team code (3 letters) | `UTA` | `TOR`, `BOS`, `COL` |
+| `DEBUG` | Enable verbose logging | `false` | `true`, `false` |
+
+**Examples**:
+```bash
+# Production mode (minimal logging)
+export TEAM_CODE=UTA
+./go_uhc
+
+# Development mode (verbose logging)
+export DEBUG=true
+export TEAM_CODE=UTA
+./go_uhc
+
+# Docker with debug mode
+docker run -p 8080:8080 -e TEAM_CODE=UTA -e DEBUG=true jshillingburg/hockey_home_dashboard:latest
+```
 
 ### Command Line Options
 

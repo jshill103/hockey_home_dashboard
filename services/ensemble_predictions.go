@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -11,6 +12,9 @@ import (
 
 	"github.com/jaredshillingburg/go_uhc/models"
 )
+
+// DEBUG mode controls verbose logging (shared with prediction_models.go)
+var ensembleDEBUG = os.Getenv("DEBUG") == "true"
 
 // EnsemblePredictionService combines multiple prediction models with cross-validation
 type EnsemblePredictionService struct {
@@ -683,8 +687,11 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 		modelResults = append(modelResults, *result)
 		totalWeight += result.Weight
 
-		fmt.Printf("📊 %s: %.1f%% confidence, %s prediction (Weight: %.1f%%)\n",
-			model.GetName(), result.Confidence*100, result.PredictedScore, result.Weight*100)
+		// Only log individual model results in DEBUG mode
+		if ensembleDEBUG {
+			fmt.Printf("📊 %s: %.1f%% confidence, %s prediction (Weight: %.1f%%)\n",
+				model.GetName(), result.Confidence*100, result.PredictedScore, result.Weight*100)
+		}
 	}
 
 	if len(modelResults) == 0 {

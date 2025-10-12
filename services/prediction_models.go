@@ -5,10 +5,14 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"os"
 	"time"
 
 	"github.com/jaredshillingburg/go_uhc/models"
 )
+
+// DEBUG mode controls verbose logging
+var DEBUG = os.Getenv("DEBUG") == "true"
 
 // PredictionModel interface for all prediction algorithms
 type PredictionModel interface {
@@ -198,22 +202,25 @@ func (m *StatisticalModel) calculateAdvancedScore(factors *models.PredictionFact
 		baseScore = 50.0
 	}
 
-	fmt.Printf("📊 %s Advanced Score Breakdown:\n", factors.TeamCode)
-	fmt.Printf("   Base: %.1f, Travel: %.1f, Altitude: %.1f, Schedule: %.1f, Injuries: %.1f, Momentum: %.1f\n",
-		baseScore,
-		-factors.TravelFatigue.FatigueScore*8.0,
-		factors.AltitudeAdjust.AdjustmentFactor*12.0,
-		factors.ScheduleStrength.RestAdvantage*4.0-factors.ScheduleStrength.ScheduleDensity*6.0,
-		-factors.InjuryImpact.InjuryScore*10.0,
-		(factors.MomentumFactors.MomentumScore-0.5)*8.0)
-	fmt.Printf("   🏒 Advanced: xG %.1f, Talent %.1f, Possession %.1f, HDC %.1f, Goalie %.1f, Overall Rating %.1f\n",
-		xgDiffImpact, talentImpact, possessionImpact, hdcImpact, goalieImpact, advStats.OverallRating)
-	fmt.Printf("   ⭐ Player: Star %.1f, TopForm %.1f, Depth %.1f, Total %.1f\n",
-		(factors.StarPowerRating-0.75)*20.0, (factors.TopScorerForm-5.0)*2.0,
-		(factors.DepthForm-5.0)*1.5, playerImpact)
-	fmt.Printf("   🌦️ Weather: Overall %.1f, Travel %.1f, Game %.1f (Outdoor: %v)\n",
-		weatherImpact, factors.WeatherAnalysis.TravelImpact.OverallImpact*2.0,
-		factors.WeatherAnalysis.GameImpact.OverallGameImpact*3.0, factors.WeatherAnalysis.IsOutdoorGame)
+	// Only log detailed breakdowns in DEBUG mode
+	if DEBUG {
+		fmt.Printf("📊 %s Advanced Score Breakdown:\n", factors.TeamCode)
+		fmt.Printf("   Base: %.1f, Travel: %.1f, Altitude: %.1f, Schedule: %.1f, Injuries: %.1f, Momentum: %.1f\n",
+			baseScore,
+			-factors.TravelFatigue.FatigueScore*8.0,
+			factors.AltitudeAdjust.AdjustmentFactor*12.0,
+			factors.ScheduleStrength.RestAdvantage*4.0-factors.ScheduleStrength.ScheduleDensity*6.0,
+			-factors.InjuryImpact.InjuryScore*10.0,
+			(factors.MomentumFactors.MomentumScore-0.5)*8.0)
+		fmt.Printf("   🏒 Advanced: xG %.1f, Talent %.1f, Possession %.1f, HDC %.1f, Goalie %.1f, Overall Rating %.1f\n",
+			xgDiffImpact, talentImpact, possessionImpact, hdcImpact, goalieImpact, advStats.OverallRating)
+		fmt.Printf("   ⭐ Player: Star %.1f, TopForm %.1f, Depth %.1f, Total %.1f\n",
+			(factors.StarPowerRating-0.75)*20.0, (factors.TopScorerForm-5.0)*2.0,
+			(factors.DepthForm-5.0)*1.5, playerImpact)
+		fmt.Printf("   🌦️ Weather: Overall %.1f, Travel %.1f, Game %.1f (Outdoor: %v)\n",
+			weatherImpact, factors.WeatherAnalysis.TravelImpact.OverallImpact*2.0,
+			factors.WeatherAnalysis.GameImpact.OverallGameImpact*3.0, factors.WeatherAnalysis.IsOutdoorGame)
+	}
 
 	return math.Max(score, 10.0) // Minimum viable score
 }
