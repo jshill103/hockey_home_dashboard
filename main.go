@@ -323,6 +323,11 @@ func main() {
 	dailyPredictionService.Start()
 	fmt.Println("✅ Daily Prediction Service started (generates predictions for all NHL games)")
 
+	// Initialize Smart Re-Prediction Service
+	fmt.Println("🔄 Initializing Smart Re-Prediction Service...")
+	services.InitSmartRePredictionService(dailyPredictionService, predictionStorage, ensembleService)
+	fmt.Println("✅ Smart Re-Prediction Service initialized (adaptive re-prediction after training)")
+
 	// Initialize Game Results Collection Service for automatic model learning
 	fmt.Println("Initializing Game Results Collection Service...")
 	if err := services.InitializeGameResultsService(teamConfig.Code); err != nil {
@@ -516,6 +521,9 @@ func main() {
 	http.HandleFunc("/api/training-metrics", handlers.HandleTrainingMetrics)
 	http.HandleFunc("/api/training-metrics/model", handlers.HandleModelTrainingMetrics)
 	http.HandleFunc("/api/training-metrics/events", handlers.HandleRecentTrainingEvents)
+
+	// Re-Prediction Metrics endpoint
+	http.HandleFunc("/api/reprediction-metrics", handlers.GetRePredictionMetrics)
 
 	// Live Prediction System management endpoints
 	if livePredictionSystem := services.GetLivePredictionSystem(); livePredictionSystem != nil {

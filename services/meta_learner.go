@@ -651,3 +651,11 @@ func (mlm *MetaLearnerModel) GetAutoTrainStatus() map[string]interface{} {
 		"shouldTrain":       mlm.gamesProcessed >= 20 && mlm.gamesProcessed >= (mlm.trainingCount*mlm.autoTrainInterval+mlm.autoTrainInterval),
 	}
 }
+
+// GetCurrentAccuracy returns the current validation accuracy
+func (mlm *MetaLearnerModel) GetCurrentAccuracy() float64 {
+	mlm.mutex.RLock()
+	defer mlm.mutex.RUnlock()
+
+	return mlm.valAccuracy
+}

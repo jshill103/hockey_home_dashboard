@@ -486,10 +486,39 @@ func (grs *GameResultsService) feedToModels(game *models.CompletedGame) {
 
 	// Auto-train Meta-Learner if conditions are met
 	metaLearner := GetMetaLearnerModel()
+	modelAccuracyImprovement := 0.0
 	if metaLearner != nil {
+		oldAccuracy := metaLearner.GetCurrentAccuracy()
 		metaLearner.RecordGameProcessed()
 		if err := metaLearner.AutoTrain(); err != nil {
 			log.Printf("⚠️ Meta-Learner auto-training failed: %v", err)
+		} else {
+			newAccuracy := metaLearner.GetCurrentAccuracy()
+			modelAccuracyImprovement = newAccuracy - oldAccuracy
+			if modelAccuracyImprovement > 0 {
+				log.Printf("📈 Meta-Learner accuracy improved by %.2f%% (%.2f%% → %.2f%%)",
+					modelAccuracyImprovement*100, oldAccuracy*100, newAccuracy*100)
+			}
+		}
+	}
+
+	// SMART RE-PREDICTION: Evaluate whether to re-predict after training
+	smartRePrediction := GetSmartRePredictionService()
+	if smartRePrediction != nil {
+		// Decide whether to re-predict
+		decision := smartRePrediction.EvaluateRePrediction(game, modelAccuracyImprovement)
+
+		if decision.ShouldRePredict {
+			log.Printf("🔄 Re-prediction triggered: scope=%s, reason=%s", decision.Scope, decision.Reason)
+
+			// Execute re-prediction in background to avoid blocking
+			go func() {
+				if err := smartRePrediction.ExecuteRePrediction(decision); err != nil {
+					log.Printf("⚠️ Re-prediction failed: %v", err)
+				}
+			}()
+		} else {
+			log.Printf("⏭️ Re-prediction skipped: %s", decision.Reason)
 		}
 	}
 
