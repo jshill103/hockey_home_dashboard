@@ -201,6 +201,12 @@ func (ps *PredictionService) PredictNextGame() (*models.GamePrediction, error) {
 		awayWinProb = prediction.WinProbability
 	}
 
+	// Get real recent form and streak from Rolling Stats service
+	fmt.Printf("🔍🔍🔍 ABOUT TO FETCH REAL DATA FOR BOTH TEAMS 🔍🔍🔍\n")
+	homeRecentForm, homeStreak := ps.getRealRecentFormAndStreak(homeFactors.TeamCode)
+	awayRecentForm, awayStreak := ps.getRealRecentFormAndStreak(awayFactors.TeamCode)
+	fmt.Printf("🎉 GOT DATA - Home: %s/%s, Away: %s/%s\n", homeRecentForm, homeStreak, awayRecentForm, awayStreak)
+
 	gamePrediction := &models.GamePrediction{
 		GameID: 0, // Schedule games don't have IDs
 		GameDate: func() time.Time {
@@ -214,16 +220,16 @@ func (ps *PredictionService) PredictNextGame() (*models.GamePrediction, error) {
 			Name:           nextGame.HomeTeam.CommonName.Default,
 			WinProbability: homeWinProb,
 			ExpectedGoals:  homeFactors.GoalsFor,
-			RecentForm:     ps.getRecentFormString(homeFactors.TeamCode),
-			Streak:         ps.getCurrentStreak(homeFactors.TeamCode),
+			RecentForm:     homeRecentForm,
+			Streak:         homeStreak,
 		},
 		AwayTeam: models.PredictionTeam{
 			Code:           nextGame.AwayTeam.Abbrev,
 			Name:           nextGame.AwayTeam.CommonName.Default,
 			WinProbability: awayWinProb,
 			ExpectedGoals:  awayFactors.GoalsFor,
-			RecentForm:     ps.getRecentFormString(awayFactors.TeamCode),
-			Streak:         ps.getCurrentStreak(awayFactors.TeamCode),
+			RecentForm:     awayRecentForm,
+			Streak:         awayStreak,
 		},
 		Prediction:  *prediction,
 		Confidence:  prediction.Confidence,
@@ -550,15 +556,58 @@ func (ps *PredictionService) calculateModelAgreement(results []models.ModelResul
 	return float64(maxCount) / float64(len(results))
 }
 
-// Helper functions (simplified versions for demonstration)
-func (ps *PredictionService) getRecentFormString(teamCode string) string {
-	forms := []string{"W-W-L-W-W", "L-W-W-L-W", "W-L-L-W-L", "W-W-W-L-W", "L-L-W-W-W"}
-	return forms[len(teamCode)%len(forms)]
-}
+// getRealRecentFormAndStreak fetches actual recent form and streak from NHL standings
+// Returns empty strings if insufficient data (< 3 games played)
+func (ps *PredictionService) getRealRecentFormAndStreak(teamCode string) (string, string) {
+	fmt.Printf("🔍 Fetching real recent form and streak for %s...\n", teamCode)
 
-func (ps *PredictionService) getCurrentStreak(teamCode string) string {
-	streaks := []string{"3W", "2L", "1W", "4W", "1L", "2W", "1L"}
-	return streaks[len(teamCode)%len(streaks)]
+	// Get NHL standings to fetch real streak data
+	standingsCache := GetStandingsCacheService()
+	if standingsCache == nil {
+		fmt.Printf("❌ StandingsCache service not available\n")
+		return "", "" // No data available
+	}
+
+	teamStanding, err := standingsCache.GetTeamStanding(teamCode)
+	if err != nil || teamStanding == nil {
+		fmt.Printf("❌ Team %s not found in standings: %v\n", teamCode, err)
+		return "", "" // Team not found
+	}
+
+	fmt.Printf("✅ Found %s in standings: %d GP, %d-%d-%d, Streak: %s\n",
+		teamCode, teamStanding.GamesPlayed, teamStanding.Wins,
+		teamStanding.Losses, teamStanding.OtLosses, teamStanding.StreakCode)
+
+	// Check if team has played enough games (minimum 3)
+	if teamStanding.GamesPlayed < 3 {
+		return "Insufficient data", fmt.Sprintf("%d GP", teamStanding.GamesPlayed)
+	}
+
+	// Parse streak from standings (e.g., "W3" = 3-game win streak)
+	streakDisplay := ""
+	if len(teamStanding.StreakCode) > 0 {
+		streakDisplay = teamStanding.StreakCode
+	} else {
+		streakDisplay = "-"
+	}
+
+	// Build recent form string from last 10 games if available
+	recentFormDisplay := ""
+	if teamStanding.GamesPlayed >= 10 {
+		// Show last 10 games record
+		recentFormDisplay = fmt.Sprintf("L10: %d-%d-%d",
+			teamStanding.L10Wins,
+			teamStanding.L10Losses,
+			teamStanding.L10OtLosses)
+	} else {
+		// Show current season record for teams with < 10 games
+		recentFormDisplay = fmt.Sprintf("%d-%d-%d",
+			teamStanding.Wins,
+			teamStanding.Losses,
+			teamStanding.OtLosses)
+	}
+
+	return recentFormDisplay, streakDisplay
 }
 
 // generateDegradedPrediction creates a simple prediction when full ensemble fails

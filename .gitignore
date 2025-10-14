@@ -52,3 +52,12 @@ docs/
 
 # Log files (runtime generated)
 *.log
+
+# Test and temporary scripts
+test_*.sh
+*_test.sh
+fix_*.py
+fix_*.sh
+refresh_*.sh
+verify_*.sh
+*_compare.py

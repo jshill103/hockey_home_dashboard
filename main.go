@@ -492,6 +492,7 @@ func main() {
 	http.HandleFunc("/api/predictions/all", handlers.HandleLeagueWidePredictions)
 	http.HandleFunc("/api/predictions/accuracy", handlers.HandlePredictionAccuracy)
 	http.HandleFunc("/api/predictions/daily-stats", handlers.HandleDailyPredictionStats)
+	http.HandleFunc("/api/predictions/trigger", handlers.HandleTriggerDailyPredictions)
 	http.HandleFunc("/predictions-stats-popup", handlers.HandlePredictionsStatsPopup)
 
 	// Pre-Game Lineup endpoints

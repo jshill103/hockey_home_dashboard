@@ -31,7 +31,25 @@ func HandleGamePrediction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate fresh prediction
+	// Check if force refresh is requested via query parameter
+	forceRefresh := r.URL.Query().Get("refresh") == "true"
+	if forceRefresh {
+		fmt.Printf("🔄 Force refresh requested - clearing prediction cache...\n")
+		// Clear service-level prediction cache
+		cache := services.GetPredictionCache()
+		if cache != nil {
+			cache.ClearCache()
+			fmt.Printf("✅ Prediction cache cleared\n")
+		}
+		// Clear standings cache to get latest NHL data
+		standingsCache := services.GetStandingsCacheService()
+		if standingsCache != nil {
+			standingsCache.InvalidateCache()
+			fmt.Printf("✅ Standings cache invalidated\n")
+		}
+	}
+
+	// Generate fresh prediction (DON'T cache - always get latest data)
 	prediction, err := predictionService.PredictNextGame()
 	if err != nil {
 		fmt.Printf("Error generating prediction: %v\n", err)
@@ -39,8 +57,8 @@ func HandleGamePrediction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cache the prediction
-	cachedPrediction = prediction
+	// NOTE: Removed handler-level caching to ensure fresh predictions with latest standings data
+	// The service layer has its own caching with proper TTLs
 
 	// Return as JSON
 	if err := json.NewEncoder(w).Encode(prediction); err != nil {

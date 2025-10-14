@@ -143,6 +143,17 @@ func (pc *PredictionCache) CleanStaleEntries() int {
 	return removed
 }
 
+// ClearCache removes all cached predictions (forces fresh predictions)
+func (pc *PredictionCache) ClearCache() {
+	pc.mu.Lock()
+	defer pc.mu.Unlock()
+
+	count := len(pc.predictions)
+	pc.predictions = make(map[int]*CachedPrediction)
+
+	log.Printf("🧹 Cleared %d prediction(s) from cache", count)
+}
+
 // savePrediction persists a single prediction to disk
 func (pc *PredictionCache) savePrediction(cached *CachedPrediction) {
 	filename := filepath.Join(pc.cacheDir, fmt.Sprintf("game_%d.json", cached.GameID))
