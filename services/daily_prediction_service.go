@@ -129,6 +129,22 @@ func (dps *DailyPredictionService) TriggerNow() {
 	dps.generateDailyPredictions()
 }
 
+// TriggerNowWithForce manually triggers prediction generation with force flag
+// If force=true, regenerates all predictions even if they already exist
+func (dps *DailyPredictionService) TriggerNowWithForce(force bool) {
+	if force {
+		log.Println("🔄 Force refresh: Clearing all existing predictions...")
+		if err := dps.predictionStorage.ClearAllPredictions(); err != nil {
+			log.Printf("❌ Failed to clear predictions: %v", err)
+			return
+		}
+		log.Println("✅ All predictions cleared - generating fresh predictions...")
+	} else {
+		log.Println("🔄 Manually triggering daily prediction generation...")
+	}
+	dps.generateDailyPredictions()
+}
+
 // generateDailyPredictions generates predictions for all upcoming games
 func (dps *DailyPredictionService) generateDailyPredictions() {
 	log.Println("🎯 Generating predictions for upcoming NHL games...")

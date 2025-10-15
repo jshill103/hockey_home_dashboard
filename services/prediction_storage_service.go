@@ -227,6 +227,38 @@ func (pss *PredictionStorageService) GetAllPredictions() ([]*StoredPrediction, e
 	return predictions, nil
 }
 
+// ClearAllPredictions deletes all stored predictions
+func (pss *PredictionStorageService) ClearAllPredictions() error {
+	pss.mutex.Lock()
+	defer pss.mutex.Unlock()
+
+	files, err := ioutil.ReadDir(pss.dataDir)
+	if err != nil {
+		return fmt.Errorf("failed to read predictions directory: %w", err)
+	}
+
+	deletedCount := 0
+	errorCount := 0
+
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+
+		filePath := filepath.Join(pss.dataDir, file.Name())
+		err := os.Remove(filePath)
+		if err != nil {
+			log.Printf("⚠️ Failed to delete %s: %v", file.Name(), err)
+			errorCount++
+			continue
+		}
+		deletedCount++
+	}
+
+	log.Printf("🗑️ Cleared %d predictions (%d errors)", deletedCount, errorCount)
+	return nil
+}
+
 // GetAccuracyStats returns overall accuracy statistics
 func (pss *PredictionStorageService) GetAccuracyStats() map[string]interface{} {
 	predictions, err := pss.GetAllPredictions()

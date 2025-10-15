@@ -1076,3 +1076,5 @@ func generatePredictionsPopupHTML(allPredictions []*services.StoredPrediction, a
 
 	return html.String()
 }
+
+// HandleTriggerDailyPredictions manually triggers the daily prediction generation
