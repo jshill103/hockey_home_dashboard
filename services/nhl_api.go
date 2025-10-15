@@ -256,24 +256,33 @@ func GetTeamScoreboard(teamCode string) (models.ScoreboardGame, error) {
 	}
 
 	fmt.Printf("Found %d date entries in scoreboard response\n", len(data.GamesByDate))
+	fmt.Printf("Focused date (today): %s\n", data.FocusedDate)
 
-	// Find the most recent game
+	// Only look for games on today's focused date
 	for _, gamesByDate := range data.GamesByDate {
 		fmt.Printf("Processing date %s with %d games\n", gamesByDate.Date, len(gamesByDate.Games))
 
+		// Skip dates that are not today
+		if gamesByDate.Date != data.FocusedDate {
+			fmt.Printf("Skipping date %s (not today)\n", gamesByDate.Date)
+			continue
+		}
+
+		// Check if there's a game today that is LIVE, INTERMISSION, CRIT, or recently FINAL
 		for _, game := range gamesByDate.Games {
-			if game.GameID != 0 {
-				fmt.Printf("Found active game: ID %d, %s vs %s, State: %s\n",
+			if game.GameID != 0 && (game.GameState == "LIVE" || game.GameState == "OFF" || game.GameState == "CRIT" || game.GameState == "FINAL") {
+				fmt.Printf("Found today's game: ID %d, %s vs %s, State: %s, Date: %s\n",
 					game.GameID,
 					game.AwayTeam.Name.Default,
 					game.HomeTeam.Name.Default,
-					game.GameState)
+					game.GameState,
+					gamesByDate.Date)
 				return game, nil
 			}
 		}
 	}
 
-	fmt.Println("No active games found in scoreboard")
+	fmt.Println("No active game today")
 	return models.ScoreboardGame{}, nil
 }
 

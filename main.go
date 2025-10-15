@@ -111,7 +111,8 @@ func main() {
 	scoreboard, err := services.GetTeamScoreboard(teamConfig.Code)
 	if err != nil {
 		fmt.Printf("Error fetching initial scoreboard: %v\n", err)
-	} else if scoreboard.GameID != 0 {
+	} else if scoreboard.GameID != 0 && (scoreboard.GameState == "LIVE" || scoreboard.GameState == "OFF" || scoreboard.GameState == "CRIT" || scoreboard.GameState == "FINAL") {
+		// Only cache if there's an active game today (LIVE, INTERMISSION/OFF, CRITICAL, or FINAL)
 		cachedScoreboard = scoreboard
 		isGameCurrentlyLive = services.IsGameLive(scoreboard.GameState)
 		fmt.Printf("Initial scoreboard loaded: %s vs %s (State: %s)\n",
@@ -119,7 +120,7 @@ func main() {
 			scoreboard.HomeTeam.Name.Default,
 			scoreboard.GameState)
 	} else {
-		fmt.Println("No active game found")
+		fmt.Println("No active game today - scoreboard will remain empty")
 	}
 
 	// Initialize news data on startup
@@ -682,11 +683,11 @@ func scoreboardFetcher() {
 			continue
 		}
 
-		// Update cached scoreboard
-		cachedScoreboard = scoreboard
-		isGameCurrentlyLive = services.IsGameLive(scoreboard.GameState)
-
-		if scoreboard.GameID != 0 {
+		// Only update cached scoreboard if there's an active game TODAY
+		// Check if the game is today by verifying it's LIVE, INTERMISSION, or FINAL from today
+		if scoreboard.GameID != 0 && (scoreboard.GameState == "LIVE" || scoreboard.GameState == "OFF" || scoreboard.GameState == "CRIT" || scoreboard.GameState == "FINAL") {
+			cachedScoreboard = scoreboard
+			isGameCurrentlyLive = services.IsGameLive(scoreboard.GameState)
 			fmt.Printf("Scoreboard updated: %s %d - %d %s (State: %s)\n",
 				scoreboard.AwayTeam.Name.Default,
 				scoreboard.AwayTeam.Score,
@@ -694,12 +695,15 @@ func scoreboardFetcher() {
 				scoreboard.HomeTeam.Name.Default,
 				scoreboard.GameState)
 		} else {
-			fmt.Println("No live game - next scoreboard update in 10m0s")
+			// Clear cached scoreboard if no active game today
+			cachedScoreboard = models.ScoreboardGame{}
+			isGameCurrentlyLive = false
+			fmt.Println("No live game today - scoreboard cleared")
 		}
 
-		// Send update to channel
+		// Send update to channel (send the cached version, not the raw API response)
 		select {
-		case scoreboardChannel <- scoreboard:
+		case scoreboardChannel <- cachedScoreboard:
 			// Successfully sent to channel
 		default:
 			// Channel is full, skip this update

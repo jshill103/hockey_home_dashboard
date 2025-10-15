@@ -2,6 +2,7 @@ package models
 
 // Scoreboard Objects
 type ScoreboardResponse struct {
+	FocusedDate string        `json:"focusedDate"`
 	GamesByDate []GamesByDate `json:"gamesByDate"`
 }
 
@@ -32,4 +33,4 @@ type ScoreboardTeam struct {
 
 type TeamName struct {
 	Default string `json:"default"`
-} 
+}
