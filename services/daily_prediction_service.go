@@ -311,12 +311,14 @@ func (dps *DailyPredictionService) generatePredictionForGame(game UpcomingGame) 
 	// Build basic prediction factors
 	// TODO: In future, fetch actual team stats for more accurate predictions
 	homeFactors := &models.PredictionFactors{
+		TeamCode:      game.HomeTeam,
 		WinPercentage: 0.5,
 		GoalsFor:      3.0,
 		GoalsAgainst:  3.0,
 	}
 
 	awayFactors := &models.PredictionFactors{
+		TeamCode:      game.AwayTeam,
 		WinPercentage: 0.5,
 		GoalsFor:      3.0,
 		GoalsAgainst:  3.0,
