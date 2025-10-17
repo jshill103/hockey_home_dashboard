@@ -308,23 +308,39 @@ type UpcomingGame struct {
 func (dps *DailyPredictionService) generatePredictionForGame(game UpcomingGame) (*models.GamePrediction, error) {
 	log.Printf("🎲 Predicting: %s @ %s (Game %d)", game.AwayTeam, game.HomeTeam, game.GameID)
 
-	// Build basic prediction factors
-	// TODO: In future, fetch actual team stats for more accurate predictions
-	homeFactors := &models.PredictionFactors{
-		TeamCode:      game.HomeTeam,
-		WinPercentage: 0.5,
-		GoalsFor:      3.0,
-		GoalsAgainst:  3.0,
+	// Fetch real team stats using situational analysis (same as main prediction service)
+	// Use the home team as the "main team" for analyzer context
+	analyzer := NewSituationalAnalyzer(game.HomeTeam)
+	
+	// Fetch enhanced factors for both teams
+	homeFactors, err := analyzer.AnalyzeSituationalFactors(game.HomeTeam, game.AwayTeam, game.Venue, true)
+	if err != nil {
+		log.Printf("⚠️ Failed to get home team factors for %s, using fallback: %v", game.HomeTeam, err)
+		// Fallback to basic factors if situational analysis fails
+		homeFactors = &models.PredictionFactors{
+			TeamCode:      game.HomeTeam,
+			WinPercentage: 0.5,
+			GoalsFor:      3.0,
+			GoalsAgainst:  3.0,
+		}
+	}
+	
+	awayFactors, err := analyzer.AnalyzeSituationalFactors(game.AwayTeam, game.HomeTeam, game.Venue, false)
+	if err != nil {
+		log.Printf("⚠️ Failed to get away team factors for %s, using fallback: %v", game.AwayTeam, err)
+		// Fallback to basic factors if situational analysis fails
+		awayFactors = &models.PredictionFactors{
+			TeamCode:      game.AwayTeam,
+			WinPercentage: 0.5,
+			GoalsFor:      3.0,
+			GoalsAgainst:  3.0,
+		}
 	}
 
-	awayFactors := &models.PredictionFactors{
-		TeamCode:      game.AwayTeam,
-		WinPercentage: 0.5,
-		GoalsFor:      3.0,
-		GoalsAgainst:  3.0,
-	}
+	// Set game ID for lineup data integration
+	dps.ensemble.SetGameID(game.GameID)
 
-	// Use ensemble prediction service
+	// Use ensemble prediction service with real team stats
 	result, err := dps.ensemble.PredictGame(homeFactors, awayFactors)
 	if err != nil {
 		return nil, fmt.Errorf("ensemble prediction failed: %w", err)
