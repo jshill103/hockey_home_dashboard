@@ -115,20 +115,6 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             margin: 0 auto;
         }
         
-        .scoreboard-section {
-            grid-column: 1 / -1;
-            grid-row: 1;
-            background: rgba(0, 0, 0, 0.3);
-            padding: 30px 40px 30px 40px;
-            border-radius: 12px;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-            min-height: 160px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 30px;
-        }
-        
         .news-section {
             grid-column: 1;
             grid-row: 1;
@@ -743,11 +729,6 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             .main-layout {
                 grid-template-columns: 1fr;
                 grid-template-rows: auto auto auto auto auto auto;
-            }
-            
-            .scoreboard-section {
-                grid-column: 1;
-                grid-row: 1;
             }
             
             .news-section {
@@ -2220,11 +2201,6 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
 </head>
 <body>
     
-    <div class="scoreboard-section hockey-season-only" style="display: none;">
-        <div id="scoreboard-content">
-        </div>
-    </div>
-    
     <div class="main-layout">
         <div class="news-section offseason-only">
             <h2><span id="season-toggle" style="cursor: pointer; user-select: none;" title="Click to toggle season/offseason view for testing">📰</span> NHL News</h2>
@@ -2392,9 +2368,9 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
                 // Check if it's specifically the regular season
                 if (currentSeasonStatus.seasonPhase === 'regular') {
                     body.classList.add('regular-season');
-                    console.log('Regular season active - showing news, scoreboard, upcoming games, and playoff odds');
+                    console.log('Regular season active - showing news, upcoming games, and playoff odds');
                 } else {
-                    console.log('Hockey season active (' + currentSeasonStatus.seasonPhase + ') - showing news, scoreboard, upcoming games, and playoff odds');
+                    console.log('Hockey season active (' + currentSeasonStatus.seasonPhase + ') - showing news, upcoming games, and playoff odds');
                 }
             } else {
                 // Off-season: Add offseason class
@@ -2531,46 +2507,6 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             });
         }
         
-        function loadScoreboard() {
-            const scoreboardSection = document.querySelector('.scoreboard-section');
-            const scoreboardContent = document.getElementById('scoreboard-content');
-            
-            if (!scoreboardSection || !scoreboardContent) return;
-            
-            // Show loading state
-            scoreboardContent.innerHTML = '<p>Loading live scoreboard...</p>';
-            scoreboardSection.style.display = 'block';
-            
-            // Fetch scoreboard data
-            fetch('/scoreboard')
-                .then(response => response.text())
-                .then(html => {
-                    // Check if there's no active game OR if game is not live (upcoming/future games)
-                    if (html.includes('No active game at the moment') || 
-                        html.includes('No active game') ||
-                        html.includes('⏱️ UPCOMING') ||
-                        html.includes('✅ FINAL')) {
-                        // Hide the entire scoreboard section for non-live games
-                        scoreboardSection.style.display = 'none';
-                        console.log('No live game - hiding scoreboard section');
-                    } else if (html.includes('🔴 LIVE') || html.includes('⏸️ INTERMISSION')) {
-                        // Show the section only for live games and intermissions
-                        scoreboardSection.style.display = 'block';
-                        scoreboardContent.innerHTML = html;
-                        console.log('Live game found - showing scoreboard');
-                    } else {
-                        // Default case - hide if unsure
-                        scoreboardSection.style.display = 'none';
-                        console.log('Unknown game state - hiding scoreboard section');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error loading scoreboard:', error);
-                    // Hide section on error
-                    scoreboardSection.style.display = 'none';
-                });
-        }
-        
         function loadSeasonCountdown() {
             const countdownContent = document.getElementById('season-countdown-content');
             const lastUpdated = document.querySelector('.season-countdown-section .last-updated');
@@ -2701,12 +2637,10 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
                 
                 // Conditionally load content based on season status
                 if (currentSeasonStatus && currentSeasonStatus.isHockeySeason) {
-                    // Hockey season: Load scoreboard and upcoming games
-                    loadScoreboard();
+                    // Hockey season: Load upcoming games
                     loadUpcomingGames();
                     
                     // Set up automatic updates
-                    setInterval(loadScoreboard, 30000); // Check every 30 seconds
                     setInterval(loadUpcomingGames, 3600000); // Update upcoming games every hour
                 } else {
                     // Offseason: Load news, countdown, and mammoth analysis
@@ -2763,7 +2697,6 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
                 loadPlayerStats();
                 loadGoalieStats();
                 loadPlayoffOdds();
-                loadScoreboard();
             } else {
                 // Switch to offseason view
                 body.classList.remove('hockey-season');

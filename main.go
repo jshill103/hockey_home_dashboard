@@ -21,7 +21,6 @@ import (
 var (
 	cachedSchedule        models.Game
 	cachedScheduleUpdated time.Time
-	cachedScoreboard      models.ScoreboardGame
 	cachedNews            []models.NewsHeadline
 	cachedUpcomingGames   []models.Game
 	currentSeasonStatus   models.SeasonStatus
@@ -41,7 +40,6 @@ var (
 // Channels for background communication
 var (
 	scheduleChannel      = make(chan models.Game, 1)
-	scoreboardChannel    = make(chan models.ScoreboardGame, 1)
 	newsChannel          = make(chan []models.NewsHeadline, 1)
 	upcomingGamesChannel = make(chan []models.Game, 1)
 	playerStatsChannel   = make(chan models.PlayerStatsLeaders, 1)
@@ -104,23 +102,6 @@ func main() {
 			game.AwayTeam.CommonName.Default,
 			game.HomeTeam.CommonName.Default,
 			game.GameDate)
-	}
-
-	// Initialize scoreboard data on startup
-	fmt.Printf("Initializing scoreboard data for %s...\n", teamConfig.Code)
-	scoreboard, err := services.GetTeamScoreboard(teamConfig.Code)
-	if err != nil {
-		fmt.Printf("Error fetching initial scoreboard: %v\n", err)
-	} else if scoreboard.GameID != 0 && (scoreboard.GameState == "LIVE" || scoreboard.GameState == "OFF" || scoreboard.GameState == "CRIT" || scoreboard.GameState == "FINAL") {
-		// Only cache if there's an active game today (LIVE, INTERMISSION/OFF, CRITICAL, or FINAL)
-		cachedScoreboard = scoreboard
-		isGameCurrentlyLive = services.IsGameLive(scoreboard.GameState)
-		fmt.Printf("Initial scoreboard loaded: %s vs %s (State: %s)\n",
-			scoreboard.AwayTeam.Name.Default,
-			scoreboard.HomeTeam.Name.Default,
-			scoreboard.GameState)
-	} else {
-		fmt.Println("No active game today - scoreboard will remain empty")
 	}
 
 	// Initialize news data on startup
@@ -189,7 +170,6 @@ func main() {
 	// Start background fetchers
 	go scheduleFetcher()
 	go newsFetcher()
-	go scoreboardFetcher()
 	if currentSeasonStatus.IsHockeySeason {
 		go playerStatsFetcher()
 	}
@@ -198,7 +178,6 @@ func main() {
 	handlers.Init(
 		&cachedSchedule,
 		&cachedScheduleUpdated,
-		&cachedScoreboard,
 		&cachedNews,
 		&cachedUpcomingGames,
 		&currentSeasonStatus,
@@ -473,7 +452,6 @@ func main() {
 	http.HandleFunc("/schedule", handlers.HandleSchedule)
 	http.HandleFunc("/news", handlers.HandleNews)
 	http.HandleFunc("/banner", handlers.HandleBanner)
-	http.HandleFunc("/scoreboard", handlers.HandleScoreboard)
 	http.HandleFunc("/mammoth-analysis", handlers.HandleTeamAnalysis)
 	http.HandleFunc("/season-status", handlers.HandleSeasonStatus)
 	http.HandleFunc("/upcoming-games", handlers.HandleUpcomingGames)
@@ -658,52 +636,6 @@ func scheduleFetcher() {
 		// Send update to channel
 		select {
 		case scheduleChannel <- game:
-			// Successfully sent to channel
-		default:
-			// Channel is full, skip this update
-		}
-	}
-}
-
-func scoreboardFetcher() {
-	for {
-		var sleepDuration time.Duration
-		if isGameCurrentlyLive {
-			sleepDuration = 30 * time.Second // 30 seconds when game is live
-		} else {
-			sleepDuration = 10 * time.Minute // 10 minutes when no live game
-		}
-
-		time.Sleep(sleepDuration)
-
-		// Fetch new scoreboard
-		scoreboard, err := services.GetTeamScoreboard(teamConfig.Code)
-		if err != nil {
-			fmt.Printf("Error fetching scoreboard: %v\n", err)
-			continue
-		}
-
-		// Only update cached scoreboard if there's an active game TODAY
-		// Check if the game is today by verifying it's LIVE, INTERMISSION, or FINAL from today
-		if scoreboard.GameID != 0 && (scoreboard.GameState == "LIVE" || scoreboard.GameState == "OFF" || scoreboard.GameState == "CRIT" || scoreboard.GameState == "FINAL") {
-			cachedScoreboard = scoreboard
-			isGameCurrentlyLive = services.IsGameLive(scoreboard.GameState)
-			fmt.Printf("Scoreboard updated: %s %d - %d %s (State: %s)\n",
-				scoreboard.AwayTeam.Name.Default,
-				scoreboard.AwayTeam.Score,
-				scoreboard.HomeTeam.Score,
-				scoreboard.HomeTeam.Name.Default,
-				scoreboard.GameState)
-		} else {
-			// Clear cached scoreboard if no active game today
-			cachedScoreboard = models.ScoreboardGame{}
-			isGameCurrentlyLive = false
-			fmt.Println("No live game today - scoreboard cleared")
-		}
-
-		// Send update to channel (send the cached version, not the raw API response)
-		select {
-		case scoreboardChannel <- cachedScoreboard:
 			// Successfully sent to channel
 		default:
 			// Channel is full, skip this update

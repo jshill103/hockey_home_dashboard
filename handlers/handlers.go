@@ -13,7 +13,6 @@ import (
 var (
 	cachedSchedule        *models.Game
 	cachedScheduleUpdated *time.Time
-	cachedScoreboard      *models.ScoreboardGame
 	cachedNews            *[]models.NewsHeadline
 	cachedUpcomingGames   *[]models.Game
 	currentSeasonStatus   *models.SeasonStatus
@@ -25,7 +24,6 @@ var (
 func Init(
 	schedule *models.Game,
 	scheduleUpdated *time.Time,
-	scoreboard *models.ScoreboardGame,
 	news *[]models.NewsHeadline,
 	upcomingGames *[]models.Game,
 	seasonStatus *models.SeasonStatus,
@@ -33,7 +31,6 @@ func Init(
 ) {
 	cachedSchedule = schedule
 	cachedScheduleUpdated = scheduleUpdated
-	cachedScoreboard = scoreboard
 	cachedNews = news
 	cachedUpcomingGames = upcomingGames
 	currentSeasonStatus = seasonStatus
@@ -125,22 +122,6 @@ func HandleAPITest(w http.ResponseWriter, r *http.Request) {
 			schedule.AwayTeam.CommonName.Default,
 			schedule.HomeTeam.CommonName.Default,
 			schedule.FormattedTime)
-	}
-	fmt.Fprint(w, "\n")
-
-	// Test GetTeamScoreboard
-	fmt.Fprintf(w, "--- Testing GetTeamScoreboard for %s ---\n", teamConfig.Code)
-	scoreboard, err := services.GetTeamScoreboard(teamConfig.Code)
-	if err != nil {
-		fmt.Fprintf(w, "❌ GetTeamScoreboard failed: %v\n", err)
-	} else if scoreboard.GameID == 0 {
-		fmt.Fprint(w, "✅ GetTeamScoreboard success: No active games\n")
-	} else {
-		fmt.Fprintf(w, "✅ GetTeamScoreboard success: Game ID %d, %s vs %s, State: %s\n",
-			scoreboard.GameID,
-			scoreboard.AwayTeam.Name.Default,
-			scoreboard.HomeTeam.Name.Default,
-			scoreboard.GameState)
 	}
 	fmt.Fprint(w, "\n")
 
