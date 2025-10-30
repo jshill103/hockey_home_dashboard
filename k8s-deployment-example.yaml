@@ -1,0 +1,106 @@
+# Kubernetes Deployment Configuration for Hockey Dashboard
+# 
+# This example shows how to properly configure the deployment with PVC
+# to ensure the data directories can be created and written to.
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hockey-dashboard-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi  # Adjust based on your needs
+  # Optional: specify storageClassName if your cluster requires it
+  # storageClassName: fast-ssd
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hockey-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hockey-dashboard
+  template:
+    metadata:
+      labels:
+        app: hockey-dashboard
+    spec:
+      # IMPORTANT: fsGroup ensures the PVC is mounted with correct group ownership
+      # This allows the appuser (UID 1001) to write to the PVC
+      securityContext:
+        fsGroup: 1001  # This matches appgroup GID from Dockerfile
+        runAsNonRoot: true
+        runAsUser: 1001  # This matches appuser UID from Dockerfile
+        runAsGroup: 1001  # This matches appgroup GID from Dockerfile
+      
+      containers:
+      - name: hockey-dashboard
+        image: jshillingburg/hockey_home_dashboard:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: TEAM_CODE
+          value: "UTA"  # Change to your team code
+        # Optional: Add API keys if needed
+        # - name: OPENWEATHER_API_KEY
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: api-keys
+        #       key: openweather-key
+        # - name: ODDS_API_KEY
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: api-keys
+        #       key: odds-key
+        volumeMounts:
+        - name: data
+          mountPath: /app/data
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: hockey-dashboard-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hockey-dashboard
+spec:
+  type: ClusterIP  # Change to LoadBalancer or NodePort if needed
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: hockey-dashboard
+

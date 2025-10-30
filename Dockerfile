@@ -34,32 +34,17 @@ COPY --from=builder /app/web_server .
 # Copy media assets (static files needed at runtime)
 COPY --from=builder /app/media ./media
 
-# Create data directories for persistent storage
-# Phase 3: Accuracy tracking and model persistence
-RUN mkdir -p /app/data/accuracy /app/data/models /app/data/results
-# Phase 6: Feature engineering data
-RUN mkdir -p /app/data/matchups /app/data/rolling_stats /app/data/player_impact
-# Pre-game lineup data
-RUN mkdir -p /app/data/lineups \
-    && mkdir -p /app/data/play_by_play \
-    && mkdir -p /app/data/shifts \
-    && mkdir -p /app/data/landing_page \
-    && mkdir -p /app/data/game_summary
-# Prediction cache for graceful degradation
-RUN mkdir -p /app/data/cache/predictions
-# API response cache for performance optimization
-RUN mkdir -p /app/data/cache/api
-# League-wide prediction storage
-RUN mkdir -p /app/data/predictions
-# Training metrics and roster data (Phase 1 optimization)
-RUN mkdir -p /app/data/metrics /app/data/rosters
-
 # Create non-root user for security
 RUN addgroup -g 1001 -S appgroup && \
     adduser -u 1001 -S appuser -G appgroup
 
-# Change ownership of app directory
-RUN chown -R appuser:appgroup /app
+# Copy entrypoint script
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
+# Change ownership of app directory (but NOT /app/data - that will be PVC mounted)
+RUN chown -R appuser:appgroup /app && \
+    chown -R appuser:appgroup /app/docker-entrypoint.sh
 
 # Switch to non-root user
 USER appuser
@@ -81,6 +66,9 @@ ENV TEAM_CODE=UTA
 # ENV OPENWEATHER_API_KEY=""
 # ENV WEATHER_API_KEY=""
 # ENV ACCUWEATHER_API_KEY=""
+
+# Use entrypoint script to initialize directories before running app
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
 # Run the application
 CMD ["sh", "-c", "./web_server -team ${TEAM_CODE}"]
