@@ -108,6 +108,9 @@ func (gss *GameSummaryService) FetchGameSummaryData(gameID int) (*models.GameSum
 
 	// Analyze the game summary data
 	analytics := gss.analyzeGameSummary(&apiResp)
+	if analytics == nil {
+		return nil, fmt.Errorf("failed to analyze game summary data")
+	}
 
 	processingTime := time.Since(startTime)
 	// Count metrics processed (shots, hits, penalties, etc.)

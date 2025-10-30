@@ -100,8 +100,16 @@ func (rl *NHLRateLimiter) Wait() {
 				len(rl.requests), rl.maxRequests, rl.timeWindow, waitTime.Seconds())
 
 			// Unlock mutex while sleeping to allow other goroutines to check status
+			// Use defer/recover to ensure mutex is re-locked even if panic occurs
 			rl.mutex.Unlock()
-			time.Sleep(waitTime + 100*time.Millisecond) // Add 100ms buffer
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("⚠️ Panic during rate limiter sleep: %v", r)
+					}
+				}()
+				time.Sleep(waitTime + 100*time.Millisecond) // Add 100ms buffer
+			}()
 			rl.mutex.Lock()
 
 			// Re-clean after sleep
@@ -126,9 +134,16 @@ func (rl *NHLRateLimiter) Wait() {
 			rl.delayedRequests++
 			rl.totalWaitTime += waitTime
 
-			// Unlock mutex while sleeping
+			// Unlock mutex while sleeping (with panic recovery)
 			rl.mutex.Unlock()
-			time.Sleep(waitTime)
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("⚠️ Panic during rate limiter min delay sleep: %v", r)
+					}
+				}()
+				time.Sleep(waitTime)
+			}()
 			rl.mutex.Lock()
 		}
 	}

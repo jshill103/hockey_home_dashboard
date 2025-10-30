@@ -569,12 +569,38 @@ func (pr *PoissonRegressionModel) Update(data *LiveGameData) error {
 	log.Printf("✅ Poisson regression update completed: %d processed, %d errors", updateCount, errorCount)
 
 	// Save rates to disk after update
-	// Note: saveRates acquires its own lock, so we need to release ours first
+	// Copy data we need while holding the lock, then unlock and save
+	saveData := PoissonModelData{
+		TeamOffensiveRates: make(map[string]float64),
+		TeamDefensiveRates: make(map[string]float64),
+		RateHistory:        make(map[string][]RateRecord),
+		ConfidenceTracking: make(map[string]float64),
+		LastUpdated:        time.Now(),
+		Version:            "1.0",
+	}
+	// Deep copy the maps
+	for k, v := range pr.teamOffensiveRates {
+		saveData.TeamOffensiveRates[k] = v
+	}
+	for k, v := range pr.teamDefensiveRates {
+		saveData.TeamDefensiveRates[k] = v
+	}
+	for k, v := range pr.rateHistory {
+		historyCopy := make([]RateRecord, len(v))
+		copy(historyCopy, v)
+		saveData.RateHistory[k] = historyCopy
+	}
+	for k, v := range pr.confidenceTracking {
+		saveData.ConfidenceTracking[k] = v
+	}
+
+	// Now unlock and save
 	pr.mutex.Unlock()
-	if err := pr.saveRates(); err != nil {
+	if err := pr.saveRatesWithData(saveData); err != nil {
 		log.Printf("⚠️ Failed to save Poisson rates: %v", err)
 	}
-	pr.mutex.Lock() // Re-acquire before defer unlock
+	// Re-acquire lock for defer
+	pr.mutex.Lock()
 
 	return nil
 }
@@ -1010,8 +1036,6 @@ func (pr *PoissonRegressionModel) saveRates() error {
 	pr.mutex.RLock()
 	defer pr.mutex.RUnlock()
 
-	filePath := filepath.Join(pr.dataDir, "poisson_rates.json")
-
 	data := PoissonModelData{
 		TeamOffensiveRates: pr.teamOffensiveRates,
 		TeamDefensiveRates: pr.teamDefensiveRates,
@@ -1020,6 +1044,13 @@ func (pr *PoissonRegressionModel) saveRates() error {
 		LastUpdated:        time.Now(),
 		Version:            "1.0",
 	}
+
+	return pr.saveRatesWithData(data)
+}
+
+// saveRatesWithData saves the provided data to disk without acquiring locks
+func (pr *PoissonRegressionModel) saveRatesWithData(data PoissonModelData) error {
+	filePath := filepath.Join(pr.dataDir, "poisson_rates.json")
 
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
@@ -1031,7 +1062,7 @@ func (pr *PoissonRegressionModel) saveRates() error {
 		return fmt.Errorf("error writing Poisson rates: %v", err)
 	}
 
-	log.Printf("💾 Poisson rates saved: %d teams tracked", len(pr.teamOffensiveRates))
+	log.Printf("💾 Poisson rates saved: %d teams tracked", len(data.TeamOffensiveRates))
 	return nil
 }
 

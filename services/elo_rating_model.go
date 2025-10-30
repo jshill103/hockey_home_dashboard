@@ -432,12 +432,34 @@ func (elo *EloRatingModel) Update(data *LiveGameData) error {
 	log.Printf("✅ Elo rating update completed: %d processed, %d errors", updateCount, errorCount)
 
 	// Save ratings to disk after update
-	// Note: saveRatings acquires its own lock, so we need to release ours first
+	// Copy data we need while holding the lock, then unlock and save
+	saveData := EloModelData{
+		TeamRatings:       make(map[string]float64),
+		RatingHistory:     make(map[string][]RatingRecord),
+		ConfidenceFactors: make(map[string]float64),
+		LastUpdated:       time.Now(),
+		Version:           "1.0",
+	}
+	// Deep copy the maps
+	for k, v := range elo.teamRatings {
+		saveData.TeamRatings[k] = v
+	}
+	for k, v := range elo.ratingHistory {
+		historyCopy := make([]RatingRecord, len(v))
+		copy(historyCopy, v)
+		saveData.RatingHistory[k] = historyCopy
+	}
+	for k, v := range elo.confidenceFactors {
+		saveData.ConfidenceFactors[k] = v
+	}
+
+	// Now unlock and save
 	elo.mutex.Unlock()
-	if err := elo.saveRatings(); err != nil {
+	if err := elo.saveRatingsWithData(saveData); err != nil {
 		log.Printf("⚠️ Failed to save Elo ratings: %v", err)
 	}
-	elo.mutex.Lock() // Re-acquire before defer unlock
+	// Re-acquire lock for defer
+	elo.mutex.Lock()
 
 	return nil
 }
@@ -799,8 +821,6 @@ func (elo *EloRatingModel) saveRatings() error {
 	elo.mutex.RLock()
 	defer elo.mutex.RUnlock()
 
-	filePath := filepath.Join(elo.dataDir, "elo_ratings.json")
-
 	data := EloModelData{
 		TeamRatings:       elo.teamRatings,
 		RatingHistory:     elo.ratingHistory,
@@ -808,6 +828,13 @@ func (elo *EloRatingModel) saveRatings() error {
 		LastUpdated:       time.Now(),
 		Version:           "1.0",
 	}
+
+	return elo.saveRatingsWithData(data)
+}
+
+// saveRatingsWithData saves the provided data to disk without acquiring locks
+func (elo *EloRatingModel) saveRatingsWithData(data EloModelData) error {
+	filePath := filepath.Join(elo.dataDir, "elo_ratings.json")
 
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
@@ -819,7 +846,7 @@ func (elo *EloRatingModel) saveRatings() error {
 		return fmt.Errorf("error writing Elo ratings: %v", err)
 	}
 
-	log.Printf("💾 Elo ratings saved: %d teams tracked", len(elo.teamRatings))
+	log.Printf("💾 Elo ratings saved: %d teams tracked", len(data.TeamRatings))
 	return nil
 }
 

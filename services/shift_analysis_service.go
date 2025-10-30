@@ -112,6 +112,9 @@ func (sas *ShiftAnalysisService) FetchShiftData(gameID int) (*models.ShiftAnalyt
 
 	// Analyze the shift data
 	analytics := sas.analyzeShifts(&apiResp)
+	if analytics == nil {
+		return nil, fmt.Errorf("failed to analyze shift data")
+	}
 
 	processingTime := time.Since(startTime)
 	shiftsProcessed := analytics.HomeAnalytics.TotalShifts + analytics.AwayAnalytics.TotalShifts

@@ -574,3 +574,4 @@ func (mus *ModelUpdateScheduler) SetUpdateInterval(interval time.Duration) {
 	log.Printf("⏱️ Update interval changed to %v", interval)
 }
 
+

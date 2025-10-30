@@ -98,10 +98,17 @@ func main() {
 	} else {
 		cachedSchedule = game
 		cachedScheduleUpdated = time.Now()
+		// Safe access with checks for empty team names
+		awayTeam := "Unknown"
+		homeTeam := "Unknown"
+		if game.AwayTeam.CommonName.Default != "" {
+			awayTeam = game.AwayTeam.CommonName.Default
+		}
+		if game.HomeTeam.CommonName.Default != "" {
+			homeTeam = game.HomeTeam.CommonName.Default
+		}
 		fmt.Printf("Initial schedule loaded: %s vs %s on %s\n",
-			game.AwayTeam.CommonName.Default,
-			game.HomeTeam.CommonName.Default,
-			game.GameDate)
+			awayTeam, homeTeam, game.GameDate)
 	}
 
 	// Initialize news data on startup
@@ -376,13 +383,8 @@ func main() {
 	// ============================================================================
 	fmt.Println("🚀 Initializing Phase 4 Enhanced Services...")
 
-	// Goalie Intelligence Service
-	fmt.Println("Initializing Goalie Intelligence Service...")
-	if err := services.InitializeGoalieService(); err != nil {
-		fmt.Printf("⚠️ Warning: Failed to initialize goalie service: %v\n", err)
-	} else {
-		fmt.Printf("✅ Goalie Intelligence Service initialized\n")
-	}
+	// Goalie Intelligence Service (already initialized above, skip duplicate)
+	// Note: Goalie service was initialized earlier at line 337-342
 
 	// Betting Market Service (optional - requires ODDS_API_KEY)
 	fmt.Println("Initializing Betting Market Service...")
@@ -575,7 +577,6 @@ func main() {
 	fmt.Println("Server starting on http://localhost:8080")
 	fmt.Println("Schedule will be automatically updated every night at midnight")
 	fmt.Println("News will be automatically updated every 10 minutes")
-	fmt.Println("Scoreboard will be updated every 10 minutes (30 seconds when game is live)")
 	fmt.Println("🤖 Live prediction models will update automatically every hour")
 	fmt.Println("Press Ctrl+C to shutdown gracefully")
 
@@ -606,10 +607,25 @@ func scheduleFetcher() {
 			// Update cached schedule
 			cachedSchedule = game
 			cachedScheduleUpdated = time.Now()
+			// Safe access with checks for empty team names
+			awayTeam := "Unknown"
+			homeTeam := "Unknown"
+			if game.AwayTeam.CommonName.Default != "" {
+				awayTeam = game.AwayTeam.CommonName.Default
+			}
+			if game.HomeTeam.CommonName.Default != "" {
+				homeTeam = game.HomeTeam.CommonName.Default
+			}
 			fmt.Printf("Schedule updated: %s vs %s on %s\n",
-				game.AwayTeam.CommonName.Default,
-				game.HomeTeam.CommonName.Default,
-				game.GameDate)
+				awayTeam, homeTeam, game.GameDate)
+
+			// Send update to channel only if we successfully fetched a valid game
+			select {
+			case scheduleChannel <- game:
+				// Successfully sent to channel
+			default:
+				// Channel is full, skip this update
+			}
 		}
 
 		// Also fetch upcoming games if we're in hockey season
@@ -622,23 +638,15 @@ func scheduleFetcher() {
 				// Update cached upcoming games
 				cachedUpcomingGames = upcomingGames
 				fmt.Printf("Upcoming games updated: %d games found\n", len(upcomingGames))
-			}
 
-			// Send update to channel
-			select {
-			case upcomingGamesChannel <- upcomingGames:
-				// Successfully sent to channel
-			default:
-				// Channel is full, skip this update
+				// Send update to channel only if we successfully fetched games
+				select {
+				case upcomingGamesChannel <- upcomingGames:
+					// Successfully sent to channel
+				default:
+					// Channel is full, skip this update
+				}
 			}
-		}
-
-		// Send update to channel
-		select {
-		case scheduleChannel <- game:
-			// Successfully sent to channel
-		default:
-			// Channel is full, skip this update
 		}
 	}
 }

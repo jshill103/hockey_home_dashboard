@@ -293,17 +293,45 @@ func (lstm *LSTMModel) forward(sequence [][]float64) []float64 {
 func (lstm *LSTMModel) gate(W [][]float64, x, h []float64, b []float64, activation func(float64) float64) []float64 {
 	result := make([]float64, lstm.hiddenSize)
 
+	// Validate inputs
+	if len(W) < 2 {
+		log.Printf("⚠️ Warning: Invalid weight matrix dimensions in LSTM gate")
+		return result
+	}
+	if len(W[0]) < lstm.hiddenSize*lstm.inputSize || len(W[1]) < lstm.hiddenSize*lstm.hiddenSize {
+		log.Printf("⚠️ Warning: Weight matrix too small for LSTM gate")
+		return result
+	}
+	if len(b) < lstm.hiddenSize {
+		log.Printf("⚠️ Warning: Bias vector too small for LSTM gate")
+		return result
+	}
+	if len(x) < lstm.inputSize {
+		log.Printf("⚠️ Warning: Input vector too small for LSTM gate")
+		return result
+	}
+	if len(h) < lstm.hiddenSize {
+		log.Printf("⚠️ Warning: Hidden vector too small for LSTM gate")
+		return result
+	}
+
 	for i := 0; i < lstm.hiddenSize; i++ {
 		sum := b[i]
 
-		// Input contribution: W[0] * x
-		for j := 0; j < lstm.inputSize; j++ {
-			sum += W[0][i*lstm.inputSize+j] * x[j]
+		// Input contribution: W[0] * x (with bounds checking)
+		for j := 0; j < lstm.inputSize && j < len(x); j++ {
+			idx := i*lstm.inputSize + j
+			if idx < len(W[0]) {
+				sum += W[0][idx] * x[j]
+			}
 		}
 
-		// Hidden contribution: W[1] * h
-		for j := 0; j < lstm.hiddenSize; j++ {
-			sum += W[1][i*lstm.hiddenSize+j] * h[j]
+		// Hidden contribution: W[1] * h (with bounds checking)
+		for j := 0; j < lstm.hiddenSize && j < len(h); j++ {
+			idx := i*lstm.hiddenSize + j
+			if idx < len(W[1]) {
+				sum += W[1][idx] * h[j]
+			}
 		}
 
 		result[i] = activation(sum)
