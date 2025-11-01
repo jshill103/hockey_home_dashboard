@@ -389,7 +389,6 @@ func (elo *EloRatingModel) GetAllRatings() map[string]float64 {
 // Update implements the UpdatableModel interface for live data updates
 func (elo *EloRatingModel) Update(data *LiveGameData) error {
 	elo.mutex.Lock()
-	defer elo.mutex.Unlock()
 
 	log.Printf("🏆 Updating Elo ratings with new data...")
 
@@ -453,13 +452,12 @@ func (elo *EloRatingModel) Update(data *LiveGameData) error {
 		saveData.ConfidenceFactors[k] = v
 	}
 
-	// Now unlock and save
+	// Release lock before I/O operation to avoid blocking other goroutines
+	// The save function operates on a copy (saveData), so it doesn't need the lock
 	elo.mutex.Unlock()
 	if err := elo.saveRatingsWithData(saveData); err != nil {
 		log.Printf("⚠️ Failed to save Elo ratings: %v", err)
 	}
-	// Re-acquire lock for defer
-	elo.mutex.Lock()
 
 	return nil
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -30,6 +31,8 @@ var (
 	cachedGoalieStats     models.GoalieStatsLeaders
 	cachedTeamPlayerStats models.PlayerStatsLeaders
 	cachedTeamGoalieStats models.GoalieStatsLeaders
+	// Mutexes for thread-safe access to global caches
+	cacheMu sync.RWMutex
 )
 
 // Global team configuration
@@ -96,8 +99,10 @@ func main() {
 	if err != nil {
 		fmt.Printf("Error fetching initial schedule: %v\n", err)
 	} else {
+		cacheMu.Lock()
 		cachedSchedule = game
 		cachedScheduleUpdated = time.Now()
+		cacheMu.Unlock()
 		// Safe access with checks for empty team names
 		awayTeam := "Unknown"
 		homeTeam := "Unknown"
@@ -117,7 +122,9 @@ func main() {
 	if err != nil {
 		fmt.Printf("Error fetching initial news: %v\n", err)
 	} else {
+		cacheMu.Lock()
 		cachedNews = headlines
+		cacheMu.Unlock()
 		fmt.Printf("Initial news loaded: %d headlines\n", len(headlines))
 	}
 
@@ -144,7 +151,9 @@ func main() {
 		if err != nil {
 			fmt.Printf("Error fetching initial upcoming games: %v\n", err)
 		} else {
+			cacheMu.Lock()
 			cachedUpcomingGames = upcomingGames
+			cacheMu.Unlock()
 			fmt.Printf("Initial upcoming games loaded: %d games\n", len(upcomingGames))
 		}
 	}
@@ -156,8 +165,10 @@ func main() {
 		if err != nil {
 			fmt.Printf("Error fetching initial player stats: %v\n", err)
 		} else {
+			cacheMu.Lock()
 			cachedPlayerStats = playerLeaders
 			cachedTeamPlayerStats = services.GetTeamPlayerStats(playerLeaders, teamConfig.Code)
+			cacheMu.Unlock()
 			fmt.Printf("Initial player stats loaded: %d goals, %d assists, %d points leaders\n",
 				len(playerLeaders.Goals), len(playerLeaders.Assists), len(playerLeaders.Points))
 		}
@@ -167,8 +178,10 @@ func main() {
 		if err != nil {
 			fmt.Printf("Error fetching initial goalie stats: %v\n", err)
 		} else {
+			cacheMu.Lock()
 			cachedGoalieStats = goalieLeaders
 			cachedTeamGoalieStats = services.GetTeamGoalieStats(goalieLeaders, teamConfig.Code)
+			cacheMu.Unlock()
 			fmt.Printf("Initial goalie stats loaded: %d wins, %d save%%, %d GAA leaders\n",
 				len(goalieLeaders.Wins), len(goalieLeaders.SavePct), len(goalieLeaders.GAA))
 		}
@@ -267,6 +280,11 @@ func main() {
 	pbpService := services.GetPlayByPlayService()
 	if pbpService != nil {
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Printf("⚠️ Panic during play-by-play backfill: %v\n", r)
+				}
+			}()
 			// Run league-wide backfill in background to not block server startup
 			if err := pbpService.BackfillAllTeams(10); err != nil {
 				fmt.Printf("⚠️ Warning: Failed to backfill play-by-play data: %v\n", err)
@@ -483,6 +501,12 @@ func main() {
 	// Play-by-Play Analytics endpoints
 	http.HandleFunc("/api/backfill-pbp", handlers.HandleBackfillPlayByPlay)
 	http.HandleFunc("/api/pbp-stats", handlers.HandlePlayByPlayStats)
+	
+	// Game Results backfill endpoint (for processing missed games)
+	http.HandleFunc("/api/backfill-games", handlers.HandleBackfillGameResults)
+	
+	// Check unprocessed predictions endpoint
+	http.HandleFunc("/api/check-predictions", handlers.HandleCheckUnprocessedPredictions)
 
 	// Performance Metrics Dashboard endpoints
 	http.HandleFunc("/api/performance", handlers.PerformanceDashboardHandler)
@@ -605,8 +629,10 @@ func scheduleFetcher() {
 			fmt.Printf("Error fetching schedule: %v\n", err)
 		} else {
 			// Update cached schedule
+			cacheMu.Lock()
 			cachedSchedule = game
 			cachedScheduleUpdated = time.Now()
+			cacheMu.Unlock()
 			// Safe access with checks for empty team names
 			awayTeam := "Unknown"
 			homeTeam := "Unknown"
@@ -636,7 +662,9 @@ func scheduleFetcher() {
 				fmt.Printf("Error fetching upcoming games: %v\n", err)
 			} else {
 				// Update cached upcoming games
+				cacheMu.Lock()
 				cachedUpcomingGames = upcomingGames
+				cacheMu.Unlock()
 				fmt.Printf("Upcoming games updated: %d games found\n", len(upcomingGames))
 
 				// Send update to channel only if we successfully fetched games
@@ -670,7 +698,9 @@ func newsFetcher() {
 		}
 
 		// Update cached news
+		cacheMu.Lock()
 		cachedNews = headlines
+		cacheMu.Unlock()
 		fmt.Printf("News updated: %d headlines\n", len(headlines))
 
 		// Send update to channel
@@ -702,8 +732,10 @@ func playerStatsFetcher() {
 		}
 
 		// Update cached player stats
+		cacheMu.Lock()
 		cachedPlayerStats = playerLeaders
 		cachedTeamPlayerStats = services.GetTeamPlayerStats(playerLeaders, teamConfig.Code)
+		cacheMu.Unlock()
 		fmt.Printf("Player stats updated: %d goals, %d assists, %d points leaders\n",
 			len(playerLeaders.Goals), len(playerLeaders.Assists), len(playerLeaders.Points))
 
@@ -716,8 +748,10 @@ func playerStatsFetcher() {
 		}
 
 		// Update cached goalie stats
+		cacheMu.Lock()
 		cachedGoalieStats = goalieLeaders
 		cachedTeamGoalieStats = services.GetTeamGoalieStats(goalieLeaders, teamConfig.Code)
+		cacheMu.Unlock()
 		fmt.Printf("Goalie stats updated: %d wins, %d save%%, %d GAA leaders\n",
 			len(goalieLeaders.Wins), len(goalieLeaders.SavePct), len(goalieLeaders.GAA))
 

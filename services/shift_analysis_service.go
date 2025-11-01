@@ -115,6 +115,10 @@ func (sas *ShiftAnalysisService) FetchShiftData(gameID int) (*models.ShiftAnalyt
 	if analytics == nil {
 		return nil, fmt.Errorf("failed to analyze shift data")
 	}
+	// Check if analytics structs are properly initialized (they're structs, not pointers)
+	if analytics.HomeAnalytics.TeamCode == "" || analytics.AwayAnalytics.TeamCode == "" {
+		return nil, fmt.Errorf("failed to analyze shift data: incomplete analytics")
+	}
 
 	processingTime := time.Since(startTime)
 	shiftsProcessed := analytics.HomeAnalytics.TotalShifts + analytics.AwayAnalytics.TotalShifts

@@ -523,7 +523,6 @@ func (pr *PoissonRegressionModel) GetTeamRates(teamCode string) (offensive, defe
 // Update implements the UpdatableModel interface for live data updates
 func (pr *PoissonRegressionModel) Update(data *LiveGameData) error {
 	pr.mutex.Lock()
-	defer pr.mutex.Unlock()
 
 	log.Printf("🎯 Updating Poisson regression rates with new data...")
 
@@ -594,13 +593,12 @@ func (pr *PoissonRegressionModel) Update(data *LiveGameData) error {
 		saveData.ConfidenceTracking[k] = v
 	}
 
-	// Now unlock and save
+	// Release lock before I/O operation to avoid blocking other goroutines
+	// The save function operates on a copy (saveData), so it doesn't need the lock
 	pr.mutex.Unlock()
 	if err := pr.saveRatesWithData(saveData); err != nil {
 		log.Printf("⚠️ Failed to save Poisson rates: %v", err)
 	}
-	// Re-acquire lock for defer
-	pr.mutex.Lock()
 
 	return nil
 }

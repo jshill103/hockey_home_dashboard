@@ -44,7 +44,11 @@ func HandleSeasonStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	jsonBytes, _ := json.Marshal(response)
+	jsonBytes, err := json.Marshal(response)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to marshal response"}`, http.StatusInternalServerError)
+		return
+	}
 	w.Write(jsonBytes)
 }
 

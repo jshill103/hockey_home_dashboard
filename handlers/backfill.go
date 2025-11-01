@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/jaredshillingburg/go_uhc/services"
 )
@@ -61,6 +62,92 @@ func HandleBackfillPlayByPlay(w http.ResponseWriter, r *http.Request) {
 		response["status"] = "error"
 		json.NewEncoder(w).Encode(response)
 	}
+}
+
+// HandleBackfillGameResults manually triggers processing of games from a specific date or date range
+// Usage: /api/backfill-games?date=2025-01-27 or /api/backfill-games?days=7
+func HandleBackfillGameResults(w http.ResponseWriter, r *http.Request) {
+	grs := services.GetGameResultsService()
+	if grs == nil {
+		http.Error(w, "Game Results Service not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	dateStr := r.URL.Query().Get("date")
+	daysStr := r.URL.Query().Get("days")
+
+	response := map[string]interface{}{
+		"status": "processing",
+	}
+
+	if dateStr != "" {
+		// Process games from a specific date
+		parsedDate, err := time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			response["status"] = "error"
+			response["error"] = fmt.Sprintf("Invalid date format: %s (expected YYYY-MM-DD)", dateStr)
+			json.NewEncoder(w).Encode(response)
+			return
+		}
+
+		response["date"] = dateStr
+		response["message"] = fmt.Sprintf("Processing games from %s. Check server logs for progress.", dateStr)
+		json.NewEncoder(w).Encode(response)
+
+		// Run in background
+		go func() {
+			grs.BackfillGamesForDate(parsedDate)
+		}()
+	} else if daysStr != "" {
+		// Process games from the last N days
+		days, err := strconv.Atoi(daysStr)
+		if err != nil || days < 1 || days > 30 {
+			response["status"] = "error"
+			response["error"] = "Invalid days parameter (must be 1-30)"
+			json.NewEncoder(w).Encode(response)
+			return
+		}
+
+		response["days"] = days
+		response["message"] = fmt.Sprintf("Processing games from last %d days. Check server logs for progress.", days)
+		json.NewEncoder(w).Encode(response)
+
+		// Run in background
+		go func() {
+			grs.BackfillGamesForDays(days)
+		}()
+	} else {
+		// Just trigger a check for missed games
+		response["message"] = "Checking for missed games from past 7 days..."
+		json.NewEncoder(w).Encode(response)
+
+		go func() {
+			grs.CheckForMissedGames()
+		}()
+	}
+}
+
+// HandleCheckUnprocessedPredictions manually triggers checking for predictions without results
+func HandleCheckUnprocessedPredictions(w http.ResponseWriter, r *http.Request) {
+	grs := services.GetGameResultsService()
+	if grs == nil {
+		http.Error(w, "Game Results Service not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	response := map[string]interface{}{
+		"status":  "processing",
+		"message": "Checking for predictions without completed results. Check server logs for progress.",
+	}
+	json.NewEncoder(w).Encode(response)
+
+	go func() {
+		grs.CheckUnprocessedPredictions()
+	}()
 }
 
 // HandlePlayByPlayStats returns current play-by-play statistics

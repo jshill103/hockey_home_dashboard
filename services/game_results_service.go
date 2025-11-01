@@ -38,6 +38,7 @@ type GameResultsService struct {
 	stopChan        chan bool
 	isRunning       bool
 	httpClient      *http.Client
+	lastPredictionCheck time.Time // Track last time we checked for unprocessed predictions
 }
 
 // NewGameResultsService creates a new game results collection service
@@ -117,13 +118,23 @@ func (grs *GameResultsService) monitorGames() {
 	ticker := time.NewTicker(grs.checkInterval)
 	defer ticker.Stop()
 
+	// Daily ticker for checking predictions without results
+	dailyTicker := time.NewTicker(24 * time.Hour)
+	defer dailyTicker.Stop()
+
 	// Do an immediate check on startup
 	grs.checkForCompletedGames()
+	
+	// Also check for unprocessed predictions on startup (in case server was down)
+	grs.checkUnprocessedPredictions()
 
 	for {
 		select {
 		case <-ticker.C:
 			grs.checkForCompletedGames()
+		case <-dailyTicker.C:
+			// Daily check for predictions without results
+			grs.checkUnprocessedPredictions()
 		case <-grs.stopChan:
 			return
 		}
@@ -138,6 +149,7 @@ func (grs *GameResultsService) checkForCompletedGames() {
 	schedule, err := grs.fetchWeekSchedule()
 	if err != nil {
 		log.Printf("❌ Failed to fetch league scoreboard: %v", err)
+		log.Printf("⚠️ This may indicate network connectivity issues - check API access")
 		return
 	}
 
@@ -153,6 +165,9 @@ func (grs *GameResultsService) checkForCompletedGames() {
 
 	if len(newGames) == 0 {
 		log.Printf("✅ No new completed games found (league-wide scan)")
+		
+		// Also check for missed games from the past few days (backfill)
+		grs.checkForMissedGames()
 		return
 	}
 
@@ -160,11 +175,15 @@ func (grs *GameResultsService) checkForCompletedGames() {
 
 	// Process each new game
 	for _, game := range newGames {
+		log.Printf("📥 Processing game %d (%s @ %s)...", game.GameID, game.AwayTeam.Abbrev, game.HomeTeam.Abbrev)
 		if err := grs.processGame(game.GameID); err != nil {
 			log.Printf("❌ Failed to process game %d: %v", game.GameID, err)
+			log.Printf("⚠️ Game %d will be retried on next check cycle", game.GameID)
+			// Don't mark as processed if it failed - allow retry
 		} else {
-			// Mark as processed
+			// Mark as processed only on success
 			grs.markProcessed(game.GameID)
+			log.Printf("✅ Successfully processed game %d", game.GameID)
 		}
 	}
 
@@ -172,6 +191,232 @@ func (grs *GameResultsService) checkForCompletedGames() {
 	if err := grs.saveProcessedGames(); err != nil {
 		log.Printf("⚠️ Failed to save processed games index: %v", err)
 	}
+}
+
+// checkForMissedGames checks for completed games from the past few days that might have been missed
+// This handles cases where games from previous days weren't picked up by scoreboard/now
+func (grs *GameResultsService) checkForMissedGames() {
+	grs.CheckForMissedGames()
+}
+
+// CheckForMissedGames is the public version of checkForMissedGames (for manual triggering)
+func (grs *GameResultsService) CheckForMissedGames() {
+	log.Printf("🔍 Checking for missed games from past 7 days...")
+	
+	// Check the past 7 days for any completed games we might have missed
+	for daysBack := 1; daysBack <= 7; daysBack++ {
+		checkDate := time.Now().AddDate(0, 0, -daysBack)
+		dateStr := checkDate.Format("2006-01-02")
+		
+		log.Printf("📅 Checking date %s for missed games...", dateStr)
+		
+		// Try to fetch scoreboard for that specific date
+		url := fmt.Sprintf("https://api-web.nhle.com/v1/scoreboard/%s", dateStr)
+		body, err := MakeAPICall(url)
+		if err != nil {
+			log.Printf("⚠️ Could not check date %s: %v", dateStr, err)
+			continue
+		}
+		
+		var scheduleData models.ScoreboardResponse
+		if err := json.Unmarshal(body, &scheduleData); err != nil {
+			log.Printf("⚠️ Failed to decode scoreboard for %s: %v", dateStr, err)
+			continue
+		}
+		
+		// Find completed games from this date that haven't been processed
+		foundMissed := false
+		for _, gamesByDate := range scheduleData.GamesByDate {
+			for _, game := range gamesByDate.Games {
+				if grs.isGameCompleted(game) && !grs.isProcessed(game.GameID) {
+					log.Printf("🔍 Found missed game %d from %s (%s @ %s)", 
+						game.GameID, dateStr, game.AwayTeam.Abbrev, game.HomeTeam.Abbrev)
+					
+					if err := grs.processGame(game.GameID); err != nil {
+						log.Printf("❌ Failed to process missed game %d: %v", game.GameID, err)
+					} else {
+						grs.markProcessed(game.GameID)
+						foundMissed = true
+						log.Printf("✅ Processed missed game %d from %s", game.GameID, dateStr)
+					}
+				}
+			}
+		}
+		
+		if foundMissed {
+			// Save after processing missed games
+			if err := grs.saveProcessedGames(); err != nil {
+				log.Printf("⚠️ Failed to save after processing missed games: %v", err)
+			}
+		}
+	}
+}
+
+// BackfillGamesForDate processes all completed games from a specific date
+func (grs *GameResultsService) BackfillGamesForDate(targetDate time.Time) {
+	dateStr := targetDate.Format("2006-01-02")
+	log.Printf("📅 Backfilling games from %s...", dateStr)
+	
+	url := fmt.Sprintf("https://api-web.nhle.com/v1/scoreboard/%s", dateStr)
+	body, err := MakeAPICall(url)
+	if err != nil {
+		log.Printf("❌ Failed to fetch scoreboard for %s: %v", dateStr, err)
+		return
+	}
+	
+	var scheduleData models.ScoreboardResponse
+	if err := json.Unmarshal(body, &scheduleData); err != nil {
+		log.Printf("❌ Failed to decode scoreboard for %s: %v", dateStr, err)
+		return
+	}
+	
+	processedCount := 0
+	for _, gamesByDate := range scheduleData.GamesByDate {
+		for _, game := range gamesByDate.Games {
+			if grs.isGameCompleted(game) && !grs.isProcessed(game.GameID) {
+				log.Printf("📥 Processing game %d (%s @ %s)...", game.GameID, game.AwayTeam.Abbrev, game.HomeTeam.Abbrev)
+				if err := grs.processGame(game.GameID); err != nil {
+					log.Printf("❌ Failed to process game %d: %v", game.GameID, err)
+				} else {
+					grs.markProcessed(game.GameID)
+					processedCount++
+					log.Printf("✅ Processed game %d", game.GameID)
+				}
+			}
+		}
+	}
+	
+	if processedCount > 0 {
+		if err := grs.saveProcessedGames(); err != nil {
+			log.Printf("⚠️ Failed to save processed games: %v", err)
+		}
+		log.Printf("✅ Backfill complete for %s: %d games processed", dateStr, processedCount)
+	} else {
+		log.Printf("✅ No unprocessed games found for %s", dateStr)
+	}
+}
+
+// BackfillGamesForDays processes games from the last N days
+func (grs *GameResultsService) BackfillGamesForDays(days int) {
+	log.Printf("📅 Backfilling games from last %d days...", days)
+	
+	for i := 1; i <= days; i++ {
+		checkDate := time.Now().AddDate(0, 0, -i)
+		grs.BackfillGamesForDate(checkDate)
+	}
+	
+	log.Printf("✅ Backfill complete for last %d days", days)
+}
+
+// checkUnprocessedPredictions checks for stored predictions that don't have actual results yet
+// and attempts to process those games. This runs once per day to catch any missed games.
+func (grs *GameResultsService) checkUnprocessedPredictions() {
+	log.Printf("🔍 Daily check: Looking for predictions without completed results...")
+	
+	predictionStorage := GetPredictionStorageService()
+	if predictionStorage == nil {
+		log.Printf("⚠️ Prediction storage service not available, skipping prediction check")
+		return
+	}
+	
+	predictions, err := predictionStorage.GetAllPredictions()
+	if err != nil {
+		log.Printf("⚠️ Failed to load predictions: %v", err)
+		return
+	}
+	
+	if len(predictions) == 0 {
+		log.Printf("✅ No stored predictions found")
+		return
+	}
+	
+	now := time.Now()
+	pendingCount := 0
+	processedCount := 0
+	
+	for _, pred := range predictions {
+		// Skip if already has result
+		if pred.ActualResult != nil {
+			continue
+		}
+		
+		// Only process games that should be completed (game date is in the past)
+		// Add 6 hours buffer to account for games that might finish late
+		gameTime := pred.GameDate
+		if gameTime.After(now.Add(-6 * time.Hour)) {
+			continue // Game hasn't happened yet or just finished
+		}
+		
+		// Check if we've already processed this game
+		if grs.isProcessed(pred.GameID) {
+			// Game was processed but prediction wasn't updated - try to update it
+			log.Printf("📋 Game %d was processed but prediction not updated, attempting to update...", pred.GameID)
+			if err := grs.updatePredictionFromProcessedGame(pred.GameID); err != nil {
+				log.Printf("⚠️ Failed to update prediction for game %d: %v", pred.GameID, err)
+			}
+			continue
+		}
+		
+		pendingCount++
+		log.Printf("🎯 Found unprocessed prediction for game %d (%s @ %s, date: %s)", 
+			pred.GameID, pred.AwayTeam, pred.HomeTeam, pred.GameDate.Format("2006-01-02"))
+		
+		// Try to process this game
+		if err := grs.processGame(pred.GameID); err != nil {
+			log.Printf("❌ Failed to process game %d from prediction check: %v", pred.GameID, err)
+		} else {
+			grs.markProcessed(pred.GameID)
+			processedCount++
+			log.Printf("✅ Successfully processed game %d from prediction check", pred.GameID)
+		}
+	}
+	
+	if pendingCount > 0 {
+		if err := grs.saveProcessedGames(); err != nil {
+			log.Printf("⚠️ Failed to save processed games after prediction check: %v", err)
+		}
+		log.Printf("📊 Prediction check complete: %d pending found, %d processed", pendingCount, processedCount)
+	} else {
+		log.Printf("✅ All predictions have results or games haven't occurred yet")
+	}
+	
+	grs.lastPredictionCheck = now
+}
+
+// updatePredictionFromProcessedGame attempts to update a prediction by loading the processed game
+func (grs *GameResultsService) updatePredictionFromProcessedGame(gameID int) error {
+	// Try to find the game in our monthly files
+	// We'll need to check recent months
+	now := time.Now()
+	for monthsBack := 0; monthsBack < 3; monthsBack++ {
+		checkDate := now.AddDate(0, -monthsBack, 0)
+		
+		games, err := grs.GetMonthlyGames(checkDate.Year(), int(checkDate.Month()))
+		if err != nil {
+			continue
+		}
+		
+		for _, game := range games {
+			if game.GameID == gameID {
+				// Found it! Update the prediction
+				predictionStorage := GetPredictionStorageService()
+				if predictionStorage != nil {
+					if err := predictionStorage.UpdateWithResult(gameID, &game); err != nil {
+						return fmt.Errorf("failed to update prediction: %w", err)
+					}
+					log.Printf("✅ Updated prediction for game %d from processed game data", gameID)
+				}
+				return nil
+			}
+		}
+	}
+	
+	return fmt.Errorf("processed game %d not found in monthly files", gameID)
+}
+
+// CheckUnprocessedPredictions is the public version for manual triggering
+func (grs *GameResultsService) CheckUnprocessedPredictions() {
+	grs.checkUnprocessedPredictions()
 }
 
 // fetchWeekSchedule fetches ALL NHL games (league-wide) for the current week
@@ -245,21 +490,18 @@ func (grs *GameResultsService) processGame(gameID int) error {
 }
 
 // fetchBoxscore fetches boxscore data from NHL API
+// Uses MakeAPICall for rate limiting, retry logic, and error handling
 func (grs *GameResultsService) fetchBoxscore(gameID int) (*models.BoxscoreResponse, error) {
 	url := fmt.Sprintf("https://api-web.nhle.com/v1/gamecenter/%d/boxscore", gameID)
 
-	resp, err := grs.httpClient.Get(url)
+	// Use MakeAPICall for caching, rate limiting, and retry logic
+	body, err := MakeAPICall(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch boxscore: %w", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
-	}
 
 	var boxscore models.BoxscoreResponse
-	if err := json.NewDecoder(resp.Body).Decode(&boxscore); err != nil {
+	if err := json.Unmarshal(body, &boxscore); err != nil {
 		return nil, fmt.Errorf("failed to decode boxscore: %w", err)
 	}
 

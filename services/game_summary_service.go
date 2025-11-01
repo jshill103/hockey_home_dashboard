@@ -111,6 +111,10 @@ func (gss *GameSummaryService) FetchGameSummaryData(gameID int) (*models.GameSum
 	if analytics == nil {
 		return nil, fmt.Errorf("failed to analyze game summary data")
 	}
+	// Check if analytics structs are properly initialized (they're structs, not pointers)
+	if analytics.HomeAnalytics.TeamCode == "" || analytics.AwayAnalytics.TeamCode == "" {
+		return nil, fmt.Errorf("failed to analyze game summary data: incomplete analytics")
+	}
 
 	processingTime := time.Since(startTime)
 	// Count metrics processed (shots, hits, penalties, etc.)
