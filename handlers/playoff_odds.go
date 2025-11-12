@@ -1,10 +1,10 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
-	"sort"
 	"strings"
 
 	"github.com/jaredshillingburg/go_uhc/models"
@@ -33,7 +33,7 @@ func CalculatePlayoffOdds() (*models.PlayoffOdds, error) {
 	}
 
 	if utahTeam == nil {
-		return nil, fmt.Errorf("Team not found in standings")
+		return nil, fmt.Errorf("team not found in standings")
 	}
 
 	// Separate teams by conference
@@ -44,14 +44,8 @@ func CalculatePlayoffOdds() (*models.PlayoffOdds, error) {
 		}
 	}
 
-	// Sort western teams by points (descending)
-	sort.Slice(westernTeams, func(i, j int) bool {
-		if westernTeams[i].Points == westernTeams[j].Points {
-			// Tie-breaker: more games played means lower effective point percentage
-			return westernTeams[i].GamesPlayed < westernTeams[j].GamesPlayed
-		}
-		return westernTeams[i].Points > westernTeams[j].Points
-	})
+	// Sort western teams by NHL tiebreaker rules
+	services.SortTeamsByNHLRules(westernTeams)
 
 	// Get division teams
 	centralTeams := make([]models.TeamStanding, 0)
@@ -76,8 +70,8 @@ func CalculatePlayoffOdds() (*models.PlayoffOdds, error) {
 	// Historical playoff threshold (typically 90-100 points)
 	historicalThreshold := 96
 
-	// Calculate playoff odds using ML simulation
-	playoffOdds, divisionOdds, wildCardOdds, mlSimulation := calculateMLPlayoffOdds(utahTeam.TeamAbbrev.Default)
+	// Calculate playoff odds using ML simulation (Phase 5.2: Adaptive simulation count)
+	playoffOdds, divisionOdds, wildCardOdds, mlSimulation := calculateMLPlayoffOddsAdaptive(utahTeam.TeamAbbrev.Default, utahTeam, westernTeams)
 
 	// Determine what Utah needs
 	pointsNeeded := calculatePointsNeeded(westernTeams, utahTeam, historicalThreshold)
@@ -95,7 +89,7 @@ func CalculatePlayoffOdds() (*models.PlayoffOdds, error) {
 	// Calculate points from playoff line
 	pointsFromPlayoffs := calculatePointsFromPlayoffLine(westernTeams, utahTeam)
 
-	return &models.PlayoffOdds{
+	playoffOddsResult := &models.PlayoffOdds{
 		CurrentSeason:       services.GetCurrentSeason(),
 		TeamName:            utahTeam.TeamName.Default,
 		CurrentRecord:       fmt.Sprintf("%d-%d-%d", utahTeam.Wins, utahTeam.Losses, utahTeam.OtLosses),
@@ -129,7 +123,64 @@ func CalculatePlayoffOdds() (*models.PlayoffOdds, error) {
 		MLAvgPoints:   mlSimulation.AvgFinalPoints,
 		MLBestCase:    mlSimulation.BestCasePoints,
 		MLWorstCase:   mlSimulation.WorstCasePoints,
-	}, nil
+	}
+
+	// Add Schedule Strength Data (Phase 2)
+	if mlSimulation.ScheduleStrength != nil {
+		ss := mlSimulation.ScheduleStrength
+		playoffOddsResult.ScheduleDifficulty = ss.ScheduleDifficulty
+		playoffOddsResult.ScheduleDifficultyTier = ss.DifficultyTier
+		playoffOddsResult.AvgOpponentWinPct = ss.AvgOpponentWinPct
+		playoffOddsResult.HomeGamesRemaining = ss.HomeGamesRemaining
+		playoffOddsResult.AwayGamesRemaining = ss.AwayGamesRemaining
+		playoffOddsResult.DivisionGamesRemaining = ss.DivisionGamesRemaining
+		playoffOddsResult.PlayoffTeamGamesRemaining = ss.PlayoffTeamGames
+		playoffOddsResult.CrucialGamesCount = len(ss.CrucialGames)
+		playoffOddsResult.MustWinGamesCount = ss.MustWinGames
+		playoffOddsResult.BackToBackGames = ss.BackToBackGames
+
+		// Add crucial games for UI (Phase 4.4)
+		if len(ss.CrucialGames) > 0 {
+			crucialGames := make([]map[string]interface{}, 0)
+			for _, game := range ss.CrucialGames {
+				crucialGames = append(crucialGames, map[string]interface{}{
+					"date":               game.Date.Format("2006-01-02"),
+					"opponent":           game.Opponent,
+					"isHome":             game.IsHome,
+					"isDivisionGame":     game.IsDivisionGame,
+					"isDirectCompetitor": game.IsDirectCompetitor,
+					"importance":         game.Importance,
+					"description":        game.Description,
+				})
+			}
+			playoffOddsResult.CrucialGames = crucialGames
+		}
+	}
+
+	// Add percentile distributions (Phase 4.2)
+	playoffOddsResult.PercentileP10 = mlSimulation.PercentileP10
+	playoffOddsResult.PercentileP25 = mlSimulation.PercentileP25
+	playoffOddsResult.PercentileP50 = mlSimulation.PercentileP50
+	playoffOddsResult.PercentileP75 = mlSimulation.PercentileP75
+	playoffOddsResult.PercentileP90 = mlSimulation.PercentileP90
+
+	// Add magic numbers (Phase 4.1)
+	if mlSimulation.MagicNumbers != nil {
+		mn := mlSimulation.MagicNumbers
+		playoffOddsResult.MagicNumber = mn.MagicNumber
+		playoffOddsResult.MagicNumberWins = mn.MagicNumberWins
+		playoffOddsResult.CanClinchPlayoffs = mn.CanClinchPlayoffs
+		playoffOddsResult.ClinchScenario = mn.ClinchScenario
+		playoffOddsResult.EliminationNumber = mn.EliminationNumber
+		playoffOddsResult.CanBeEliminated = mn.CanBeEliminated
+		playoffOddsResult.EliminationScenario = mn.EliminationScenario
+		playoffOddsResult.MaxPossiblePoints = mn.MaxPossiblePoints
+		playoffOddsResult.PointsBehind8th = mn.PointsBehind8th
+		playoffOddsResult.PointsAhead9th = mn.PointsAhead9th
+		playoffOddsResult.TiebreakerAdvantage = mn.TiebreakerAdvantage
+	}
+
+	return playoffOddsResult, nil
 }
 
 // Helper functions
@@ -474,6 +525,11 @@ func formatNumber(n int) string {
 
 // calculateMLPlayoffOdds uses ML-powered Monte Carlo simulation for accurate odds
 func calculateMLPlayoffOdds(teamCode string) (playoffOdds, divisionOdds, wildCardOdds float64, simulation *services.SeasonSimulation) {
+	return calculateMLPlayoffOddsWithStrategy(teamCode, "")
+}
+
+// calculateMLPlayoffOddsWithStrategy allows specifying prediction strategy (Phase 3.4)
+func calculateMLPlayoffOddsWithStrategy(teamCode, strategy string) (playoffOdds, divisionOdds, wildCardOdds float64, simulation *services.SeasonSimulation) {
 	// Get the playoff simulation service
 	simService := services.GetPlayoffSimulationService()
 
@@ -485,6 +541,50 @@ func calculateMLPlayoffOdds(teamCode string) (playoffOdds, divisionOdds, wildCar
 			AvgFinalPoints:   0,
 			BestCasePoints:   0,
 			WorstCasePoints:  0,
+		}
+	}
+
+	// Phase 3.4: Configure prediction strategy if specified
+	if strategy != "" {
+		liveSys := services.GetLivePredictionSystem()
+		var ensemble *services.EnsemblePredictionService
+		if liveSys != nil {
+			ensemble = liveSys.GetEnsemble()
+		}
+
+		var predictor services.GamePredictor
+
+		switch strings.ToLower(strategy) {
+		case "simple":
+			predictor = services.NewSimplePredictor()
+			fmt.Printf("🎯 Using Simple predictor strategy\n")
+		case "elo":
+			predictor = services.NewEloPredictor()
+			fmt.Printf("🎯 Using ELO predictor strategy\n")
+		case "ml", "ensemble":
+			if ensemble != nil {
+				predictor = services.NewMLPredictor(ensemble)
+				fmt.Printf("🎯 Using ML-Ensemble predictor strategy\n")
+			} else {
+				fmt.Println("⚠️ ML predictor requested but ensemble not available, using ELO")
+				predictor = services.NewEloPredictor()
+			}
+		case "hybrid":
+			if ensemble != nil {
+				mlPredictor := services.NewMLPredictor(ensemble)
+				eloPredictor := services.NewEloPredictor()
+				predictor = services.NewHybridPredictor(mlPredictor, eloPredictor)
+				fmt.Printf("🎯 Using Hybrid predictor strategy\n")
+			} else {
+				fmt.Println("⚠️ Hybrid predictor requested but ensemble not available, using ELO")
+				predictor = services.NewEloPredictor()
+			}
+		default:
+			fmt.Printf("⚠️ Unknown strategy '%s', using default (Hybrid)\n", strategy)
+		}
+
+		if predictor != nil {
+			simService.SetGamePredictor(predictor)
 		}
 	}
 
@@ -502,4 +602,123 @@ func calculateMLPlayoffOdds(teamCode string) (playoffOdds, divisionOdds, wildCar
 	}
 
 	return sim.PlayoffOddsPercent, sim.DivisionOddsPercent, sim.WildCardOddsPercent, sim
+}
+
+// calculateMLPlayoffOddsAdaptive runs ML-powered Monte Carlo simulation with adaptive count (Phase 5.2)
+func calculateMLPlayoffOddsAdaptive(teamCode string, team *models.TeamStanding, conferenceTeams []models.TeamStanding) (playoffOdds, divisionOdds, wildCardOdds float64, simulation *services.SeasonSimulation) {
+	// Calculate optimal simulation count based on urgency
+	config := services.DefaultSimulationConfig()
+	simCount := services.CalculateAdaptiveSimulationCount(team, conferenceTeams, config)
+
+	// Get recommendation explanation
+	recommendation := services.GetSimulationRecommendation(team, conferenceTeams, simCount)
+	fmt.Printf("🎯 Adaptive Simulations: %d\n", simCount)
+	fmt.Printf("   %s\n", recommendation)
+
+	simService := services.GetPlayoffSimulationService()
+	if simService == nil {
+		fmt.Println("⚠️ Playoff simulation service not available")
+		return 50.0, 30.0, 20.0, &services.SeasonSimulation{
+			TotalSimulations: 0,
+			AvgFinalPoints:   0,
+			BestCasePoints:   0,
+			WorstCasePoints:  0,
+		}
+	}
+
+	// Run adaptive simulations
+	sim, err := simService.SimulatePlayoffOdds(teamCode, simCount)
+	if err != nil {
+		fmt.Printf("⚠️ Playoff simulation error: %v\n", err)
+		return 50.0, 30.0, 20.0, &services.SeasonSimulation{
+			TotalSimulations: 0,
+			AvgFinalPoints:   0,
+			BestCasePoints:   0,
+			WorstCasePoints:  0,
+		}
+	}
+
+	return sim.PlayoffOddsPercent, sim.DivisionOddsPercent, sim.WildCardOddsPercent, sim
+}
+
+// HandleWhatIf runs a what-if scenario simulation (Phase 4.3)
+func HandleWhatIf(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse request body
+	var scenario services.WhatIfScenario
+	if err := json.NewDecoder(r.Body).Decode(&scenario); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Get team code from query param (default to Utah)
+	teamCode := r.URL.Query().Get("team")
+	if teamCode == "" {
+		teamCode = teamConfig.Code
+	}
+
+	// Run what-if simulation
+	simService := services.GetPlayoffSimulationService()
+	if simService == nil {
+		http.Error(w, "Simulation service not available", http.StatusInternalServerError)
+		return
+	}
+
+	result, err := simService.SimulateWhatIf(teamCode, scenario, 2000)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Simulation error: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(result)
+}
+
+// HandleWhatIfScenarios returns common what-if scenarios for a team (Phase 4.3)
+func HandleWhatIfScenarios(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// Get team code from query param (default to Utah)
+	teamCode := r.URL.Query().Get("team")
+	if teamCode == "" {
+		teamCode = teamConfig.Code
+	}
+
+	// Get current standings
+	standings, err := services.GetStandings()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get standings: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Find team
+	var team *models.TeamStanding
+	for i := range standings.Standings {
+		t := &standings.Standings[i]
+		if t.TeamAbbrev.Default == teamCode {
+			team = t
+			break
+		}
+	}
+
+	if team == nil {
+		http.Error(w, "Team not found", http.StatusNotFound)
+		return
+	}
+
+	// Get common scenarios
+	scenarios := services.GetCommonWhatIfScenarios(team)
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"teamCode":  teamCode,
+		"teamName":  team.TeamName.Default,
+		"scenarios": scenarios,
+	})
 }

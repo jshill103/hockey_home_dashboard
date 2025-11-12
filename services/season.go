@@ -305,5 +305,5 @@ func TestAllAPIs() {
 	// Test all endpoints directly
 	TestAPIEndpoints()
 
-	fmt.Println("=== API Testing Complete ===\n")
+	fmt.Println("=== API Testing Complete ===")
 }

@@ -341,12 +341,18 @@ func main() {
 		eloModel := liveSys.GetEloModel()
 		poissonModel := liveSys.GetPoissonModel()
 
-		if err := services.InitializeEvaluationService(neuralNet, eloModel, poissonModel); err != nil {
-			fmt.Printf("⚠️ Warning: Failed to initialize evaluation service: %v\n", err)
-		} else {
-			fmt.Printf("✅ Model Evaluation Service initialized\n")
+	if err := services.InitializeEvaluationService(neuralNet, eloModel, poissonModel); err != nil {
+		fmt.Printf("⚠️ Warning: Failed to initialize evaluation service: %v\n", err)
+	} else {
+		fmt.Printf("✅ Model Evaluation Service initialized\n")
+		
+		// Start periodic auto-save (every 30 minutes)
+		if evalSvc := services.GetEvaluationService(); evalSvc != nil {
+			evalSvc.StartPeriodicSave()
+			fmt.Println("✅ Periodic model save started (every 30 minutes)")
 		}
 	}
+}
 
 	// Initialize Game Results Collection Service for automatic model learning
 	// NOTE: This MUST come AFTER EvaluationService so they can be linked for batch training

@@ -180,35 +180,70 @@ func (hcs *HealthCheckService) checkMLModels() models.HealthCheck {
 	loadedModels := []string{}
 	issues := []string{}
 
-	// Check if models are loaded (by checking persistence files)
-	modelFiles := map[string]string{
-		"Elo Rating":         "data/models/elo_ratings.json",
-		"Poisson Regression": "data/models/poisson_rates.json",
-		"Neural Network":     "data/models/neural_network.json",
-		"Gradient Boosting":  "data/models/gradient_boosting.json",
-		"LSTM":               "data/models/lstm.json",
-		"Random Forest":      "data/models/random_forest.json",
-		"Meta-Learner":       "data/models/meta_learner.json",
-	}
-
-	for modelName, filePath := range modelFiles {
-		if _, err := os.Stat(filePath); err == nil {
-			loadedModels = append(loadedModels, modelName)
+	// PHASE 3: Check if models are loaded IN MEMORY (not just files)
+	liveSys := GetLivePredictionSystem()
+	if liveSys != nil {
+		// Check Neural Network
+		if nn := liveSys.GetNeuralNetwork(); nn != nil {
+			loadedModels = append(loadedModels, "Neural Network")
 		} else {
-			issues = append(issues, fmt.Sprintf("%s: not loaded", modelName))
+			issues = append(issues, "Neural Network: not loaded")
+		}
+
+		// Check Elo Rating
+		if elo := liveSys.GetEloModel(); elo != nil {
+			loadedModels = append(loadedModels, "Elo Rating")
+		} else {
+			issues = append(issues, "Elo Rating: not loaded")
+		}
+
+		// Check Poisson
+		if poisson := liveSys.GetPoissonModel(); poisson != nil {
+			loadedModels = append(loadedModels, "Poisson Regression")
+		} else {
+			issues = append(issues, "Poisson Regression: not loaded")
 		}
 	}
 
+	// Check other models
+	if gbModel := GetGradientBoostingModel(); gbModel != nil {
+		loadedModels = append(loadedModels, "Gradient Boosting")
+	} else {
+		issues = append(issues, "Gradient Boosting: not loaded")
+	}
+
+	if lstmModel := GetLSTMModel(); lstmModel != nil {
+		loadedModels = append(loadedModels, "LSTM")
+	} else {
+		issues = append(issues, "LSTM: not loaded")
+	}
+
+	if rfModel := GetRandomForestModel(); rfModel != nil {
+		loadedModels = append(loadedModels, "Random Forest")
+	} else {
+		issues = append(issues, "Random Forest: not loaded")
+	}
+
+	if metaModel := GetMetaLearnerModel(); metaModel != nil {
+		loadedModels = append(loadedModels, "Meta-Learner")
+	} else {
+		issues = append(issues, "Meta-Learner: not loaded")
+	}
+
 	// Determine status
+	totalModels := 7
 	status := "healthy"
-	message := fmt.Sprintf("%d/%d models loaded", len(loadedModels), len(modelFiles))
+	message := fmt.Sprintf("All %d models loaded", totalModels)
 
 	if len(loadedModels) == 0 {
 		status = "unhealthy"
 		message = "No models loaded"
-	} else if len(loadedModels) < len(modelFiles) {
+	} else if len(loadedModels) < 3 {
+		status = "unhealthy"
+		message = fmt.Sprintf("Critical: Only %d/%d models loaded", len(loadedModels), totalModels)
+	} else if len(loadedModels) < totalModels {
 		status = "degraded"
-		message = fmt.Sprintf("Only %d/%d models loaded", len(loadedModels), len(modelFiles))
+		message = fmt.Sprintf("Only %d/%d models loaded", len(loadedModels), totalModels)
 	}
 
 	return models.HealthCheck{
@@ -219,7 +254,7 @@ func (hcs *HealthCheckService) checkMLModels() models.HealthCheck {
 		Details: map[string]interface{}{
 			"loaded_models": loadedModels,
 			"issues":        issues,
-			"total_models":  len(modelFiles),
+			"total_models":  totalModels,
 		},
 	}
 }

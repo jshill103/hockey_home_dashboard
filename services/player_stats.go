@@ -73,7 +73,7 @@ func GetGoalieStatsLeaders() (models.GoalieStatsLeaders, error) {
 
 	savePct, err := getGoalieStatsLeadersByCategory("savePct")
 	if err != nil {
-		return models.GoalieStatsLeaders{}, fmt.Errorf("error fetching goalie save% leaders: %v", err)
+		return models.GoalieStatsLeaders{}, fmt.Errorf("error fetching goalie save%% leaders: %v", err)
 	}
 
 	gaa, err := getGoalieStatsLeadersByCategory("goalsAgainstAverage")

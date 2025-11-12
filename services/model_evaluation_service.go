@@ -351,6 +351,45 @@ func (mes *ModelEvaluationService) trainModelBatch(modelName string, batch []mod
 		trainingMetrics.RecordTraining(modelName, "batch", batchSize, duration, 0)
 	}
 
+	// PHASE 1: Save model weights after training
+	switch modelName {
+	case "NeuralNetwork":
+		if mes.neuralNet != nil {
+			if err := mes.neuralNet.saveWeights(); err != nil {
+				log.Printf("⚠️ Failed to save Neural Network weights: %v", err)
+			} else {
+				log.Printf("💾 Neural Network weights saved")
+			}
+		}
+	case "GradientBoosting":
+		gbModel := GetGradientBoostingModel()
+		if gbModel != nil {
+			if err := gbModel.saveModel(); err != nil {
+				log.Printf("⚠️ Failed to save Gradient Boosting model: %v", err)
+			} else {
+				log.Printf("💾 Gradient Boosting model saved")
+			}
+		}
+	case "LSTM":
+		lstmModel := GetLSTMModel()
+		if lstmModel != nil {
+			if err := lstmModel.saveModel(); err != nil {
+				log.Printf("⚠️ Failed to save LSTM model: %v", err)
+			} else {
+				log.Printf("💾 LSTM model saved")
+			}
+		}
+	case "RandomForest":
+		rfModel := GetRandomForestModel()
+		if rfModel != nil {
+			if err := rfModel.saveModel(); err != nil {
+				log.Printf("⚠️ Failed to save Random Forest model: %v", err)
+			} else {
+				log.Printf("💾 Random Forest model saved")
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -800,6 +839,106 @@ func (mes *ModelEvaluationService) getLosingTeam(game *models.CompletedGame) str
 		return game.AwayTeam.TeamCode
 	}
 	return game.HomeTeam.TeamCode
+}
+
+// ============================================================================
+// PHASE 4: PERIODIC AUTO-SAVE
+// ============================================================================
+
+// StartPeriodicSave saves all model weights every 30 minutes
+func (mes *ModelEvaluationService) StartPeriodicSave() {
+	ticker := time.NewTicker(30 * time.Minute)
+	go func() {
+		for range ticker.C {
+			log.Printf("💾 Periodic model save triggered...")
+			mes.SaveAllModels()
+		}
+	}()
+}
+
+// SaveAllModels saves all model weights to disk
+func (mes *ModelEvaluationService) SaveAllModels() {
+	mes.mutex.Lock()
+	defer mes.mutex.Unlock()
+
+	savedCount := 0
+	failedCount := 0
+
+	// Save Neural Network
+	if mes.neuralNet != nil {
+		if err := mes.neuralNet.saveWeights(); err != nil {
+			log.Printf("⚠️ Failed to save Neural Network: %v", err)
+			failedCount++
+		} else {
+			savedCount++
+		}
+	}
+
+	// Save Gradient Boosting
+	if gbModel := GetGradientBoostingModel(); gbModel != nil {
+		if err := gbModel.saveModel(); err != nil {
+			log.Printf("⚠️ Failed to save Gradient Boosting: %v", err)
+			failedCount++
+		} else {
+			savedCount++
+		}
+	}
+
+	// Save LSTM
+	if lstmModel := GetLSTMModel(); lstmModel != nil {
+		if err := lstmModel.saveModel(); err != nil {
+			log.Printf("⚠️ Failed to save LSTM: %v", err)
+			failedCount++
+		} else {
+			savedCount++
+		}
+	}
+
+	// Save Random Forest
+	if rfModel := GetRandomForestModel(); rfModel != nil {
+		if err := rfModel.saveModel(); err != nil {
+			log.Printf("⚠️ Failed to save Random Forest: %v", err)
+			failedCount++
+		} else {
+			savedCount++
+		}
+	}
+
+	// Save Meta-Learner
+	if metaModel := GetMetaLearnerModel(); metaModel != nil {
+		if err := metaModel.saveModel(); err != nil {
+			log.Printf("⚠️ Failed to save Meta-Learner: %v", err)
+			failedCount++
+		} else {
+			savedCount++
+		}
+	}
+
+	// Save Elo (if it has changes)
+	if mes.eloModel != nil {
+		if err := mes.eloModel.saveRatings(); err != nil {
+			log.Printf("⚠️ Failed to save Elo ratings: %v", err)
+			failedCount++
+		} else {
+			savedCount++
+		}
+	}
+
+	// Save Poisson (if it has changes)
+	if mes.poissonModel != nil {
+		if err := mes.poissonModel.saveRates(); err != nil {
+			log.Printf("⚠️ Failed to save Poisson rates: %v", err)
+			failedCount++
+		} else {
+			savedCount++
+		}
+	}
+
+	if failedCount > 0 {
+		log.Printf("⚠️ Periodic save complete: %d saved, %d failed", savedCount, failedCount)
+	} else {
+		log.Printf("✅ Periodic save complete: %d models saved", savedCount)
+	}
 }
 
 // Global evaluation service

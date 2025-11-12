@@ -817,6 +817,52 @@ func serializeGBTreeNode(node *GBTreeNode) *SerializedGBTreeNode {
 
 	return serialized
 }
+
+// saveModel saves the Gradient Boosting model to disk
+func (gbm *GradientBoostingModel) saveModel() error {
+	gbm.mutex.Lock()
+	defer gbm.mutex.Unlock()
+
+	filePath := filepath.Join(gbm.dataDir, "gradient_boosting.json")
+
+	// Serialize trees
+	serializedTrees := make([]SerializedGBTree, len(gbm.trees))
+	for i, tree := range gbm.trees {
+		serializedTrees[i] = SerializedGBTree{
+			Root:           serializeGBTreeNode(tree.Root),
+			MaxDepth:       tree.MaxDepth,
+			MinSamplesLeaf: tree.MinSamplesLeaf,
+		}
+	}
+
+	modelData := GradientBoostingModelData{
+		Trees:             serializedTrees,
+		LearningRate:      gbm.learningRate,
+		NumTrees:          gbm.numTrees,
+		MaxDepth:          gbm.maxDepth,
+		MinSamplesLeaf:    gbm.minSamplesLeaf,
+		Weight:            gbm.weight,
+		Trained:           gbm.trained,
+		FeatureNames:      gbm.featureNames,
+		FeatureImportance: gbm.featureImportance,
+		LastUpdated:       time.Now(),
+		Version:           "1.0",
+	}
+
+	data, err := json.MarshalIndent(modelData, "", "  ")
+	if err != nil {
+		return fmt.Errorf("error marshaling gradient boosting model: %w", err)
+	}
+
+	err = os.WriteFile(filePath, data, 0644)
+	if err != nil {
+		return fmt.Errorf("error writing gradient boosting model: %w", err)
+	}
+
+	log.Printf("💾 Gradient Boosting model saved: %d trees, trained=%v", len(gbm.trees), gbm.trained)
+	return nil
+}
+
 func (gbm *GradientBoostingModel) loadModel() error {
 	filePath := filepath.Join(gbm.dataDir, "gradient_boosting.json")
 
