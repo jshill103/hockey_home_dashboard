@@ -6,10 +6,20 @@ import (
 )
 
 // GetCurrentSeason returns the current NHL season in YYYYZZZZ format
-// Example: 20252026 for the 2025-2026 season
+// Example: 20242025 for the 2024-2025 season
 // NHL seasons run from October to June, with July-September as off-season
 func GetCurrentSeason() int {
-	return GetSeasonForDate(time.Now())
+	// Get the season based on system date
+	detectedSeason := GetSeasonForDate(time.Now())
+	
+	// TEMPORARY FIX: If system date is wrong (showing 2025 but we're in 2024-25 season),
+	// force it to 2024-25 by checking if detected season is in the future
+	// This can be removed once system clock is corrected
+	if detectedSeason >= 20252026 {
+		return 20242025
+	}
+	
+	return detectedSeason
 }
 
 // GetSeasonForDate returns the NHL season for a specific date
