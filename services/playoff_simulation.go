@@ -110,10 +110,19 @@ type RemainingGame struct {
 
 // SimulatePlayoffOdds runs Monte Carlo simulation of the remaining season
 func (ps *PlayoffSimulationService) SimulatePlayoffOdds(teamCode string, simulations int) (*SeasonSimulation, error) {
-	// Check cache first
-	if cached := ps.getCachedResult(teamCode); cached != nil {
-		fmt.Printf("📦 Using cached playoff odds for %s (age: %v)\n", teamCode, time.Since(cached.Timestamp))
-		return cached.Result, nil
+	return ps.SimulatePlayoffOddsWithOptions(teamCode, simulations, false)
+}
+
+// SimulatePlayoffOddsWithOptions runs Monte Carlo simulation with option to bypass cache
+func (ps *PlayoffSimulationService) SimulatePlayoffOddsWithOptions(teamCode string, simulations int, bypassCache bool) (*SeasonSimulation, error) {
+	// Check cache first (unless bypassed for debugging)
+	if !bypassCache {
+		if cached := ps.getCachedResult(teamCode); cached != nil {
+			fmt.Printf("📦 Using cached playoff odds for %s (age: %v)\n", teamCode, time.Since(cached.Timestamp))
+			return cached.Result, nil
+		}
+	} else {
+		fmt.Printf("🔄 Bypassing cache for %s (debug mode)\n", teamCode)
 	}
 
 	ps.mu.Lock()
@@ -330,6 +339,26 @@ func (ps *PlayoffSimulationService) simulateSeason(
 
 	// Determine final standings
 	targetFinal := teamRecords[targetTeam.TeamAbbrev.Default]
+	
+	// DEBUG: Check if target team exists in records
+	if targetFinal == nil {
+		// This is a critical bug - target team not found in simulation results
+		fmt.Printf("🚨 BUG: Target team %s not found in teamRecords! Available teams: ", targetTeam.TeamAbbrev.Default)
+		for code := range teamRecords {
+			fmt.Printf("%s ", code)
+		}
+		fmt.Println()
+		// Return a failed simulation result
+		return SimulationResult{
+			MadePlayoffs:    false,
+			FinalPoints:     targetTeam.Points,
+			FinalWins:       targetTeam.Wins,
+			FinalLosses:     targetTeam.Losses,
+			FinalOTLosses:   targetTeam.OtLosses,
+			ConferenceRank:  16,
+			PlayoffSpotType: "none",
+		}
+	}
 
 	// Sort conference by NHL tiebreaker rules
 	sortedTeams := make([]*models.TeamStanding, 0, len(teamRecords))
@@ -345,6 +374,12 @@ func (ps *PlayoffSimulationService) simulateSeason(
 			conferenceRank = i + 1
 			break
 		}
+	}
+	
+	// DEBUG: If rank is still 0, team wasn't found in sorted list
+	if conferenceRank == 0 {
+		fmt.Printf("🚨 BUG: Target team %s not found in sorted teams!\n", targetTeam.TeamAbbrev.Default)
+		conferenceRank = 16 // Worst possible rank
 	}
 
 	// Determine if made playoffs (top 8 in conference)
@@ -739,7 +774,9 @@ func (ps *PlayoffSimulationService) getRemainingGames(conferenceTeams []*models.
 	// Phase 5.4: Pre-allocate with estimated capacity (avg 15 games/team * teams / 2 for duplicates)
 	estimatedGames := (len(conferenceTeams) * 15) / 2
 	games := make([]RemainingGame, 0, estimatedGames)
+	
 	now := time.Now()
+	
 	seasonStr := GetCurrentSeason()
 	
 	// Convert season string "20242025" to int
