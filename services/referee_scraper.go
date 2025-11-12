@@ -125,26 +125,34 @@ func (rs *RefereeScraper) parseRefereeStatsHTML(htmlContent, season string) ([]R
 	
 	tableContent := tableMatches[1]
 	
-	// Find tbody content
-	tbodyRegex := regexp.MustCompile(`<tbody[^>]*>(.*?)</tbody>`)
+	// Find tbody content - use (?s) flag for multiline matching
+	tbodyRegex := regexp.MustCompile(`(?si)<tbody[^>]*>(.*?)</tbody>`)
 	tbodyMatches := tbodyRegex.FindStringSubmatch(tableContent)
 	
 	if len(tbodyMatches) < 2 {
 		log.Printf("⚠️ Could not find tbody in table")
+		log.Printf("📄 Table content length: %d chars", len(tableContent))
+		// Try to find tbody tag without the closing tag to see if it exists
+		tbodyTagRegex := regexp.MustCompile(`(?i)<tbody[^>]*>`)
+		if tbodyTagRegex.MatchString(tableContent) {
+			log.Printf("✅ Found tbody opening tag, but not closing tag - table might be malformed")
+		} else {
+			log.Printf("❌ No tbody tag found at all")
+		}
 		return referees, nil
 	}
 	
 	tbodyContent := tbodyMatches[1]
 	
-	// Find all table rows in tbody
-	rowRegex := regexp.MustCompile(`<tr[^>]*class="row-\d+"[^>]*>(.*?)</tr>`)
+	// Find all table rows in tbody - use (?s) for multiline matching
+	rowRegex := regexp.MustCompile(`(?si)<tr[^>]*class="row-\d+"[^>]*>(.*?)</tr>`)
 	rows := rowRegex.FindAllStringSubmatch(tbodyContent, -1)
 	
 	log.Printf("Found %d table rows", len(rows))
 	
 	for i, row := range rows {
-		// Extract cells with column classes
-		cellRegex := regexp.MustCompile(`<td[^>]*class="column-(\d+)"[^>]*>(.*?)</td>`)
+		// Extract cells with column classes - use (?s) for multiline matching
+		cellRegex := regexp.MustCompile(`(?si)<td[^>]*class="column-(\d+)"[^>]*>(.*?)</td>`)
 		cells := cellRegex.FindAllStringSubmatch(row[1], -1)
 		
 		if len(cells) < 3 {
