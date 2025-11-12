@@ -162,6 +162,24 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 		}
 	}
 
+	// ============================================================================
+	// NEW: FEATURE INTERACTION ENGINEERING (+20 compound features)
+	// ============================================================================
+	fmt.Printf("🔬 Calculating feature interactions...\n")
+	interactionService := NewFeatureInteractionService()
+	interactionService.EnrichWithInteractions(homeFactors)
+	interactionService.EnrichWithInteractions(awayFactors)
+	
+	// Log key interactions for debugging
+	if ensembleDEBUG {
+		fmt.Printf("   Home Offensive Potency: %.2f | Defensive Strength: %.2f\n", 
+			homeFactors.OffensivePotency, homeFactors.DefensiveStrength)
+		fmt.Printf("   Away Offensive Potency: %.2f | Defensive Strength: %.2f\n", 
+			awayFactors.OffensivePotency, awayFactors.DefensiveStrength)
+		fmt.Printf("   Home Fatigue Compound: %.2f | Away Fatigue Compound: %.2f\n",
+			homeFactors.FatigueCompound, awayFactors.FatigueCompound)
+	}
+
 	// 3. Schedule Context Analysis
 	scheduleService := GetScheduleContextService()
 	if scheduleService != nil {
@@ -649,7 +667,29 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 	// 🚀 Get current dynamic weights
 	currentWeights := eps.dynamicWeights.GetCurrentWeights()
 
-	// 📊 NEW: Apply data quality boost when we have rich player data
+	// ============================================================================
+	// NEW: CONTEXT-AWARE MODEL SELECTION
+	// ============================================================================
+	fmt.Printf("🎯 Analyzing game context for model selection...\n")
+	contextService := NewContextAwareWeightingService()
+	gameContext := contextService.DetectGameContext(homeFactors, awayFactors)
+	
+	// Apply context-aware weight adjustments
+	currentWeights = contextService.AdjustWeightsForContext(homeFactors, awayFactors, gameContext)
+	
+	// Log context explanation if any special context detected
+	contextExplanation := contextService.GetContextExplanation(gameContext)
+	if contextExplanation != "" {
+		fmt.Printf("📋 Context: %s\n", contextExplanation)
+	}
+	
+	// Show weight adjustments in debug mode
+	if ensembleDEBUG {
+		comparison := contextService.CompareWeights(currentWeights)
+		fmt.Print(comparison)
+	}
+
+	// 📊 ADDITIONAL: Apply data quality boost when we have rich player data
 	hasPlayerData := (homeFactors.TopScorerForm > 0 && awayFactors.TopScorerForm > 0 &&
 		homeFactors.DepthForm > 0 && awayFactors.DepthForm > 0)
 
@@ -935,12 +975,15 @@ func (eps *EnsemblePredictionService) RecordPredictionOutcome(homeTeam, awayTeam
 			ActualWinner: actualWinner,
 			RecordedAt:   time.Now(),
 			GameContext: GameContext{
-				IsHomeGame:        true,      // Would need to determine this
 				IsPlayoffGame:     false,     // Would need to determine this
 				TeamStrengthGap:   0.1,       // Would calculate from team stats
 				IsUpsetPrediction: false,     // Would determine from prediction
-				OpponentType:      "average", // Would classify opponent
+				IsBackToBack:       false,     // Would check B2B status
+				RestDaysAdvantage:  0,         // Rest days differential
+				TravelDistance:     0.0,       // Miles traveled
+				AltitudeDifference: 0.0,       // Altitude differential
 				GameImportance:    "medium",  // Would assess importance
+				OpponentType:      "average", // Would classify opponent
 			},
 		}
 

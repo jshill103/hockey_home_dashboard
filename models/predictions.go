@@ -225,6 +225,44 @@ type PredictionFactors struct {
 	// Enhanced Zone Control Context
 	OffensiveZoneTime float64 `json:"offensiveZoneTime"` // Offensive zone time per game
 	DefensiveZoneTime float64 `json:"defensiveZoneTime"` // Defensive zone time per game
+
+	// ============================================================================
+	// FEATURE INTERACTIONS: COMPOUND EFFECTS (20 features)
+	// ============================================================================
+	
+	// Offensive Potency Interactions
+	OffensivePotency          float64 `json:"offensivePotency"`          // GoalsFor * PowerPlayPct
+	ScoringPressure           float64 `json:"scoringPressure"`           // ExpectedGoalsFor * ShotQualityIndex
+	EliteOffense              float64 `json:"eliteOffense"`              // StarPowerRating * TopScorerPPG
+	DepthOffense              float64 `json:"depthOffense"`              // DepthScoring * SecondaryPPG
+	
+	// Defensive Vulnerability Interactions
+	DefensiveVulnerability    float64 `json:"defensiveVulnerability"`    // GoalsAgainst * (1 - PenaltyKillPct)
+	GoalieSupport             float64 `json:"goalieSupport"`             // GoalieSavePctDiff * DefensiveTrend
+	DefensiveStrength         float64 `json:"defensiveStrength"`         // (1 - GoalsAgainst/6) * PenaltyKillPct
+	
+	// Fatigue & Travel Compound Effects
+	FatigueCompound           float64 `json:"fatigueCompound"`           // RestDays * TravelDistance (negative = tired)
+	BackToBackTravel          float64 `json:"backToBackTravel"`          // BackToBackIndicator * TravelDistance
+	ScheduleStress            float64 `json:"scheduleStress"`            // ScheduleDensity * TravelFatigue.FatigueLevel
+	
+	// Momentum & Home Advantage
+	HomeMomentum              float64 `json:"homeMomentum"`              // RecentForm * HomeAdvantage
+	HomeFieldStrength         float64 `json:"homeFieldStrength"`         // HomeAdvantage * WeightedWinPct
+	RefereeHomeBias           float64 `json:"refereeHomeBias"`           // RefereeHomeAdvantage * HomeAdvantage
+	
+	// Elite Performance Interactions
+	ClutchElite               float64 `json:"clutchElite"`               // StarPowerRating * ClutchPerformance
+	HotStreak                 float64 `json:"hotStreak"`                 // MomentumScore * (IsHot ? 1.0 : 0.0)
+	FormQuality               float64 `json:"formQuality"`               // RecentForm * QualityOfWins
+	
+	// Special Teams Differential
+	SpecialTeamsDominance     float64 `json:"specialTeamsDominance"`     // (PowerPlayPct - 0.20) * (PenaltyKillPct - 0.80)
+	PowerPlayOpportunity      float64 `json:"powerPlayOpportunity"`      // PowerPlayPct * RefereePenaltyRate
+	
+	// Situational Context
+	RivalryIntensityFactor    float64 `json:"rivalryIntensityFactor"`    // IsRivalryGame * RivalryIntensity * RecentForm
+	PlayoffPressure           float64 `json:"playoffPressure"`           // PlayoffImportance * ClutchPerformance
 }
 
 // MarketAdjustment represents betting market influence on predictions

@@ -29,11 +29,11 @@ type NeuralNetworkModel struct {
 
 // NewNeuralNetworkModel creates a new neural network prediction model
 func NewNeuralNetworkModel() *NeuralNetworkModel {
-	// UPGRADED: Larger architecture for more model capacity
-	// 156 input features → 512 → 256 → 128 → 3 output classes
-	// Parameters: ~280K (20x larger than previous 64→32 architecture)
+	// UPGRADED: Larger architecture with feature interactions
+	// 176 input features (156 base + 20 interactions) → 512 → 256 → 128 → 3 output classes
+	// Parameters: ~290K (includes powerful interaction features for non-linear relationships)
 	// Still CPU-friendly, but much more powerful for complex pattern learning
-	layers := []int{156, 512, 256, 128, 3}
+	layers := []int{176, 512, 256, 128, 3}
 
 	model := &NeuralNetworkModel{
 		layers:       layers,
@@ -113,9 +113,9 @@ func (nn *NeuralNetworkModel) Predict(homeFactors, awayFactors *models.Predictio
 }
 
 // extractFeatures converts prediction factors to neural network input
-// Feeds into larger 156→512→256→128→3 architecture
+// Feeds into larger 176→512→256→128→3 architecture
 func (nn *NeuralNetworkModel) extractFeatures(home, away *models.PredictionFactors) []float64 {
-	features := make([]float64, 156) // 156 input features (140 Phase 1 + 16 Phase 2)
+	features := make([]float64, 176) // 176 input features (156 base + 20 interactions)
 
 	// Basic team stats
 	features[0] = home.WinPercentage
@@ -438,6 +438,42 @@ func (nn *NeuralNetworkModel) extractFeatures(home, away *models.PredictionFacto
 	// Advanced Features (154-155)
 	features[154] = home.MarketConfidenceVal      // Market confidence
 	features[155] = home.DefensiveZoneTime / 30.0 // Defensive zone time
+
+	// ============================================================================
+	// FEATURE INTERACTIONS: COMPOUND EFFECTS (156-175) - 20 features
+	// ============================================================================
+	
+	// Offensive Potency Interactions (156-159)
+	features[156] = home.OffensivePotency / 0.30        // Normalize by ~max (0.30 = 3 GF * 0.10 PP%)
+	features[157] = away.OffensivePotency / 0.30
+	features[158] = home.ScoringPressure / 4.0          // Normalize by ~max (4 xGF * 1.0 quality)
+	features[159] = away.ScoringPressure / 4.0
+	
+	// Defensive Vulnerability Interactions (160-161)
+	features[160] = home.DefensiveVulnerability / 1.0   // Normalize by ~max (5 GA * 0.20)
+	features[161] = away.DefensiveVulnerability / 1.0
+	
+	// Fatigue & Travel Compound (162-165)
+	features[162] = (home.FatigueCompound + 5.0) / 10.0 // Normalize from [-5, 5] to [0, 1]
+	features[163] = (away.FatigueCompound + 5.0) / 10.0
+	features[164] = home.BackToBackTravel / 3000.0      // Normalize by max distance
+	features[165] = away.BackToBackTravel / 3000.0
+	
+	// Momentum & Home Advantage (166-169)
+	features[166] = home.HomeMomentum                   // Already scaled
+	features[167] = away.HomeMomentum
+	features[168] = home.HomeFieldStrength              // Already scaled
+	features[169] = home.RefereeHomeBias                // Already scaled
+	
+	// Elite Performance (170-171)
+	features[170] = home.ClutchElite                    // Already 0-1 scale
+	features[171] = away.ClutchElite
+	
+	// Special Teams & Situational (172-175)
+	features[172] = (home.SpecialTeamsDominance+0.04)/0.08 // Normalize from [-0.04, 0.04] to [0, 1]
+	features[173] = (away.SpecialTeamsDominance+0.04)/0.08
+	features[174] = home.RivalryIntensityFactor              // Already scaled
+	features[175] = home.PlayoffPressure                     // Already scaled
 
 	return features
 }
