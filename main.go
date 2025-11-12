@@ -513,6 +513,9 @@ func main() {
 	// Game Results backfill endpoint (for processing missed games)
 	http.HandleFunc("/api/backfill-games", handlers.HandleBackfillGameResults)
 	
+	// Force training endpoint (for training on existing completed games)
+	http.HandleFunc("/api/force-training", handlers.HandleForceTraining)
+	
 	// Check unprocessed predictions endpoint
 	http.HandleFunc("/api/check-predictions", handlers.HandleCheckUnprocessedPredictions)
 
