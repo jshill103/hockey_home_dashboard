@@ -53,6 +53,39 @@ type PlayoffOdds struct {
 	MLAvgPoints   float64 `json:"mlAvgPoints"`   // Average final points from simulations
 	MLBestCase    int     `json:"mlBestCase"`    // Best case scenario (max points)
 	MLWorstCase   int     `json:"mlWorstCase"`   // Worst case scenario (min points)
+	
+	// Schedule Strength (Phase 2)
+	ScheduleDifficulty        float64 `json:"scheduleDifficulty,omitempty"`        // 0-10 scale
+	ScheduleDifficultyTier    string  `json:"scheduleDifficultyTier,omitempty"`    // "Easy", "Average", "Hard", "Brutal"
+	AvgOpponentWinPct         float64 `json:"avgOpponentWinPct,omitempty"`         // Average opponent win percentage
+	HomeGamesRemaining        int     `json:"homeGamesRemaining,omitempty"`        // Home games left
+	AwayGamesRemaining        int     `json:"awayGamesRemaining,omitempty"`        // Away games left
+	DivisionGamesRemaining    int     `json:"divisionGamesRemaining,omitempty"`    // Division games left
+	PlayoffTeamGamesRemaining int     `json:"playoffTeamGamesRemaining,omitempty"` // Games vs playoff teams
+	CrucialGamesCount         int     `json:"crucialGamesCount,omitempty"`         // High-importance games
+	MustWinGamesCount         int     `json:"mustWinGamesCount,omitempty"`         // Critical must-win games
+	BackToBackGames           int     `json:"backToBackGames,omitempty"`           // Back-to-back games remaining
+	CrucialGames              []map[string]interface{} `json:"crucialGames,omitempty"` // Detailed crucial game info (Phase 4.4)
+	
+	// Percentile Distributions (Phase 4.2)
+	PercentileP10 int `json:"percentileP10,omitempty"` // 10th percentile projection (pessimistic)
+	PercentileP25 int `json:"percentileP25,omitempty"` // 25th percentile projection
+	PercentileP50 int `json:"percentileP50,omitempty"` // 50th percentile (median)
+	PercentileP75 int `json:"percentileP75,omitempty"` // 75th percentile projection
+	PercentileP90 int `json:"percentileP90,omitempty"` // 90th percentile projection (optimistic)
+	
+	// Magic Numbers (Phase 4.1)
+	MagicNumber           int    `json:"magicNumber,omitempty"`           // Points needed to clinch
+	MagicNumberWins       int    `json:"magicNumberWins,omitempty"`       // Approximate wins needed to clinch
+	CanClinchPlayoffs     bool   `json:"canClinchPlayoffs,omitempty"`     // Can still make playoffs
+	ClinchScenario        string `json:"clinchScenario,omitempty"`        // Human-readable clinch scenario
+	EliminationNumber     int    `json:"eliminationNumber,omitempty"`     // Points buffer before elimination
+	CanBeEliminated       bool   `json:"canBeEliminated,omitempty"`       // Can still be eliminated
+	EliminationScenario   string `json:"eliminationScenario,omitempty"`   // Human-readable elimination scenario
+	MaxPossiblePoints     int    `json:"maxPossiblePoints,omitempty"`     // Maximum points if win all remaining
+	PointsBehind8th       int    `json:"pointsBehind8th,omitempty"`       // Points behind 8th place
+	PointsAhead9th        int    `json:"pointsAhead9th,omitempty"`        // Points ahead of 9th place
+	TiebreakerAdvantage   string `json:"tiebreakerAdvantage,omitempty"`   // "favorable", "unfavorable", "neutral"
 }
 
 // ConferencePlayoffPicture shows the broader playoff race context

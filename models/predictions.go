@@ -95,6 +95,16 @@ type PredictionFactors struct {
 	TrapGameFactor      float64 `json:"trapGameFactor"`      // Trap game likelihood (0-1)
 	PlayoffImportance   float64 `json:"playoffImportance"`   // Playoff stakes (0-1)
 	RestAdvantage       float64 `json:"restAdvantage"`       // Rest days advantage
+	
+	// PHASE 4: Referee Impact (8 features)
+	RefereeAssigned       bool    `json:"refereeAssigned"`       // Whether referee data is available
+	RefereePenaltyRate    float64 `json:"refereePenaltyRate"`    // Penalty call rate (vs league avg)
+	RefereeHomeAdvantage  float64 `json:"refereeHomeAdvantage"`  // Home advantage impact
+	RefereeTeamBias       float64 `json:"refereeTeamBias"`       // Bias toward this team
+	RefereeTendency       string  `json:"refereeTendency"`       // "lenient", "average", "strict"
+	RefereeConsistency    float64 `json:"refereeConsistency"`    // Consistency score 0-1
+	RefereeOverTendency   bool    `json:"refereeOverTendency"`   // Tends toward high-scoring games
+	RefereeConfidence     float64 `json:"refereeConfidence"`     // Confidence in referee data 0-1
 
 	// ============================================================================
 	// PHASE 6: FEATURE ENGINEERING (+40 features)

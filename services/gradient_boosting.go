@@ -817,6 +817,7 @@ func serializeGBTreeNode(node *GBTreeNode) *SerializedGBTreeNode {
 
 	return serialized
 }
+
 func (gbm *GradientBoostingModel) loadModel() error {
 	filePath := filepath.Join(gbm.dataDir, "gradient_boosting.json")
 

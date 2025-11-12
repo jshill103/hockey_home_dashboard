@@ -70,6 +70,21 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 	// PHASE 4: ENHANCED DATA ENRICHMENT
 	// ============================================================================
 
+	// 0. Referee Impact Integration (Phase 4)
+	if eps.gameID != 0 {
+		refereeEnricher := NewRefereeEnrichmentService()
+		err := refereeEnricher.EnrichWithRefereeData(
+			homeFactors,
+			awayFactors,
+			eps.gameID,
+			homeFactors.TeamCode,
+			awayFactors.TeamCode,
+		)
+		if err != nil {
+			fmt.Printf("⚠️ Referee enrichment skipped: %v\n", err)
+		}
+	}
+
 	// 1. Goalie Intelligence with Pre-Game Lineup Integration
 	goalieService := GetGoalieService()
 	if goalieService != nil {

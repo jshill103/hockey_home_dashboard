@@ -422,6 +422,18 @@ func main() {
 		fmt.Printf("✅ Betting Market Service initialized\n")
 	}
 
+	// Referee Service (tracks referee assignments and bias)
+	fmt.Println("Initializing Referee Service...")
+	if err := services.InitializeRefereeService(utils.GetCurrentSeason()); err != nil {
+		fmt.Printf("⚠️ Warning: Failed to initialize referee service: %v\n", err)
+	} else {
+		fmt.Printf("✅ Referee Service initialized\n")
+		// Start automatic updates
+		if refService := services.GetRefereeService(); refService != nil {
+			refService.Start()
+		}
+	}
+
 	// Schedule Context Service
 	fmt.Println("Initializing Schedule Context Service...")
 	if err := services.InitializeScheduleContextService(); err != nil {
@@ -547,6 +559,33 @@ func main() {
 
 	// Re-Prediction Metrics endpoint
 	http.HandleFunc("/api/reprediction-metrics", handlers.GetRePredictionMetrics)
+
+	// Referee Tracking endpoints
+	http.HandleFunc("/api/referees", handlers.HandleGetReferees)                  // Get all referees
+	http.HandleFunc("/api/referees/referee", handlers.HandleGetReferee)           // Get specific referee
+	http.HandleFunc("/api/referees/game-assignment", handlers.HandleGetGameAssignment) // Get assignment for game
+	http.HandleFunc("/api/referees/schedule", handlers.HandleGetDailySchedule)    // Get daily schedule
+	http.HandleFunc("/api/referees/stats", handlers.HandleGetRefereeStats)        // Get referee stats
+	http.HandleFunc("/api/referees/impact", handlers.HandleGetRefereeImpact)      // Analyze referee impact
+	http.HandleFunc("/api/referees/add", handlers.HandleAddReferee)               // Add/update referee (POST)
+	http.HandleFunc("/api/referees/assign", handlers.HandleAddGameAssignment)     // Add assignment (POST)
+	http.HandleFunc("/api/referees/update-stats", handlers.HandleUpdateRefereeStats) // Update stats (POST)
+	http.HandleFunc("/api/referees/scrape", handlers.HandleTriggerScrape)         // Trigger web scrape (POST)
+	http.HandleFunc("/api/referees/scraper-status", handlers.HandleScraperStatus) // Get scraper status
+	http.HandleFunc("/api/referees/backfill", handlers.HandleBackfillRefereeData) // Backfill referee data (POST)
+	http.HandleFunc("/api/referees/trigger-update", handlers.HandleTriggerScraperUpdate) // Trigger scraper update (POST)
+	
+	// Phase 3: Advanced Analytics endpoints
+	http.HandleFunc("/api/referees/tendencies", handlers.HandleGetRefereeTendencies)   // Get referee tendencies
+	http.HandleFunc("/api/referees/profile", handlers.HandleGetRefereeProfile)         // Get comprehensive profile
+	http.HandleFunc("/api/referees/team-bias", handlers.HandleGetTeamBias)             // Get specific team bias
+	http.HandleFunc("/api/referees/all-biases", handlers.HandleGetAllTeamBiases)       // Get all team biases
+	http.HandleFunc("/api/referees/advanced-impact", handlers.HandleGetAdvancedImpact) // Get advanced impact analysis
+	
+	// Phase 4: UI Integration endpoints
+	http.HandleFunc("/api/referees/prediction-widget", handlers.HandleGetRefereeForPrediction) // Referee data for predictions
+	http.HandleFunc("/api/referees/widget", handlers.HandleGetRefereeWidget)                   // Referee widget display data
+	http.HandleFunc("/api/referees/insights", handlers.HandleGetRefereeInsights)               // Detailed referee insights
 
 	// Live Prediction System management endpoints
 	if livePredictionSystem := services.GetLivePredictionSystem(); livePredictionSystem != nil {

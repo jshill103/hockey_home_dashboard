@@ -32,6 +32,8 @@ type TeamStanding struct {
 	Points                int     `json:"points"`
 	PointPctg             float64 `json:"pointPctg"`
 	WinPctg               float64 `json:"winPctg"`
+	RegulationWins        int     `json:"regulationWins"`        // Regulation wins
+	RegulationPlusOtWins  int     `json:"regulationPlusOtWins"`  // ROW (Reg + OT wins, excludes shootout)
 
 	// Goal Stats
 	GoalFor               int     `json:"goalFor"`
@@ -65,4 +67,31 @@ type TeamStanding struct {
 type TeamNameInfo struct {
 	Default string `json:"default"`
 	Fr      string `json:"fr,omitempty"`
+}
+
+// Helper methods for TeamStanding
+
+// GetROW returns Regulation + Overtime Wins (excludes shootout wins)
+// If not provided by API, estimates by excluding shootout wins
+func (ts *TeamStanding) GetROW() int {
+	if ts.RegulationPlusOtWins > 0 {
+		return ts.RegulationPlusOtWins
+	}
+	// If API doesn't provide ROW, estimate by assuming ~15% of wins are shootouts
+	// This is more accurate than returning all wins (which includes shootouts)
+	// NHL typically has 10-15% shootout win rate
+	if ts.Wins == 0 {
+		return 0
+	}
+	return int(float64(ts.Wins) * 0.85)
+}
+
+// GetGoalsFor returns goals for (handles naming inconsistency)
+func (ts *TeamStanding) GetGoalsFor() int {
+	return ts.GoalFor
+}
+
+// GetGoalsAgainst returns goals against (handles naming inconsistency)
+func (ts *TeamStanding) GetGoalsAgainst() int {
+	return ts.GoalAgainst
 } 

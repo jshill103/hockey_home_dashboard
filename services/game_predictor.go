@@ -25,6 +25,11 @@ type PredictionContext struct {
 	IsRivalryGame  bool
 	RestDaysHome   int
 	RestDaysAway   int
+	
+	// Phase 4: Referee Information
+	GameID            int
+	RefereeAssignment *models.RefereeGameAssignment
+	RefereeImpact     *models.RefereeImpactAnalysis
 }
 
 // ================================================================================================
