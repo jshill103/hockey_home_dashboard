@@ -23,6 +23,10 @@ metadata:
   name: hockey-dashboard
 spec:
   replicas: 1
+  # IMPORTANT: Use Recreate strategy to avoid PVC multi-attach errors
+  # This ensures old pod fully stops before new pod starts
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: hockey-dashboard
