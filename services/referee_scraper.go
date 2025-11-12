@@ -299,15 +299,27 @@ func (rs *RefereeScraper) tryScrapingNHLAssignments(date time.Time) ([]models.Re
 	assignments, err := rs.FetchRefereesFromNHLAPI(date)
 	if err != nil {
 		log.Printf("⚠️ Failed to fetch from NHL API: %v", err)
+	} else if len(assignments) > 0 {
+		log.Printf("✅ Found %d referee assignments from NHL API", len(assignments))
+		return assignments, nil
+	} else {
+		log.Printf("ℹ️ No referee assignments found in NHL API for %s", date.Format("2006-01-02"))
+	}
+	
+	// Fallback to Daily Faceoff for future games
+	log.Printf("🔄 Trying Daily Faceoff as fallback...")
+	dfAssignments, err := rs.ScrapeFromDailyFaceoff(date)
+	if err != nil {
+		log.Printf("⚠️ Failed to fetch from Daily Faceoff: %v", err)
 		return []models.RefereeGameAssignment{}, nil
 	}
 	
-	if len(assignments) > 0 {
-		log.Printf("✅ Found %d referee assignments from NHL API", len(assignments))
-		return assignments, nil
+	if len(dfAssignments) > 0 {
+		log.Printf("✅ Found %d referee assignments from Daily Faceoff", len(dfAssignments))
+		return dfAssignments, nil
 	}
 	
-	log.Printf("ℹ️ No referee assignments found in NHL API for %s", date.Format("2006-01-02"))
+	log.Printf("ℹ️ No referee assignments found from any source for %s", date.Format("2006-01-02"))
 	return []models.RefereeGameAssignment{}, nil
 }
 
@@ -1019,19 +1031,27 @@ func (rs *RefereeScraper) RunDailyUpdate() error {
 	// Small delay to be respectful to servers
 	time.Sleep(2 * time.Second)
 	
-	// 2. Try to fetch today's assignments
+	// 2. Fetch game assignments for next 7 days (Daily Faceoff shows week ahead)
 	today := time.Now()
-	if err := rs.ScrapeGameAssignments(today); err != nil {
-		log.Printf("⚠️ Failed to scrape game assignments: %v", err)
+	assignmentCount := 0
+	
+	for i := 0; i < 7; i++ {
+		date := today.Add(time.Duration(i) * 24 * time.Hour)
+		log.Printf("📅 Fetching assignments for %s...", date.Format("2006-01-02"))
+		
+		if err := rs.ScrapeGameAssignments(date); err != nil {
+			log.Printf("⚠️ Failed to scrape assignments for %s: %v", date.Format("2006-01-02"), err)
+		} else {
+			assignmentCount++
+		}
+		
+		// Small delay between requests
+		if i < 6 {
+			time.Sleep(1 * time.Second)
+		}
 	}
 	
-	// 3. Try tomorrow's assignments (often posted in advance)
-	tomorrow := today.Add(24 * time.Hour)
-	if err := rs.ScrapeGameAssignments(tomorrow); err != nil {
-		log.Printf("⚠️ Failed to scrape tomorrow's assignments: %v", err)
-	}
-	
-	log.Printf("✅ Daily referee update complete")
+	log.Printf("✅ Daily referee update complete - scraped %d days", assignmentCount)
 	return nil
 }
 
