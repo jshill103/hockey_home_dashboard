@@ -101,12 +101,25 @@ type RefereeWithStats struct {
 func (rs *RefereeScraper) parseRefereeStatsHTML(htmlContent, season string) ([]RefereeWithStats, error) {
 	var referees []RefereeWithStats
 	
-	// Find the tablepress table specifically
-	tableRegex := regexp.MustCompile(`<table[^>]*class="[^"]*tablepress[^"]*"[^>]*>(.*?)</table>`)
+	// Find the tablepress table specifically - match any ID that starts with tablepress
+	// Use a more flexible regex that matches either id="tablepress-XXX" or class="tablepress..."
+	tableRegex := regexp.MustCompile(`(?s)<table[^>]*(?:id|class)=["\']?[^"\']*tablepress[^"\']*["\']?[^>]*>(.*?)</table>`)
 	tableMatches := tableRegex.FindStringSubmatch(htmlContent)
 	
 	if len(tableMatches) < 2 {
 		log.Printf("⚠️ Could not find tablepress table in HTML")
+		// Log a snippet of the HTML to debug
+		snippet := htmlContent
+		if len(snippet) > 500 {
+			snippet = snippet[:500]
+		}
+		log.Printf("📄 HTML snippet (first 500 chars): %s", snippet)
+		
+		// Try to find any table tags
+		anyTableRegex := regexp.MustCompile(`<table[^>]*>`)
+		anyTableMatches := anyTableRegex.FindAllString(htmlContent, -1)
+		log.Printf("🔍 Found %d total table tags in HTML", len(anyTableMatches))
+		
 		return referees, nil
 	}
 	
