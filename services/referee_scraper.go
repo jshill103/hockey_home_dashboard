@@ -108,18 +108,6 @@ func (rs *RefereeScraper) parseRefereeStatsHTML(htmlContent, season string) ([]R
 	
 	if len(tableMatches) < 2 {
 		log.Printf("⚠️ Could not find tablepress table in HTML")
-		// Log a snippet of the HTML to debug
-		snippet := htmlContent
-		if len(snippet) > 500 {
-			snippet = snippet[:500]
-		}
-		log.Printf("📄 HTML snippet (first 500 chars): %s", snippet)
-		
-		// Try to find any table tags
-		anyTableRegex := regexp.MustCompile(`<table[^>]*>`)
-		anyTableMatches := anyTableRegex.FindAllString(htmlContent, -1)
-		log.Printf("🔍 Found %d total table tags in HTML", len(anyTableMatches))
-		
 		return referees, nil
 	}
 	
@@ -131,14 +119,6 @@ func (rs *RefereeScraper) parseRefereeStatsHTML(htmlContent, season string) ([]R
 	
 	if len(tbodyMatches) < 2 {
 		log.Printf("⚠️ Could not find tbody in table")
-		log.Printf("📄 Table content length: %d chars", len(tableContent))
-		// Try to find tbody tag without the closing tag to see if it exists
-		tbodyTagRegex := regexp.MustCompile(`(?i)<tbody[^>]*>`)
-		if tbodyTagRegex.MatchString(tableContent) {
-			log.Printf("✅ Found tbody opening tag, but not closing tag - table might be malformed")
-		} else {
-			log.Printf("❌ No tbody tag found at all")
-		}
 		return referees, nil
 	}
 	
@@ -162,11 +142,8 @@ func (rs *RefereeScraper) parseRefereeStatsHTML(htmlContent, season string) ([]R
 		// Parse referee data
 		ref, stats, err := rs.parseRefereeRow(cells, season)
 		if err != nil {
-			log.Printf("⚠️ Failed to parse row %d: %v", i, err)
 			continue
 		}
-		
-		log.Printf("👔 Parsed referee: %s (#%d)", ref.FullName, ref.JerseyNumber)
 		
 		referees = append(referees, RefereeWithStats{
 			Referee: *ref,
