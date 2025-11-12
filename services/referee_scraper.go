@@ -6,6 +6,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -130,7 +132,7 @@ func (rs *RefereeScraper) parseRefereeStatsHTML(htmlContent, season string) ([]R
 	
 	log.Printf("Found %d table rows", len(rows))
 	
-	for i, row := range rows {
+	for _, row := range rows {
 		// Extract cells with column classes - use (?s) for multiline matching
 		cellRegex := regexp.MustCompile(`(?si)<td[^>]*class="column-(\d+)"[^>]*>(.*?)</td>`)
 		cells := cellRegex.FindAllStringSubmatch(row[1], -1)
@@ -848,6 +850,152 @@ func parseHTMLTable(tableHTML string) ([][]string, error) {
 	}
 	
 	return rows, nil
+}
+
+// ============================================================================
+// HISTORICAL GAME ASSIGNMENT SCRAPING
+// ============================================================================
+
+// BackfillCompletedGamesReferees fetches referee assignments for completed games from our database
+func (rs *RefereeScraper) BackfillCompletedGamesReferees() error {
+	log.Printf("🔄 Starting historical referee assignment backfill from completed games...")
+	
+	// Get all completed games from our play-by-play data
+	// We'll query games that have play-by-play data but no referee assignment
+	completedGames, err := rs.getCompletedGamesWithoutReferees()
+	if err != nil {
+		return fmt.Errorf("failed to get completed games: %w", err)
+	}
+	
+	log.Printf("📊 Found %d completed games without referee assignments", len(completedGames))
+	
+	successCount := 0
+	failCount := 0
+	
+	for i, gameInfo := range completedGames {
+		log.Printf("🏒 [%d/%d] Processing game %d: %s @ %s", 
+			i+1, len(completedGames), gameInfo.GameID, gameInfo.AwayTeam, gameInfo.HomeTeam)
+		
+		// Try to find referee assignment from NHL API (game boxscore)
+		assignment := rs.fetchGameOfficials(gameInfo.GameID, gameInfo.GameDate)
+		
+		if assignment != nil {
+			// Store the assignment
+			if err := rs.refereeService.AddGameAssignment(assignment); err != nil {
+				log.Printf("⚠️ Failed to store assignment for game %d: %v", gameInfo.GameID, err)
+				failCount++
+			} else {
+				log.Printf("✅ Added referee assignment for game %d: %s & %s", 
+					gameInfo.GameID, assignment.Referee1Name, assignment.Referee2Name)
+				successCount++
+			}
+		} else {
+			failCount++
+		}
+		
+		// Rate limiting - be nice to the APIs
+		if i%10 == 9 {
+			time.Sleep(2 * time.Second)
+		} else {
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+	
+	log.Printf("🎉 Backfill complete! Success: %d, Failed: %d", successCount, failCount)
+	return nil
+}
+
+// CompletedGameInfo holds basic info about a completed game
+type CompletedGameInfo struct {
+	GameID   int
+	GameDate time.Time
+	HomeTeam string
+	AwayTeam string
+}
+
+// getCompletedGamesWithoutReferees queries our database for games that need referee data
+func (rs *RefereeScraper) getCompletedGamesWithoutReferees() ([]CompletedGameInfo, error) {
+	// Get all game files from the play-by-play directory
+	dataPath := "/app/data/play_by_play"
+	
+	var games []CompletedGameInfo
+	
+	// Read all month files
+	files, err := os.ReadDir(dataPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read play-by-play directory: %w", err)
+	}
+	
+	for _, file := range files {
+		if !strings.HasPrefix(file.Name(), "games_") {
+			continue
+		}
+		
+		filePath := filepath.Join(dataPath, file.Name())
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			continue
+		}
+		
+		var gamesData map[string]interface{}
+		if err := json.Unmarshal(data, &gamesData); err != nil {
+			continue
+		}
+		
+		// Extract games
+		for gameIDStr, gameData := range gamesData {
+			gameID, _ := strconv.Atoi(gameIDStr)
+			if gameID == 0 {
+				continue
+			}
+			
+			// Check if we already have a referee assignment
+			if _, err := rs.refereeService.GetGameAssignment(gameID); err == nil {
+				// Already have assignment, skip
+				continue
+			}
+			
+			// Extract game info
+			gameMap, ok := gameData.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			
+			homeTeam := ""
+			awayTeam := ""
+			gameDateStr := ""
+			
+			if ht, ok := gameMap["homeTeam"].(string); ok {
+				homeTeam = ht
+			}
+			if at, ok := gameMap["awayTeam"].(string); ok {
+				awayTeam = at
+			}
+			if gd, ok := gameMap["gameDate"].(string); ok {
+				gameDateStr = gd
+			}
+			
+			if homeTeam == "" || awayTeam == "" {
+				continue
+			}
+			
+			// Parse game date
+			gameDate, err := time.Parse("2006-01-02", gameDateStr[:10])
+			if err != nil {
+				gameDate = time.Now()
+			}
+			
+			games = append(games, CompletedGameInfo{
+				GameID:   gameID,
+				GameDate: gameDate,
+				HomeTeam: homeTeam,
+				AwayTeam: awayTeam,
+			})
+		}
+	}
+	
+	log.Printf("📋 Found %d games in play-by-play data", len(games))
+	return games, nil
 }
 
 // ============================================================================

@@ -557,6 +557,20 @@ func HandleBackfillRefereeData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if user wants historical backfill from completed games
+	backfillType := r.URL.Query().Get("type")
+	
+	if backfillType == "completed" {
+		// Backfill from our play-by-play database
+		go scraper.BackfillCompletedGamesReferees()
+		
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"message": "Historical backfill started from completed games database",
+			"type": "completed_games",
+		})
+		return
+	}
+
 	// Parse date range from query parameters (optional)
 	startDateStr := r.URL.Query().Get("start_date")
 	endDateStr := r.URL.Query().Get("end_date")
