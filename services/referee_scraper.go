@@ -99,34 +99,53 @@ type RefereeWithStats struct {
 
 // parseRefereeStatsHTML parses the HTML table from Scouting The Refs
 func (rs *RefereeScraper) parseRefereeStatsHTML(htmlContent, season string) ([]RefereeWithStats, error) {
-	// This is a simplified parser - you may need to adjust based on actual HTML structure
-	// For now, we'll use regex to extract data from the table
-	
 	var referees []RefereeWithStats
 	
-	// Find all table rows
-	rowRegex := regexp.MustCompile(`<tr[^>]*>(.*?)</tr>`)
-	rows := rowRegex.FindAllStringSubmatch(htmlContent, -1)
+	// Find the tablepress table specifically
+	tableRegex := regexp.MustCompile(`<table[^>]*class="[^"]*tablepress[^"]*"[^>]*>(.*?)</table>`)
+	tableMatches := tableRegex.FindStringSubmatch(htmlContent)
+	
+	if len(tableMatches) < 2 {
+		log.Printf("⚠️ Could not find tablepress table in HTML")
+		return referees, nil
+	}
+	
+	tableContent := tableMatches[1]
+	
+	// Find tbody content
+	tbodyRegex := regexp.MustCompile(`<tbody[^>]*>(.*?)</tbody>`)
+	tbodyMatches := tbodyRegex.FindStringSubmatch(tableContent)
+	
+	if len(tbodyMatches) < 2 {
+		log.Printf("⚠️ Could not find tbody in table")
+		return referees, nil
+	}
+	
+	tbodyContent := tbodyMatches[1]
+	
+	// Find all table rows in tbody
+	rowRegex := regexp.MustCompile(`<tr[^>]*class="row-\d+"[^>]*>(.*?)</tr>`)
+	rows := rowRegex.FindAllStringSubmatch(tbodyContent, -1)
+	
+	log.Printf("Found %d table rows", len(rows))
 	
 	for i, row := range rows {
-		if i == 0 {
-			// Skip header row
-			continue
-		}
-		
-		// Extract cells from row
-		cellRegex := regexp.MustCompile(`<td[^>]*>(.*?)</td>`)
+		// Extract cells with column classes
+		cellRegex := regexp.MustCompile(`<td[^>]*class="column-(\d+)"[^>]*>(.*?)</td>`)
 		cells := cellRegex.FindAllStringSubmatch(row[1], -1)
 		
-		if len(cells) < 5 {
+		if len(cells) < 3 {
 			continue
 		}
 		
 		// Parse referee data
 		ref, stats, err := rs.parseRefereeRow(cells, season)
 		if err != nil {
+			log.Printf("⚠️ Failed to parse row %d: %v", i, err)
 			continue
 		}
+		
+		log.Printf("👔 Parsed referee: %s (#%d)", ref.FullName, ref.JerseyNumber)
 		
 		referees = append(referees, RefereeWithStats{
 			Referee: *ref,
@@ -139,63 +158,77 @@ func (rs *RefereeScraper) parseRefereeStatsHTML(htmlContent, season string) ([]R
 
 // parseRefereeRow parses a single table row into Referee and Stats
 func (rs *RefereeScraper) parseRefereeRow(cells [][]string, season string) (*models.Referee, *models.RefereeSeasonStats, error) {
-	if len(cells) < 5 {
-		return nil, nil, fmt.Errorf("insufficient cells")
+	if len(cells) < 3 {
+		return nil, nil, fmt.Errorf("insufficient cells: %d", len(cells))
+	}
+	
+	// Create a map of column number to content
+	cellMap := make(map[string]string)
+	for _, cell := range cells {
+		if len(cell) >= 3 {
+			columnNum := cell[1]    // column number
+			content := cell[2]      // content
+			cellMap[columnNum] = content
+		}
 	}
 	
 	// Clean HTML tags from cell content
-	getName := func(cell string) string {
-		// Remove HTML tags
+	cleanContent := func(cell string) string {
+		// Remove HTML tags and line breaks
 		cleaned := regexp.MustCompile(`<[^>]+>`).ReplaceAllString(cell, "")
+		cleaned = strings.ReplaceAll(cleaned, "\n", " ")
+		cleaned = strings.ReplaceAll(cleaned, "\t", " ")
+		// Remove extra spaces
+		cleaned = regexp.MustCompile(`\s+`).ReplaceAllString(cleaned, " ")
 		return strings.TrimSpace(cleaned)
 	}
 	
-	getFloat := func(cell string) float64 {
-		cleaned := getName(cell)
+	getFloat := func(columnNum string) float64 {
+		cleaned := cleanContent(cellMap[columnNum])
 		val, _ := strconv.ParseFloat(cleaned, 64)
 		return val
 	}
 	
-	getInt := func(cell string) int {
-		cleaned := getName(cell)
+	getInt := func(columnNum string) int {
+		cleaned := cleanContent(cellMap[columnNum])
 		val, _ := strconv.Atoi(cleaned)
 		return val
 	}
 	
-	// Expected columns: Name, Jersey, Games, Penalties, Pen/Game, etc.
-	fullName := getName(cells[0][1])
+	// Column mapping from the table:
+	// column-1: Name
+	// column-2: Jersey #
+	// column-3: Games
+	// column-7: Penalties/gm
+	
+	fullName := cleanContent(cellMap["1"])
 	if fullName == "" {
 		return nil, nil, fmt.Errorf("no name found")
 	}
 	
-	// Parse name into first/last
-	nameParts := strings.Fields(fullName)
+	// Remove asterisks and special characters from names
+	fullName = strings.ReplaceAll(fullName, "*", "")
+	fullName = strings.TrimSpace(fullName)
+	
+	// Parse name into first/last (format: "LastName, FirstName")
+	nameParts := strings.Split(fullName, ",")
 	firstName := ""
 	lastName := fullName
 	if len(nameParts) >= 2 {
-		firstName = nameParts[0]
-		lastName = strings.Join(nameParts[1:], " ")
+		lastName = strings.TrimSpace(nameParts[0])
+		firstName = strings.TrimSpace(nameParts[1])
+	} else {
+		// Try space-separated
+		parts := strings.Fields(fullName)
+		if len(parts) >= 2 {
+			firstName = parts[0]
+			lastName = strings.Join(parts[1:], " ")
+		}
 	}
 	
-	jerseyNum := 0
-	if len(cells) > 1 {
-		jerseyNum = getInt(cells[1][1])
-	}
-	
-	gamesOfficiated := 0
-	if len(cells) > 2 {
-		gamesOfficiated = getInt(cells[2][1])
-	}
-	
-	totalPenalties := 0
-	if len(cells) > 3 {
-		totalPenalties = getInt(cells[3][1])
-	}
-	
-	avgPenaltiesPerGame := 0.0
-	if len(cells) > 4 {
-		avgPenaltiesPerGame = getFloat(cells[4][1])
-	}
+	jerseyNum := getInt("2")
+	gamesOfficiated := getInt("3")
+	avgPenaltiesPerGame := getFloat("7")
 	
 	// Generate a referee ID based on name (simple hash)
 	refereeID := rs.generateRefereeID(fullName)
@@ -215,6 +248,9 @@ func (rs *RefereeScraper) parseRefereeRow(cells [][]string, season string) (*mod
 		LastUpdated:      time.Now(),
 		ExternalSourceID: fmt.Sprintf("STR_%s", strings.ReplaceAll(fullName, " ", "_")),
 	}
+	
+	// Calculate total penalties from games * avg
+	totalPenalties := int(float64(gamesOfficiated) * avgPenaltiesPerGame)
 	
 	stats := &models.RefereeSeasonStats{
 		RefereeID:           refereeID,
