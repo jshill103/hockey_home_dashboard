@@ -17,23 +17,13 @@ func GetCurrentSeason() string {
 	// If we're in Jan-June, we're in the season that started the previous year
 	// If we're in July-December, we're in the season that starts this year
 
-	var seasonStr string
 	if now.Month() >= time.July {
 		// July-December: season starts this year
-		seasonStr = fmt.Sprintf("%d%d", currentYear, currentYear+1)
-	} else {
-		// January-June: season started last year
-		seasonStr = fmt.Sprintf("%d%d", currentYear-1, currentYear)
+		return fmt.Sprintf("%d%d", currentYear, currentYear+1)
 	}
 	
-	// TEMPORARY FIX: If system date is wrong (showing 2025 but we're in 2024-25 season),
-	// force it to 2024-25 by checking if detected season is in the future
-	// This can be removed once system clock is corrected
-	if seasonStr >= "20252026" {
-		return "20242025"
-	}
-	
-	return seasonStr
+	// January-June: season started last year
+	return fmt.Sprintf("%d%d", currentYear-1, currentYear)
 }
 
 // GetSeasonStatus determines if we're currently in hockey season
