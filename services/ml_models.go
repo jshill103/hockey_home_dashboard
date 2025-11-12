@@ -29,12 +29,16 @@ type NeuralNetworkModel struct {
 
 // NewNeuralNetworkModel creates a new neural network prediction model
 func NewNeuralNetworkModel() *NeuralNetworkModel {
-	layers := []int{156, 64, 32, 3} // Input features (140 Phase 1 + 16 Phase 2), hidden layers, output (win/loss/ot)
+	// UPGRADED: Larger architecture for more model capacity
+	// 156 input features → 512 → 256 → 128 → 3 output classes
+	// Parameters: ~280K (20x larger than previous 64→32 architecture)
+	// Still CPU-friendly, but much more powerful for complex pattern learning
+	layers := []int{156, 512, 256, 128, 3}
 
 	model := &NeuralNetworkModel{
 		layers:       layers,
-		learningRate: 0.001,
-		weight:       0.05, // 5% weight in ensemble (starting conservative, will increase with training)
+		learningRate: 0.0005, // Reduced from 0.001 for larger model stability
+		weight:       0.03,   // Start conservative, will increase with training (was 0.05)
 		lastUpdated:  time.Now(),
 		dataDir:      "data/models",
 	}
@@ -109,6 +113,7 @@ func (nn *NeuralNetworkModel) Predict(homeFactors, awayFactors *models.Predictio
 }
 
 // extractFeatures converts prediction factors to neural network input
+// Feeds into larger 156→512→256→128→3 architecture
 func (nn *NeuralNetworkModel) extractFeatures(home, away *models.PredictionFactors) []float64 {
 	features := make([]float64, 156) // 156 input features (140 Phase 1 + 16 Phase 2)
 
