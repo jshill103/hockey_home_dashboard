@@ -333,7 +333,23 @@ func main() {
 	services.InitSmartRePredictionService(dailyPredictionService, predictionStorage, ensembleService)
 	fmt.Println("✅ Smart Re-Prediction Service initialized (adaptive re-prediction after training)")
 
+	// Initialize Model Evaluation Service BEFORE Game Results Service (for batch training)
+	fmt.Println("Initializing Model Evaluation Service...")
+	liveSys = services.GetLivePredictionSystem()
+	if liveSys != nil {
+		neuralNet := liveSys.GetNeuralNetwork()
+		eloModel := liveSys.GetEloModel()
+		poissonModel := liveSys.GetPoissonModel()
+
+		if err := services.InitializeEvaluationService(neuralNet, eloModel, poissonModel); err != nil {
+			fmt.Printf("⚠️ Warning: Failed to initialize evaluation service: %v\n", err)
+		} else {
+			fmt.Printf("✅ Model Evaluation Service initialized\n")
+		}
+	}
+
 	// Initialize Game Results Collection Service for automatic model learning
+	// NOTE: This MUST come AFTER EvaluationService so they can be linked for batch training
 	fmt.Println("Initializing Game Results Collection Service...")
 	if err := services.InitializeGameResultsService(teamConfig.Code); err != nil {
 		fmt.Printf("⚠️ Warning: Failed to initialize game results service: %v\n", err)
@@ -381,20 +397,8 @@ func main() {
 		fmt.Println("⚠️ Warning: Goalie service is nil, cannot fetch stats")
 	}
 
-	// Initialize Model Evaluation Service for train/test split and performance metrics
-	fmt.Println("Initializing Model Evaluation Service...")
-	liveSys = services.GetLivePredictionSystem()
-	if liveSys != nil {
-		neuralNet := liveSys.GetNeuralNetwork()
-		eloModel := liveSys.GetEloModel()
-		poissonModel := liveSys.GetPoissonModel()
-
-		if err := services.InitializeEvaluationService(neuralNet, eloModel, poissonModel); err != nil {
-			fmt.Printf("⚠️ Warning: Failed to initialize evaluation service: %v\n", err)
-		} else {
-			fmt.Printf("✅ Model Evaluation Service initialized\n")
-		}
-	}
+	// Model Evaluation Service already initialized above (before Game Results Service)
+	// This ensures proper linking for batch training
 
 	// ============================================================================
 	// PHASE 4: ENHANCED PREDICTION SERVICES
@@ -481,6 +485,10 @@ func main() {
 	http.HandleFunc("/season-countdown-json", handlers.HandleSeasonCountdownJSON)
 	http.HandleFunc("/api-test", handlers.HandleAPITest)
 	http.HandleFunc("/playoff-odds", handlers.HandlePlayoffOdds)
+	http.HandleFunc("/api/what-if", handlers.HandleWhatIf)                    // Phase 4.3: What-If simulator
+	http.HandleFunc("/api/what-if/scenarios", handlers.HandleWhatIfScenarios) // Phase 4.3: Common scenarios
+	http.HandleFunc("/api/simulation/metrics", handlers.HandleSimulationMetrics)    // Phase 5.5: Performance metrics
+	http.HandleFunc("/api/simulation/reset-metrics", handlers.HandleResetMetrics)   // Phase 5.5: Reset metrics
 
 	// AI Prediction endpoints
 	// Register prediction routes (available regardless of season status for testing)
