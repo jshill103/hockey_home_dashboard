@@ -173,6 +173,10 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 				}
 				homeFactors.H2HRecentForm = float64(recentWins) / float64(len(record.RecentGames))
 				awayFactors.H2HRecentForm = 1.0 - homeFactors.H2HRecentForm
+			} else {
+				// No H2H data available, use neutral values
+				homeFactors.H2HRecentForm = 0.5
+				awayFactors.H2HRecentForm = 0.5
 			}
 
 			if advantage.Advantage != 0 {
@@ -201,6 +205,10 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 			awayFactors.RestAdvantageDetailed = -restAdv.RestAdvantage
 
 			// Opponent fatigue (0-1 scale, higher = more tired)
+			// Initialize with defaults
+			homeFactors.OpponentFatigue = 0.0 // No fatigue by default
+			awayFactors.OpponentFatigue = 0.0
+			
 			if restAdv.AwayOnB2B {
 				homeFactors.OpponentFatigue = 0.75 + (restAdv.AwayB2BPenalty * -2.0) // Convert penalty to fatigue
 			}
@@ -212,7 +220,19 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 				fmt.Printf("😴 Rest Impact: %s (%.1f%% advantage)\n",
 					restAdv.FatigueAdvantage, math.Abs(restAdv.RestAdvantage)*100)
 			}
+		} else {
+			// Service unavailable, use defaults
+			homeFactors.RestAdvantageDetailed = 0.0
+			awayFactors.RestAdvantageDetailed = 0.0
+			homeFactors.OpponentFatigue = 0.0
+			awayFactors.OpponentFatigue = 0.0
 		}
+	} else {
+		// Service not initialized, use defaults
+		homeFactors.RestAdvantageDetailed = 0.0
+		awayFactors.RestAdvantageDetailed = 0.0
+		homeFactors.OpponentFatigue = 0.0
+		awayFactors.OpponentFatigue = 0.0
 	}
 
 	// 3. Lineup Stability (placeholder for now)

@@ -149,10 +149,10 @@ func (h2h *HeadToHeadService) RecordGame(homeTeam, awayTeam string, gameID int, 
 // GetMatchupAnalysis returns the head-to-head analysis for a specific matchup
 func (h2h *HeadToHeadService) GetMatchupAnalysis(homeTeam, awayTeam string) (*models.HeadToHeadRecord, error) {
 	h2h.mu.RLock()
-	defer h2h.mu.RUnlock()
-
 	key := h2h.getMatchupKey(homeTeam, awayTeam)
 	record, exists := h2h.records[key]
+	h2h.mu.RUnlock()
+
 	if !exists {
 		// Return empty record if no history
 		return &models.HeadToHeadRecord{
@@ -163,13 +163,20 @@ func (h2h *HeadToHeadService) GetMatchupAnalysis(homeTeam, awayTeam string) (*mo
 		}, nil
 	}
 
-	// Recalculate recency weights
-	h2h.calculateRecencyWeights(record)
+	// Create a copy to avoid race conditions when calculating weights
+	recordCopy := *record
+	if record.RecentGames != nil {
+		recordCopy.RecentGames = make([]models.H2HGame, len(record.RecentGames))
+		copy(recordCopy.RecentGames, record.RecentGames)
+	}
+
+	// Now safe to modify the copy
+	h2h.calculateRecencyWeights(&recordCopy)
 
 	// Update days since last meeting
-	record.DaysSinceLastMeet = int(time.Since(record.LastMeetingDate).Hours() / 24)
+	recordCopy.DaysSinceLastMeet = int(time.Since(recordCopy.LastMeetingDate).Hours() / 24)
 
-	return record, nil
+	return &recordCopy, nil
 }
 
 // CalculateAdvantage returns a specific advantage calculation for prediction

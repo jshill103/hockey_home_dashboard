@@ -76,12 +76,12 @@ func NewGradientBoostingModel() *GradientBoostingModel {
 			weight:            0.10, // 10% weight in ensemble
 			trained:           false,
 			dataDir:           dataDir,
-			featureNames:      make([]string, 156), // 156 features (140 Phase 1 + 16 Phase 2)
+			featureNames:      make([]string, 182), // 182 features (148 base + 20 interactions + 8 additional + 6 Phase 2)
 			featureImportance: make(map[string]float64),
 		}
 
 		// Initialize feature names
-		for i := 0; i < 156; i++ {
+		for i := 0; i < 182; i++ {
 			gradientBoostingModel.featureNames[i] = fmt.Sprintf("feature_%d", i)
 		}
 
