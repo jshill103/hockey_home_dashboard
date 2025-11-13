@@ -108,7 +108,7 @@ func (fis *FeatureInteractionService) EnrichWithInteractions(factors *models.Pre
 	factors.FormQuality = factors.RecentForm * factors.QualityOfWins
 
 	// ============================================================================
-	// SPECIAL TEAMS DIFFERENTIAL
+	// SPECIAL TEAMS DIFFERENTIAL (PHASE 1.4 ENHANCED)
 	// ============================================================================
 	
 	// SpecialTeamsDominance: PP and PK excellence combined
@@ -118,7 +118,7 @@ func (fis *FeatureInteractionService) EnrichWithInteractions(factors *models.Pre
 	pkAboveAvg := factors.PenaltyKillPct - 0.80
 	factors.SpecialTeamsDominance = ppAboveAvg * pkAboveAvg
 
-	// PowerPlayOpportunity: PP effectiveness (referee data removed, use PP% as baseline)
+	// PowerPlayOpportunity: PP effectiveness
 	factors.PowerPlayOpportunity = factors.PowerPlayPct
 
 	// ============================================================================

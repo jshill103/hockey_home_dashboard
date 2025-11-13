@@ -17,7 +17,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o web_server main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags="-w -s" -o web_server main.go
 
 # Runtime stage
 FROM alpine:latest
@@ -38,16 +38,14 @@ COPY --from=builder /app/media ./media
 RUN addgroup -g 1001 -S appgroup && \
     adduser -u 1001 -S appuser -G appgroup
 
-# Copy entrypoint script
-COPY docker-entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod +x /app/docker-entrypoint.sh
+# No longer need entrypoint scripts - directory initialization moved to Go code
 
 # Change ownership of app directory (but NOT /app/data - that will be PVC mounted)
-RUN chown -R appuser:appgroup /app && \
-    chown -R appuser:appgroup /app/docker-entrypoint.sh
+RUN chown -R appuser:appgroup /app
 
 # Switch to non-root user
-USER appuser
+# Commented out - let Kubernetes handle user via securityContext
+# USER appuser
 
 # Create volume mount point for persistent data
 VOLUME ["/app/data"]
@@ -67,8 +65,6 @@ ENV TEAM_CODE=UTA
 # ENV WEATHER_API_KEY=""
 # ENV ACCUWEATHER_API_KEY=""
 
-# Use entrypoint script to initialize directories before running app
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
-
-# Run the application
-CMD ["sh", "-c", "./web_server -team ${TEAM_CODE}"]
+# Run the application directly (directory initialization now in Go code)
+# Using exec form - TEAM_CODE environment variable read by Go code
+CMD ["/app/web_server"]

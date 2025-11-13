@@ -30,10 +30,10 @@ type NeuralNetworkModel struct {
 // NewNeuralNetworkModel creates a new neural network prediction model
 func NewNeuralNetworkModel() *NeuralNetworkModel {
 	// UPGRADED: Larger architecture with feature interactions
-	// 168 input features (148 base + 20 interactions) → 512 → 256 → 128 → 3 output classes
-	// Parameters: ~280K (includes powerful interaction features for non-linear relationships)
+	// 176 input features (148 base + 20 interactions + 8 additional) → 512 → 256 → 128 → 3 output classes
+	// Parameters: ~284K (includes powerful interaction features for non-linear relationships)
 	// Still CPU-friendly, but much more powerful for complex pattern learning
-	layers := []int{168, 512, 256, 128, 3}
+	layers := []int{176, 512, 256, 128, 3}
 
 	model := &NeuralNetworkModel{
 		layers:       layers,
@@ -115,7 +115,7 @@ func (nn *NeuralNetworkModel) Predict(homeFactors, awayFactors *models.Predictio
 // extractFeatures converts prediction factors to neural network input
 // Feeds into larger 168→512→256→128→3 architecture
 func (nn *NeuralNetworkModel) extractFeatures(home, away *models.PredictionFactors) []float64 {
-	features := make([]float64, 168) // 168 input features (148 base + 20 interactions)
+	features := make([]float64, 176) // 176 input features (148 base + 20 interactions + 8 additional)
 
 	// Basic team stats
 	features[0] = home.WinPercentage
