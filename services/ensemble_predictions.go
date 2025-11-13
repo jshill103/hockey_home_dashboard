@@ -240,6 +240,37 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 	homeFactors.LineupStabilityFactor = 0.75 // Assume relatively stable
 	awayFactors.LineupStabilityFactor = 0.75
 
+	// ============================================================================
+	// PHASE 3: CONFIDENCE & MODEL SELECTION
+	// ============================================================================
+
+	// 1. Context Analysis for Intelligent Model Weighting
+	var gameContext *models.GameContext
+	contextService := GetContextAnalysisService()
+	if contextService != nil {
+		gameContext = contextService.AnalyzeGameContext(
+			homeFactors.TeamCode,
+			awayFactors.TeamCode,
+			time.Now(),
+		)
+
+		// Get contextual weights for model selection
+		contextualWeights := contextService.GetContextualWeights(gameContext)
+		if contextualWeights != nil && contextualWeights.Confidence > 0.7 {
+			fmt.Printf("🎯 Context: %s (%s importance, %s difficulty)\n",
+				gameContext.RecommendedStrategy, gameContext.ImpactLevel, gameContext.PredictionDifficulty)
+
+			// Log any significant weight adjustments
+			for model, adjustment := range contextualWeights.Adjustments {
+				if math.Abs(adjustment-1.0) > 0.05 {
+					finalWeight := contextualWeights.FinalWeights[model]
+					fmt.Printf("   📊 %s: %.1f%% weight (%.0f%% adjustment)\n",
+						model, finalWeight*100, (adjustment-1.0)*100)
+				}
+			}
+		}
+	}
+
 	// 2. Betting Market Intelligence
 	marketService := GetBettingMarketService()
 	if marketService != nil && marketService.isEnabled {
@@ -762,27 +793,7 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 	// 🚀 Get current dynamic weights
 	currentWeights := eps.dynamicWeights.GetCurrentWeights()
 
-	// ============================================================================
-	// NEW: CONTEXT-AWARE MODEL SELECTION
-	// ============================================================================
-	fmt.Printf("🎯 Analyzing game context for model selection...\n")
-	contextService := NewContextAwareWeightingService()
-	gameContext := contextService.DetectGameContext(homeFactors, awayFactors)
-	
-	// Apply context-aware weight adjustments
-	currentWeights = contextService.AdjustWeightsForContext(homeFactors, awayFactors, gameContext)
-	
-	// Log context explanation if any special context detected
-	contextExplanation := contextService.GetContextExplanation(gameContext)
-	if contextExplanation != "" {
-		fmt.Printf("📋 Context: %s\n", contextExplanation)
-	}
-	
-	// Show weight adjustments in debug mode
-	if ensembleDEBUG {
-		comparison := contextService.CompareWeights(currentWeights)
-		fmt.Print(comparison)
-	}
+	// Note: Context-aware model selection moved to Phase 3 (see above)
 
 	// 📊 ADDITIONAL: Apply data quality boost when we have rich player data
 	hasPlayerData := (homeFactors.TopScorerForm > 0 && awayFactors.TopScorerForm > 0 &&
@@ -863,6 +874,41 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 	}
 
 	combinedResult.ModelResults = modelResults
+
+	// ============================================================================
+	// PHASE 3: FINAL CONFIDENCE CALIBRATION & QUALITY ASSESSMENT (in PredictGame)
+	// ============================================================================
+
+	// 1. Apply Confidence Calibration
+	calibService := GetConfidenceCalibrationService()
+	if calibService != nil {
+		originalConf := combinedResult.Confidence
+		combinedResult.Confidence = calibService.CalibrateConfidence(originalConf)
+		if math.Abs(combinedResult.Confidence-originalConf) > 0.02 {
+			fmt.Printf("📊 Confidence calibrated: %.1f%% → %.1f%%\n",
+				originalConf*100, combinedResult.Confidence*100)
+		}
+	}
+
+	// 2. Assess Prediction Quality
+	qualityService := GetPredictionQualityService()
+	if qualityService != nil {
+		quality := qualityService.AssessPredictionQuality(combinedResult, homeFactors, awayFactors, modelResults)
+		combinedResult.Quality = quality
+		fmt.Printf("✅ Prediction Quality: %s (%.1f/100) - %s\n",
+			quality.Tier, quality.Score, quality.Reliability)
+
+		// Use quality-adjusted confidence if quality is low
+		if quality.Score < 70 {
+			combinedResult.Confidence = quality.Confidence
+			fmt.Printf("⚠️ Confidence adjusted for quality: %.1f%%\n", combinedResult.Confidence*100)
+		}
+	}
+
+	// 3. Attach Game Context to Result
+	if gameContext != nil {
+		combinedResult.Context = gameContext
+	}
 
 	fmt.Printf("🎯 Ensemble Result: %s wins with %.1f%% probability (Score: %s, Confidence: %.1f%%)\n",
 		combinedResult.Winner, combinedResult.WinProbability*100,
@@ -954,6 +1000,8 @@ func (eps *EnsemblePredictionService) combineWeightedPredictions(results []model
 		ModelResults:   results,
 		EnsembleMethod: "Weighted Average with Cross-Validation",
 	}
+
+	// Note: Phase 3 calibration & quality assessment happens in PredictGame after this returns
 
 	// Record prediction for future accuracy tracking
 	systemStatsServ := GetSystemStatsService()

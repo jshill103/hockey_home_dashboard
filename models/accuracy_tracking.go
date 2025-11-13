@@ -160,6 +160,12 @@ type CalibrationCurve struct {
 	Reliability       float64         `json:"reliability"`       // How reliable our probabilities are
 	Resolution        float64         `json:"resolution"`        // How much our probabilities vary
 	Uncertainty       float64         `json:"uncertainty"`       // Base rate uncertainty
+	
+	// Phase 3 additions
+	Bins         []ConfidenceBin `json:"bins"`         // Alias for ConfidenceBins (Phase 3 compatibility)
+	OverallBias  float64         `json:"overallBias"`  // Systematic over/under-confidence
+	TotalSamples int             `json:"totalSamples"` // Total number of predictions
+	LastUpdated  time.Time       `json:"lastUpdated"`  // Last update timestamp
 }
 
 // ConfidenceBin represents accuracy within a confidence range
@@ -171,6 +177,13 @@ type ConfidenceBin struct {
 	ExpectedAccuracy float64 `json:"expectedAccuracy"` // Expected accuracy (average confidence)
 	CalibrationError float64 `json:"calibrationError"` // |actual - expected|
 	IsWellCalibrated bool    `json:"isWellCalibrated"` // Whether this bin is well-calibrated
+	
+	// Phase 3 additions
+	Range          string    `json:"range"`          // e.g., "90-100%"
+	PredictedConf  float64   `json:"predictedConf"`  // Alias for ExpectedAccuracy
+	CalibrationAdj float64   `json:"calibrationAdj"` // Alias for CalibrationError
+	SampleSize     int       `json:"sampleSize"`     // Alias for PredictionCount
+	LastUpdated    time.Time `json:"lastUpdated"`    // Last update timestamp
 }
 
 // PredictionPerformanceMetrics represents detailed performance analysis

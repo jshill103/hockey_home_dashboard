@@ -26,14 +26,16 @@ type PredictionTeam struct {
 
 // PredictionResult holds the main prediction outcome
 type PredictionResult struct {
-	Winner         string        `json:"winner"`         // Team code of predicted winner
-	WinProbability float64       `json:"winProbability"` // 0.0 to 1.0
-	PredictedScore string        `json:"predictedScore"` // e.g., "4-2"
-	IsUpset        bool          `json:"isUpset"`        // True if underdog predicted to win
-	GameType       string        `json:"gameType"`       // "blowout", "close", "toss-up"
-	ModelResults   []ModelResult `json:"modelResults"`   // Results from individual models
-	EnsembleMethod string        `json:"ensembleMethod"` // How models were combined
-	Confidence     float64       `json:"confidence"`     // Overall ensemble confidence
+	Winner         string             `json:"winner"`         // Team code of predicted winner
+	WinProbability float64            `json:"winProbability"` // 0.0 to 1.0
+	PredictedScore string             `json:"predictedScore"` // e.g., "4-2"
+	IsUpset        bool               `json:"isUpset"`        // True if underdog predicted to win
+	GameType       string             `json:"gameType"`       // "blowout", "close", "toss-up"
+	ModelResults   []ModelResult      `json:"modelResults"`   // Results from individual models
+	EnsembleMethod string             `json:"ensembleMethod"` // How models were combined
+	Confidence     float64            `json:"confidence"`     // Overall ensemble confidence (calibrated in Phase 3)
+	Quality        *PredictionQuality `json:"quality,omitempty"` // Phase 3: Prediction quality assessment
+	Context        *GameContext       `json:"context,omitempty"` // Phase 3: Game context used for prediction
 }
 
 // ModelResult represents prediction from a single model
