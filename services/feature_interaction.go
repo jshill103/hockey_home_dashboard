@@ -84,9 +84,8 @@ func (fis *FeatureInteractionService) EnrichWithInteractions(factors *models.Pre
 	// Home advantage means more for good teams
 	factors.HomeFieldStrength = factors.HomeAdvantage * factors.WeightedWinPct
 
-	// RefereeHomeBias: Referee home advantage compounded with venue advantage
-	// Ref that favors home teams at a strong home venue
-	factors.RefereeHomeBias = factors.RefereeHomeAdvantage * factors.HomeAdvantage
+	// RefereeHomeBias: Set to 0 (referee data removed)
+	factors.RefereeHomeBias = 0.0
 
 	// ============================================================================
 	// ELITE PERFORMANCE INTERACTIONS
@@ -119,9 +118,8 @@ func (fis *FeatureInteractionService) EnrichWithInteractions(factors *models.Pre
 	pkAboveAvg := factors.PenaltyKillPct - 0.80
 	factors.SpecialTeamsDominance = ppAboveAvg * pkAboveAvg
 
-	// PowerPlayOpportunity: PP effectiveness with ref that calls penalties
-	// Strong PP with ref that calls lots of penalties = advantage
-	factors.PowerPlayOpportunity = factors.PowerPlayPct * factors.RefereePenaltyRate
+	// PowerPlayOpportunity: PP effectiveness (referee data removed, use PP% as baseline)
+	factors.PowerPlayOpportunity = factors.PowerPlayPct
 
 	// ============================================================================
 	// SITUATIONAL CONTEXT
