@@ -14,6 +14,23 @@ import (
 	"github.com/jaredshillingburg/go_uhc/models"
 )
 
+// NHL Schedule API response structure for game ID lookup
+type nhlScheduleResponse struct {
+	GameWeek []struct {
+		Date  string `json:"date"`
+		Games []struct {
+			ID       int    `json:"id"`
+			GameDate string `json:"gameDate"`
+			HomeTeam struct {
+				Abbrev string `json:"abbrev"`
+			} `json:"homeTeam"`
+			AwayTeam struct {
+				Abbrev string `json:"abbrev"`
+			} `json:"awayTeam"`
+		} `json:"games"`
+	} `json:"gameWeek"`
+}
+
 // TwitterRefereeCollector collects referee assignments from Twitter/X
 // Primary source: @ScoutingTheRefs and other NHL referee Twitter accounts
 type TwitterRefereeCollector struct {
@@ -412,6 +429,60 @@ func (trc *TwitterRefereeCollector) extractDateFromTweet(tweetText string) time.
 }
 
 // ============================================================================
+// GAME ID LOOKUP
+// ============================================================================
+
+// lookupGameID fetches the real NHL game ID from the schedule API
+// based on date, home team, and away team
+func (trc *TwitterRefereeCollector) lookupGameID(gameDate time.Time, homeTeam, awayTeam string) (int, error) {
+	// Format date for NHL API (YYYY-MM-DD)
+	dateStr := gameDate.Format("2006-01-02")
+	
+	// Fetch NHL schedule for this date
+	url := fmt.Sprintf("https://api-web.nhle.com/v1/schedule/%s", dateStr)
+	
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create schedule request: %w", err)
+	}
+	req.Header.Set("User-Agent", trc.userAgent)
+	
+	resp, err := trc.httpClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("failed to fetch schedule: %w", err)
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("schedule API returned status %d", resp.StatusCode)
+	}
+	
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read schedule response: %w", err)
+	}
+	
+	var scheduleData nhlScheduleResponse
+	if err := json.Unmarshal(body, &scheduleData); err != nil {
+		return 0, fmt.Errorf("failed to parse schedule: %w", err)
+	}
+	
+	// Search for matching game (home team + away team)
+	for _, week := range scheduleData.GameWeek {
+		for _, game := range week.Games {
+			// Match by team codes (case-insensitive)
+			if strings.EqualFold(game.HomeTeam.Abbrev, homeTeam) && 
+			   strings.EqualFold(game.AwayTeam.Abbrev, awayTeam) {
+				log.Printf("✅ Matched game: %s @ %s = Game ID %d", awayTeam, homeTeam, game.ID)
+				return game.ID, nil
+			}
+		}
+	}
+	
+	return 0, fmt.Errorf("no game found for %s @ %s on %s", awayTeam, homeTeam, dateStr)
+}
+
+// ============================================================================
 // STORAGE
 // ============================================================================
 
@@ -419,10 +490,22 @@ func (trc *TwitterRefereeCollector) extractDateFromTweet(tweetText string) time.
 func (trc *TwitterRefereeCollector) storeAssignments(assignments []models.RefereeGameAssignment) {
 	for _, assignment := range assignments {
 		// Try to match to actual game ID from NHL API
-		// (Would need to fetch schedule and match by teams/date)
+		if assignment.GameID == 0 {
+			gameID, err := trc.lookupGameID(assignment.GameDate, assignment.HomeTeam, assignment.AwayTeam)
+			if err != nil {
+				log.Printf("⚠️ Failed to lookup game ID for %s @ %s: %v", 
+					assignment.AwayTeam, assignment.HomeTeam, err)
+				// Skip this assignment if we can't find the real game ID
+				continue
+			}
+			assignment.GameID = gameID
+		}
 		
 		if err := trc.refereeService.AddGameAssignment(&assignment); err != nil {
 			log.Printf("⚠️ Failed to store assignment: %v", err)
+		} else {
+			log.Printf("💾 Stored assignment: Game %d | Refs: %d, %d", 
+				assignment.GameID, assignment.Referee1ID, assignment.Referee2ID)
 		}
 	}
 	

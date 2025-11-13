@@ -92,11 +92,26 @@ Extracts:
 - ✅ Referee 2 Name
 - ✅ Game Date ("tonight", "tomorrow", "Nov 13", etc.)
 
-### 4. **Storage**
+### 4. **Game ID Lookup** ⚠️ CRITICAL
 
-- Matches referee names to database IDs
-- Stores in `RefereeGameAssignment` table
-- Available immediately for predictions
+Before storing, we **must** match the assignment to a real NHL game ID:
+
+1. **Fetch NHL Schedule**: `https://api-web.nhle.com/v1/schedule/YYYY-MM-DD`
+2. **Match by Teams**: Find game where `homeTeam.abbrev` + `awayTeam.abbrev` match
+3. **Get Real Game ID**: Extract the NHL game ID (e.g., `2025020123`)
+
+**Why this matters**:
+- ❌ Without game ID: Referee data is orphaned, never used in predictions
+- ✅ With game ID: Referee data automatically enriches predictions for that specific game
+
+The `lookupGameID()` function handles this automatically in `storeAssignments()`.
+
+### 5. **Storage**
+
+- Matches referee names to database IDs via `FindRefereeByName()`
+- Matches game ID via `lookupGameID()` using NHL schedule API
+- Stores complete assignment in `RefereeGameAssignment` table
+- Available immediately for predictions when game is predicted
 
 ---
 
