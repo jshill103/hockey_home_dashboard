@@ -271,6 +271,89 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 		}
 	}
 
+	// ============================================================================
+	// PHASE 4: ADVANCED PATTERN RECOGNITION
+	// ============================================================================
+
+	// 1. Streak Detection
+	streakService := GetStreakDetectionService()
+	if streakService != nil {
+		homeStreak := streakService.GetCurrentStreak(homeFactors.TeamCode)
+		awayStreak := streakService.GetCurrentStreak(awayFactors.TeamCode)
+		
+		streakImpact := streakService.CalculateStreakImpact(homeStreak, awayStreak)
+		homeFactors.CurrentStreak = homeStreak.Length
+		if homeStreak.Type == "Loss" {
+			homeFactors.CurrentStreak = -homeStreak.Length
+		}
+		awayFactors.CurrentStreak = awayStreak.Length
+		if awayStreak.Type == "Loss" {
+			awayFactors.CurrentStreak = -awayStreak.Length
+		}
+		
+		homeFactors.StreakImpact = streakImpact
+		awayFactors.StreakImpact = -streakImpact
+		
+		if math.Abs(streakImpact) > 0.03 {
+			fmt.Printf("🔥 Streak Impact: %s (%d-game %s) vs %s (%d-game %s) = %.1f%%\n",
+				homeFactors.TeamCode, homeStreak.Length, homeStreak.Type,
+				awayFactors.TeamCode, awayStreak.Length, awayStreak.Type,
+				streakImpact*100)
+		}
+	}
+
+	// 2. Momentum Quantification
+	momentumService := GetMomentumService()
+	if momentumService != nil {
+		homeMomentum := momentumService.GetMomentum(homeFactors.TeamCode)
+		awayMomentum := momentumService.GetMomentum(awayFactors.TeamCode)
+		
+		homeFactors.MomentumScore = homeMomentum.Overall
+		homeFactors.MomentumTrend = homeMomentum.Trend
+		awayFactors.MomentumScore = awayMomentum.Overall
+		awayFactors.MomentumTrend = awayMomentum.Trend
+		
+		momentumGap := homeMomentum.Overall - awayMomentum.Overall
+		if math.Abs(momentumGap) > 0.3 {
+			fmt.Printf("📈 Momentum: %s (%.2f) vs %s (%.2f) - Gap: %.2f\n",
+				homeFactors.TeamCode, homeMomentum.Overall,
+				awayFactors.TeamCode, awayMomentum.Overall,
+				momentumGap)
+		}
+	}
+
+	// 3. Clutch Performance
+	clutchService := GetClutchPerformanceService()
+	if clutchService != nil {
+		homeClutch := clutchService.GetClutchFactor(homeFactors.TeamCode)
+		awayClutch := clutchService.GetClutchFactor(awayFactors.TeamCode)
+		
+		homeFactors.ClutchFactor = homeClutch
+		awayFactors.ClutchFactor = awayClutch
+		
+		// Get additional clutch metrics if needed
+		// (CloseGamePerformance and ThirdPeriodStrength would be populated here)
+		
+		clutchGap := homeClutch - awayClutch
+		if math.Abs(clutchGap) > 0.03 {
+			fmt.Printf("🎯 Clutch Factor: %s (%.2f) vs %s (%.2f) - Advantage: %.2f\n",
+				homeFactors.TeamCode, homeClutch,
+				awayFactors.TeamCode, awayClutch,
+				clutchGap)
+		}
+	}
+
+	// 4. Pattern Confidence
+	// Calculate overall confidence in pattern data
+	patternConfidence := 0.7 // Base confidence
+	if streakService != nil && momentumService != nil && clutchService != nil {
+		homeStreak := streakService.GetCurrentStreak(homeFactors.TeamCode)
+		homeMomentum := momentumService.GetMomentum(homeFactors.TeamCode)
+		patternConfidence = (homeStreak.Confidence + homeMomentum.Confidence) / 2.0
+	}
+	homeFactors.PatternConfidence = patternConfidence
+	awayFactors.PatternConfidence = patternConfidence
+
 	// 2. Betting Market Intelligence
 	marketService := GetBettingMarketService()
 	if marketService != nil && marketService.isEnabled {

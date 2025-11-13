@@ -118,6 +118,24 @@ type PredictionFactors struct {
 	RestAdvantage       float64 `json:"restAdvantage"`       // Rest days advantage
 
 	// ============================================================================
+	// PHASE 4: ADVANCED PATTERN RECOGNITION (+8 features)
+	// ============================================================================
+	
+	// Streak Detection
+	CurrentStreak         int     `json:"currentStreak"`         // Current win/loss streak (positive=wins, negative=losses)
+	StreakImpact          float64 `json:"streakImpact"`          // Streak adjustment (-0.15 to +0.15)
+	
+	// Momentum Quantification
+	MomentumScore         float64 `json:"momentumScore"`         // Overall momentum (-1.0 to +1.0)
+	MomentumTrend         float64 `json:"momentumTrend"`         // Momentum direction (-1.0 to +1.0)
+	
+	// Clutch Performance
+	ClutchFactor          float64 `json:"clutchFactor"`          // Clutch performance rating (-0.10 to +0.10)
+	CloseGamePerformance  float64 `json:"closeGamePerformance"`  // 1-goal game win % (0-1)
+	ThirdPeriodStrength   float64 `json:"thirdPeriodStrength"`   // 3rd period goal differential
+	PatternConfidence     float64 `json:"patternConfidence"`     // Pattern data quality (0-1)
+
+	// ============================================================================
 	// PHASE 6: FEATURE ENGINEERING (+40 features)
 	// ============================================================================
 
