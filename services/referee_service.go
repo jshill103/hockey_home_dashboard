@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -208,6 +209,33 @@ func (rs *RefereeService) GetReferee(refereeID int) (*models.Referee, error) {
 	}
 
 	return referee, nil
+}
+
+// FindRefereeByName finds a referee by their name (case-insensitive)
+// Used by Twitter collector to match referee names from tweets
+func (rs *RefereeService) FindRefereeByName(name string) *models.Referee {
+	rs.mutex.RLock()
+	defer rs.mutex.RUnlock()
+
+	// Normalize the search name
+	searchName := strings.ToLower(strings.TrimSpace(name))
+	
+	// Search through all referees
+	for _, ref := range rs.referees {
+		refName := strings.ToLower(ref.FullName)
+		
+		// Exact match
+		if refName == searchName {
+			return ref
+		}
+		
+		// Partial match (handles "John Smith" vs "Smith, John")
+		if strings.Contains(refName, searchName) || strings.Contains(searchName, refName) {
+			return ref
+		}
+	}
+	
+	return nil
 }
 
 // GetAllReferees returns all referees in the system
