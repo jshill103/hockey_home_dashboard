@@ -136,6 +136,18 @@ type PredictionFactors struct {
 	PatternConfidence     float64 `json:"patternConfidence"`     // Pattern data quality (0-1)
 
 	// ============================================================================
+	// PHASE 5: OPPONENT-SPECIFIC ANALYSIS (+6 features)
+	// ============================================================================
+	
+	// Playstyle & Tactical Matchups
+	PlaystyleAdvantage     float64 `json:"playstyleAdvantage"`     // -0.10 to +0.10
+	TacticalAdvantage      float64 `json:"tacticalAdvantage"`      // -0.08 to +0.08
+	SpecialTeamsMatchup    float64 `json:"specialTeamsMatchup"`    // -0.05 to +0.05
+	SystemCompatibility    float64 `json:"systemCompatibility"`    // -0.06 to +0.06
+	MatchupHistoryImpact   float64 `json:"matchupHistoryImpact"`   // -0.05 to +0.05
+	OpponentSpecificAdjust float64 `json:"opponentSpecificAdjust"` // Combined adjustment (-0.15 to +0.15)
+
+	// ============================================================================
 	// PHASE 6: FEATURE ENGINEERING (+40 features)
 	// ============================================================================
 

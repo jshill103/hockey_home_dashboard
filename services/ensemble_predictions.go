@@ -354,6 +354,61 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 	homeFactors.PatternConfidence = patternConfidence
 	awayFactors.PatternConfidence = patternConfidence
 
+	// ============================================================================
+	// PHASE 5: OPPONENT-SPECIFIC ANALYSIS
+	// ============================================================================
+
+	// 1. Playstyle Matchup Analysis
+	playstyleService := GetPlaystyleMatchupService()
+	if playstyleService != nil {
+		matchup := playstyleService.ComparePlaystyles(homeFactors.TeamCode, awayFactors.TeamCode)
+		
+		homeFactors.PlaystyleAdvantage = matchup.ImpactFactor
+		awayFactors.PlaystyleAdvantage = -matchup.ImpactFactor
+		
+		if math.Abs(matchup.ImpactFactor) > 0.03 {
+			fmt.Printf("🎨 Playstyle: %s (%s) vs %s (%s) - %s advantage: %.1f%%\n",
+				homeFactors.TeamCode, matchup.HomeStyle,
+				awayFactors.TeamCode, matchup.AwayStyle,
+				matchup.Advantage, math.Abs(matchup.ImpactFactor)*100)
+		}
+	}
+
+	// 2. Tactical Advantage Analysis
+	tacticalService := GetTacticalAdvantageService()
+	if tacticalService != nil {
+		// Create TeamStats from PredictionFactors
+		homeStats := convertPredictionFactorsToTeamStats(homeFactors)
+		awayStats := convertPredictionFactorsToTeamStats(awayFactors)
+		
+		advantages := tacticalService.AnalyzeTacticalAdvantages(
+			homeFactors.TeamCode, awayFactors.TeamCode,
+			homeStats, awayStats)
+		
+		tacticalImpact := tacticalService.CalculateTotalTacticalImpact(advantages)
+		homeFactors.TacticalAdvantage = tacticalImpact
+		awayFactors.TacticalAdvantage = -tacticalImpact
+		
+		// Special teams matchup
+		stImpact := tacticalService.GetSpecialTeamsAdvantage(
+			homeFactors.TeamCode, awayFactors.TeamCode,
+			homeStats, awayStats)
+		homeFactors.SpecialTeamsMatchup = stImpact
+		awayFactors.SpecialTeamsMatchup = -stImpact
+		
+		if math.Abs(tacticalImpact) > 0.03 {
+			fmt.Printf("⚔️ Tactical Advantage: %s by %.1f%% (ST: %.1f%%)\n",
+				getTacticalAdvantageTeam(tacticalImpact, homeFactors.TeamCode, awayFactors.TeamCode),
+				math.Abs(tacticalImpact)*100,
+				stImpact*100)
+		}
+	}
+
+	// 3. Combined Opponent-Specific Adjustment
+	opponentAdjustment := homeFactors.PlaystyleAdvantage + homeFactors.TacticalAdvantage
+	homeFactors.OpponentSpecificAdjust = opponentAdjustment
+	awayFactors.OpponentSpecificAdjust = -opponentAdjustment
+
 	// 2. Betting Market Intelligence
 	marketService := GetBettingMarketService()
 	if marketService != nil && marketService.isEnabled {
@@ -1522,5 +1577,35 @@ func (eps *EnsemblePredictionService) combineWithMetaLearner(results []models.Mo
 		WinProbability: winProb,
 		Confidence:     confidence,
 		PredictedScore: predictedScore,
+	}
+}
+
+// getTacticalAdvantageTeam returns which team has tactical advantage
+func getTacticalAdvantageTeam(tacticalImpact float64, homeTeam, awayTeam string) string {
+	if tacticalImpact > 0 {
+		return homeTeam
+	}
+	return awayTeam
+}
+
+// convertPredictionFactorsToTeamStats creates a TeamStats object from PredictionFactors
+func convertPredictionFactorsToTeamStats(factors *models.PredictionFactors) models.TeamStats {
+	// Estimate games played from win percentage (assume 82 game season)
+	gamesPlayed := 41 // Rough midseason estimate
+	wins := int(factors.WinPercentage * float64(gamesPlayed))
+	losses := gamesPlayed - wins
+	
+	return models.TeamStats{
+		TeamCode:       factors.TeamCode,
+		GamesPlayed:    gamesPlayed,
+		Wins:           wins,
+		Losses:         losses,
+		GoalsFor:       factors.GoalsFor * float64(gamesPlayed),
+		GoalsAgainst:   factors.GoalsAgainst * float64(gamesPlayed),
+		PowerPlayPct:   factors.PowerPlayPct,
+		PenaltyKillPct: factors.PenaltyKillPct,
+		ShotsFor:       factors.GoalsFor * float64(gamesPlayed) * 10.0, // Estimate
+		ShotsAgainst:   factors.GoalsAgainst * float64(gamesPlayed) * 10.0,
+		FaceoffWinPct:  0.50, // Default if not available
 	}
 }
