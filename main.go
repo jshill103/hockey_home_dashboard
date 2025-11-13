@@ -434,6 +434,27 @@ func main() {
 		}
 	}
 
+	// Twitter Referee Collector (automated referee assignment collection)
+	fmt.Println("Initializing Twitter Referee Collector...")
+	if refService := services.GetRefereeService(); refService != nil {
+		// Get Twitter API token from environment (optional)
+		twitterToken := os.Getenv("TWITTER_BEARER_TOKEN")
+		
+		handlers.InitializeTwitterCollector(refService, twitterToken)
+		fmt.Printf("✅ Twitter Referee Collector initialized\n")
+		fmt.Printf("🐦 Monitoring: @ScoutingTheRefs, @NHLOfficials, @NHLRefWatcher\n")
+		fmt.Printf("🔄 Automated collection: Every 4 hours\n")
+		
+		if twitterToken != "" {
+			fmt.Printf("📋 Collection method: Twitter API (with web scraping fallback)\n")
+			fmt.Printf("🔑 Twitter API token detected - using enhanced reliability mode\n")
+		} else {
+			fmt.Printf("📋 Collection method: Web scraping (Nitter fallback, no API required)\n")
+		}
+	} else {
+		fmt.Printf("⚠️ Warning: Could not initialize Twitter collector (referee service not available)\n")
+	}
+
 	// Schedule Context Service
 	fmt.Println("Initializing Schedule Context Service...")
 	if err := services.InitializeScheduleContextService(); err != nil {
@@ -586,6 +607,10 @@ func main() {
 	http.HandleFunc("/api/referees/prediction-widget", handlers.HandleGetRefereeForPrediction) // Referee data for predictions
 	http.HandleFunc("/api/referees/widget", handlers.HandleGetRefereeWidget)                   // Referee widget display data
 	http.HandleFunc("/api/referees/insights", handlers.HandleGetRefereeInsights)               // Detailed referee insights
+	
+	// Twitter Referee Collection endpoints
+	http.HandleFunc("/api/referees/collect-twitter", handlers.HandleCollectTwitterReferees) // Trigger Twitter collection (POST)
+	http.HandleFunc("/api/referees/twitter-status", handlers.HandleGetTwitterStatus)       // Get Twitter collector status
 
 	// Live Prediction System management endpoints
 	if livePredictionSystem := services.GetLivePredictionSystem(); livePredictionSystem != nil {
