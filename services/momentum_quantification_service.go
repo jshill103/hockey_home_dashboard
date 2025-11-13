@@ -87,19 +87,22 @@ func (mqs *MomentumQuantificationService) CalculateMomentum(teamCode string, rec
 		
 		// Performance score
 		var gameScore float64
-		if game.Result == "W" {
+		result := game.GetTeamResult(teamCode)
+		goalDiff := game.GetTeamGoalDifferential(teamCode)
+		
+		if result == "W" {
 			gameScore = 1.0
 			// Bigger wins = more momentum
-			if game.GoalDifferential > 0 {
-				gameScore += math.Min(float64(game.GoalDifferential)*0.1, 0.3)
+			if goalDiff > 0 {
+				gameScore += math.Min(float64(goalDiff)*0.1, 0.3)
 			}
-		} else if game.Result == "OTL" {
+		} else if result == "OTL" {
 			gameScore = 0.1 // Small positive for OT loss
 		} else {
 			gameScore = -1.0
 			// Bad losses hurt more
-			if game.GoalDifferential < 0 {
-				gameScore -= math.Min(float64(-game.GoalDifferential)*0.1, 0.3)
+			if goalDiff < 0 {
+				gameScore -= math.Min(float64(-goalDiff)*0.1, 0.3)
 			}
 		}
 
@@ -107,12 +110,11 @@ func (mqs *MomentumQuantificationService) CalculateMomentum(teamCode string, rec
 		totalWeight += weight
 
 		// Scoring momentum (goal differential trend)
-		scoringMomentum += float64(game.GoalDifferential) * weight
+		scoringMomentum += float64(goalDiff) * weight
 
-		// Quality momentum (opponent strength)
-		if game.OpponentStrength > 0 {
-			qualityMomentum += gameScore * game.OpponentStrength * weight
-		}
+		// Quality momentum (simplified - would need opponent strength data)
+		// For now, just use the game score
+		qualityMomentum += gameScore * weight * 0.5
 	}
 
 	// Normalize scores
@@ -167,25 +169,45 @@ func (mqs *MomentumQuantificationService) calculateTrend(games []models.GameResu
 	recentScore := 0.0
 	olderScore := 0.0
 
+	// Need teamCode to determine wins/losses - extract from first game
+	if len(games) == 0 {
+		return 0.0
+	}
+	
+	// Determine teamCode from first game (assume all games involve same team)
+	var teamCode string
+	if games[0].HomeTeam != "" {
+		teamCode = games[0].HomeTeam
+	}
+	if games[0].AwayTeam != "" && teamCode == "" {
+		teamCode = games[0].AwayTeam
+	}
+
 	for i := recentStart; i < len(games); i++ {
-		if games[i].Result == "W" {
+		result := games[i].GetTeamResult(teamCode)
+		if result == "W" {
 			recentScore += 1.0
-		} else if games[i].Result == "L" {
+		} else if result == "L" {
 			recentScore -= 1.0
 		}
 	}
 
 	for i := olderStart; i < recentStart && i < len(games); i++ {
-		if games[i].Result == "W" {
+		result := games[i].GetTeamResult(teamCode)
+		if result == "W" {
 			olderScore += 1.0
-		} else if games[i].Result == "L" {
+		} else if result == "L" {
 			olderScore -= 1.0
 		}
 	}
 
 	// Normalize and compare
 	recentAvg := recentScore / 3.0
-	olderAvg := olderScore / float64(recentStart-olderStart)
+	denominator := float64(recentStart - olderStart)
+	if denominator == 0 {
+		return 0.0 // Avoid division by zero
+	}
+	olderAvg := olderScore / denominator
 
 	trend := recentAvg - olderAvg
 	return math.Max(-1.0, math.Min(1.0, trend))
@@ -197,12 +219,24 @@ func (mqs *MomentumQuantificationService) calculateConsistency(games []models.Ga
 		return 0.5
 	}
 
+	// Determine teamCode from first game
+	var teamCode string
+	if len(games) > 0 {
+		if games[0].HomeTeam != "" {
+			teamCode = games[0].HomeTeam
+		}
+		if games[0].AwayTeam != "" && teamCode == "" {
+			teamCode = games[0].AwayTeam
+		}
+	}
+
 	// Calculate variance in recent results
 	var scores []float64
 	for _, game := range games {
-		if game.Result == "W" {
+		result := game.GetTeamResult(teamCode)
+		if result == "W" {
 			scores = append(scores, 1.0)
-		} else if game.Result == "OTL" {
+		} else if result == "OTL" {
 			scores = append(scores, 0.1)
 		} else {
 			scores = append(scores, -1.0)

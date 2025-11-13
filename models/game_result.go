@@ -185,6 +185,65 @@ func abs(x int) int {
 }
 
 // ============================================================================
+// PHASE 4 HELPER METHODS
+// ============================================================================
+
+// DidTeamWin returns true if the specified team won the game
+func (gr *GameResult) DidTeamWin(teamCode string) bool {
+	return gr.WinningTeam == teamCode
+}
+
+// GetTeamResult returns the result from the perspective of the specified team
+// Returns "W" for win, "L" for regulation loss, "OTL" for overtime/shootout loss
+func (gr *GameResult) GetTeamResult(teamCode string) string {
+	if gr.WinningTeam == teamCode {
+		return "W"
+	} else if gr.LosingTeam == teamCode {
+		if gr.IsOvertime || gr.IsShootout {
+			return "OTL"
+		}
+		return "L"
+	}
+	return "N/A" // Team not in this game
+}
+
+// GetTeamGoalDifferential returns the goal differential from the perspective of the specified team
+// Positive means team scored more, negative means they allowed more
+func (gr *GameResult) GetTeamGoalDifferential(teamCode string) int {
+	if gr.HomeTeam == teamCode {
+		return gr.GetScoreDifferential()
+	} else if gr.AwayTeam == teamCode {
+		return -gr.GetScoreDifferential()
+	}
+	return 0 // Team not in this game
+}
+
+// GetTeamScore returns the score for the specified team
+func (gr *GameResult) GetTeamScore(teamCode string) int {
+	if gr.HomeTeam == teamCode {
+		return gr.HomeScore
+	} else if gr.AwayTeam == teamCode {
+		return gr.AwayScore
+	}
+	return 0
+}
+
+// GetOpponentTeam returns the opponent's team code
+func (gr *GameResult) GetOpponentTeam(teamCode string) string {
+	if gr.HomeTeam == teamCode {
+		return gr.AwayTeam
+	} else if gr.AwayTeam == teamCode {
+		return gr.HomeTeam
+	}
+	return ""
+}
+
+// WentToOvertime is an alias for IsOvertime for backward compatibility
+func (gr *GameResult) WentToOvertime() bool {
+	return gr.IsOvertime
+}
+
+// ============================================================================
 // COMPLETED GAME STORAGE STRUCTURES
 // ============================================================================
 

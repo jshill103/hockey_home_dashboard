@@ -96,39 +96,42 @@ func (cps *ClutchPerformanceService) AnalyzeClutchPerformance(teamCode string, g
 	totalGoalDiff3rd := 0.0
 
 	for _, game := range games {
+		result := game.GetTeamResult(teamCode)
+		goalDiff := game.GetTeamGoalDifferential(teamCode)
+		
 		// Close games
-		if math.Abs(float64(game.GoalDifferential)) == 1 {
+		if math.Abs(float64(goalDiff)) == 1 {
 			closeGameTotal++
-			if game.Result == "W" {
+			if result == "W" {
 				closeGameWins++
 			}
 		}
 
 		// Overtime games
-		if game.WentToOvertime {
+		if game.WentToOvertime() {
 			overtimeTotal++
-			if game.Result == "W" {
+			if result == "W" {
 				overtimeWins++
 			}
 		}
 
 		// Third period comebacks (simplified - would need period-by-period data)
-		if game.Result == "W" && game.GoalDifferential > 0 {
+		if result == "W" && goalDiff > 0 {
 			// Assume some wins were comebacks
-			if game.GoalDifferential <= 2 {
+			if goalDiff <= 2 {
 				thirdPeriodComebacks++
 			}
 		}
 
 		// Blown leads (simplified)
-		if game.Result == "L" && game.GoalDifferential < 0 {
-			if game.GoalDifferential >= -1 {
+		if result == "L" && goalDiff < 0 {
+			if goalDiff >= -1 {
 				lateGameCollapses++
 			}
 		}
 
 		// Track 3rd period performance (simplified estimate)
-		totalGoalDiff3rd += float64(game.GoalDifferential) * 0.3 // Rough estimate
+		totalGoalDiff3rd += float64(goalDiff) * 0.3 // Rough estimate
 	}
 
 	// Calculate close game record

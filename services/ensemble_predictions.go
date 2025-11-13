@@ -363,14 +363,16 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 	if playstyleService != nil {
 		matchup := playstyleService.ComparePlaystyles(homeFactors.TeamCode, awayFactors.TeamCode)
 		
-		homeFactors.PlaystyleAdvantage = matchup.ImpactFactor
-		awayFactors.PlaystyleAdvantage = -matchup.ImpactFactor
-		
-		if math.Abs(matchup.ImpactFactor) > 0.03 {
-			fmt.Printf("🎨 Playstyle: %s (%s) vs %s (%s) - %s advantage: %.1f%%\n",
-				homeFactors.TeamCode, matchup.HomeStyle,
-				awayFactors.TeamCode, matchup.AwayStyle,
-				matchup.Advantage, math.Abs(matchup.ImpactFactor)*100)
+		if matchup != nil {
+			homeFactors.PlaystyleAdvantage = matchup.ImpactFactor
+			awayFactors.PlaystyleAdvantage = -matchup.ImpactFactor
+			
+			if math.Abs(matchup.ImpactFactor) > 0.03 {
+				fmt.Printf("🎨 Playstyle: %s (%s) vs %s (%s) - %s advantage: %.1f%%\n",
+					homeFactors.TeamCode, matchup.HomeStyle,
+					awayFactors.TeamCode, matchup.AwayStyle,
+					matchup.Advantage, math.Abs(matchup.ImpactFactor)*100)
+			}
 		}
 	}
 

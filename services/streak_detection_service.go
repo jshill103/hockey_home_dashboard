@@ -75,13 +75,26 @@ func (sds *StreakDetectionService) GetCurrentStreak(teamCode string) *models.Str
 	}
 
 	// Return the primary streak (win or loss)
-	for _, streak := range analysis.ActiveStreaks {
-		if streak.Type == "Win" || streak.Type == "Loss" {
-			return &streak
+	for i := range analysis.ActiveStreaks {
+		if analysis.ActiveStreaks[i].Type == "Win" || analysis.ActiveStreaks[i].Type == "Loss" {
+			return &analysis.ActiveStreaks[i]
 		}
 	}
 
-	return analysis.ActiveStreaks[0]  // Return first active streak
+	// Return first active streak
+	if len(analysis.ActiveStreaks) > 0 {
+		return &analysis.ActiveStreaks[0]
+	}
+
+	// Fallback to neutral streak
+	return &models.StreakPattern{
+		TeamCode:         teamCode,
+		Type:             "Neutral",
+		Length:           0,
+		ImpactFactor:     0.0,
+		BreakProbability: 0.5,
+		Confidence:       0.5,
+	}
 }
 
 // CalculateStreakImpact calculates the prediction adjustment based on streaks
@@ -127,7 +140,7 @@ func (sds *StreakDetectionService) DetectStreaks(teamCode string, recentGames []
 	
 	for i := len(recentGames) - 1; i >= 0; i-- {
 		game := recentGames[i]
-		isWin := game.Result == "W"
+		isWin := game.DidTeamWin(teamCode)
 		
 		if currentStreak == 0 {
 			// Start new streak
