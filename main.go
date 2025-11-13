@@ -803,6 +803,17 @@ func main() {
 	http.HandleFunc("/api/context-performance", handlers.GetContextPerformance)
 	fmt.Println("🎯 Phase 3 confidence & model selection API endpoints registered")
 
+	// Phase 4: Advanced Pattern Recognition API endpoints
+	http.HandleFunc("/api/phase4/dashboard", handlers.GetPhase4Dashboard)
+	http.HandleFunc("/api/streak-analysis/", handlers.GetStreakAnalysis)
+	http.HandleFunc("/api/streak-comparison/", handlers.GetStreakComparison)
+	http.HandleFunc("/api/momentum/", handlers.GetMomentumAnalysis)
+	http.HandleFunc("/api/momentum-comparison/", handlers.GetMomentumComparison)
+	http.HandleFunc("/api/clutch-performance/", handlers.GetClutchPerformance)
+	http.HandleFunc("/api/clutch-advantage/", handlers.GetClutchAdvantage)
+	http.HandleFunc("/api/pattern-summary/", handlers.GetPatternSummary)
+	fmt.Println("🔥 Phase 4 advanced pattern recognition API endpoints registered")
+
 	if currentSeasonStatus.IsHockeySeason {
 		// Currently no additional routes needed only during hockey season
 	}
