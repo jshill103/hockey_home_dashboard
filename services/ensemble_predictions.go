@@ -128,7 +128,97 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 		} else {
 			log.Printf("⚠️ Could not get goalie comparison: %v", err)
 		}
+
+		// PHASE 2: Enhanced Goalie Matchup History
+		if goalieService != nil && comparison != nil {
+			// Get home goalie ID
+			if comparison.HomeGoalie != nil {
+				matchupAdj := goalieService.GetGoalieMatchupAdjustment(comparison.HomeGoalie.PlayerID, awayFactors.TeamCode)
+				homeFactors.GoalieVsTeamRating = matchupAdj
+				if matchupAdj != 0 {
+					fmt.Printf("🥅 Goalie Matchup History: Home goalie %.1f%% vs %s\n", matchupAdj*100, awayFactors.TeamCode)
+				}
+			}
+			// Get away goalie ID
+			if comparison.AwayGoalie != nil {
+				matchupAdj := goalieService.GetGoalieMatchupAdjustment(comparison.AwayGoalie.PlayerID, homeFactors.TeamCode)
+				awayFactors.GoalieVsTeamRating = matchupAdj
+				if matchupAdj != 0 {
+					fmt.Printf("🥅 Goalie Matchup History: Away goalie %.1f%% vs %s\n", matchupAdj*100, homeFactors.TeamCode)
+				}
+			}
+		}
 	}
+
+	// ============================================================================
+	// PHASE 2: ENHANCED DATA QUALITY ENRICHMENT
+	// ============================================================================
+
+	// 1. Head-to-Head Matchup Database
+	h2hService := GetHeadToHeadService()
+	if h2hService != nil {
+		advantage := h2hService.CalculateAdvantage(homeFactors.TeamCode, awayFactors.TeamCode)
+		if advantage != nil {
+			homeFactors.HeadToHeadAdvantage = advantage.Advantage
+			awayFactors.HeadToHeadAdvantage = -advantage.Advantage
+
+			// Calculate recent H2H form (0-1 scale based on recent wins)
+			record, _ := h2hService.GetMatchupAnalysis(homeFactors.TeamCode, awayFactors.TeamCode)
+			if record != nil && len(record.RecentGames) > 0 {
+				recentWins := 0
+				for _, game := range record.RecentGames {
+					if game.Winner == homeFactors.TeamCode {
+						recentWins++
+					}
+				}
+				homeFactors.H2HRecentForm = float64(recentWins) / float64(len(record.RecentGames))
+				awayFactors.H2HRecentForm = 1.0 - homeFactors.H2HRecentForm
+			}
+
+			if advantage.Advantage != 0 {
+				fmt.Printf("🏒 Head-to-Head: %s advantage (%.1f%% from %d games)\n",
+					homeFactors.TeamCode, advantage.Advantage*100, advantage.SampleSize)
+			}
+		}
+	}
+
+	// 2. Rest & Fatigue Impact Analysis
+	restService := GetRestImpactService()
+	if restService != nil {
+		// Get rest days from schedule context (if available)
+		homeRestDays := homeFactors.RestDays
+		awayRestDays := awayFactors.RestDays
+
+		// Calculate rest advantage
+		restAdv := restService.CalculateRestAdvantage(
+			homeFactors.TeamCode, awayFactors.TeamCode,
+			homeRestDays, awayRestDays,
+			homeFactors.TravelDistance, awayFactors.TravelDistance,
+		)
+
+		if restAdv != nil {
+			homeFactors.RestAdvantageDetailed = restAdv.RestAdvantage
+			awayFactors.RestAdvantageDetailed = -restAdv.RestAdvantage
+
+			// Opponent fatigue (0-1 scale, higher = more tired)
+			if restAdv.AwayOnB2B {
+				homeFactors.OpponentFatigue = 0.75 + (restAdv.AwayB2BPenalty * -2.0) // Convert penalty to fatigue
+			}
+			if restAdv.HomeOnB2B {
+				awayFactors.OpponentFatigue = 0.75 + (restAdv.HomeB2BPenalty * -2.0)
+			}
+
+			if restAdv.RestAdvantage != 0 {
+				fmt.Printf("😴 Rest Impact: %s (%.1f%% advantage)\n",
+					restAdv.FatigueAdvantage, math.Abs(restAdv.RestAdvantage)*100)
+			}
+		}
+	}
+
+	// 3. Lineup Stability (placeholder for now)
+	// TODO: Integrate with PreGameLineupService for lineup change tracking
+	homeFactors.LineupStabilityFactor = 0.75 // Assume relatively stable
+	awayFactors.LineupStabilityFactor = 0.75
 
 	// 2. Betting Market Intelligence
 	marketService := GetBettingMarketService()

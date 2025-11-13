@@ -76,6 +76,25 @@ type PredictionFactors struct {
 	// NEW: Market Data Integration
 	MarketData MarketAdjustment `json:"marketData"`
 
+	// ============================================================================
+	// PHASE 2: ENHANCED DATA QUALITY (+6 features)
+	// ============================================================================
+	
+	// Head-to-Head Matchup Analysis
+	HeadToHeadAdvantage   float64 `json:"headToHeadAdvantage"`   // -0.30 to +0.30 win% adjustment
+	H2HRecentForm         float64 `json:"h2hRecentForm"`         // Recent H2H performance (0-1)
+	
+	// Goalie Matchup History
+	GoalieVsTeamRating    float64 `json:"goalieVsTeamRating"`    // Goalie's historical performance vs this opponent (-0.15 to +0.15)
+	
+	// Rest & Fatigue Analysis  
+	RestAdvantageDetailed float64 `json:"restAdvantageDetailed"` // Enhanced rest analysis (-0.20 to +0.20)
+	OpponentFatigue       float64 `json:"opponentFatigue"`       // Opponent's fatigue level (0-1, higher = more tired)
+	
+	// Lineup Stability
+	LineupStabilityFactor float64 `json:"lineupStabilityFactor"` // Lineup continuity impact (0-1, higher = more stable)
+
+	// ============================================================================
 	// PHASE 4: Goalie Intelligence
 	GoalieAdvantage      float64 `json:"goalieAdvantage"`      // -0.15 to +0.15 win % impact
 	GoalieSavePctDiff    float64 `json:"goalieSavePctDiff"`    // Save % differential
@@ -100,8 +119,8 @@ type PredictionFactors struct {
 	// PHASE 6: FEATURE ENGINEERING (+40 features)
 	// ============================================================================
 
-	// PHASE 6.1: Matchup Database (10 features)
-	HeadToHeadAdvantage  float64 `json:"headToHeadAdvantage"`  // -0.20 to +0.20 total advantage
+	// PHASE 6.1: Matchup Database (9 features - HeadToHeadAdvantage in Phase 2)
+	// HeadToHeadAdvantage moved to Phase 2 for earlier integration
 	RecentMatchupTrend   float64 `json:"recentMatchupTrend"`   // -0.10 to +0.10 recent trend
 	VenueSpecificRecord  float64 `json:"venueSpecificRecord"`  // -0.05 to +0.05 venue advantage
 	IsRivalryGame        bool    `json:"isRivalryGame"`        // Known rivalry

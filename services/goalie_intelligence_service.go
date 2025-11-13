@@ -43,6 +43,11 @@ func NewGoalieIntelligenceService() *GoalieIntelligenceService {
 		log.Printf("🥅 Loaded goalie data for %d goalies", len(service.goalies))
 	}
 
+	// Load matchup history data
+	if err := service.loadMatchupData(); err != nil {
+		log.Printf("⚠️ Could not load matchup data: %v (starting fresh)", err)
+	}
+
 	return service
 }
 
@@ -560,6 +565,194 @@ func (gis *GoalieIntelligenceService) findGoalieByID(playerID int) *models.Goali
 		return goalie
 	}
 
+	return nil
+}
+
+// ============================================================================
+// PHASE 2: MATCHUP HISTORY TRACKING
+// ============================================================================
+
+// RecordGoalieMatchup records a goalie's performance against a specific team
+func (gis *GoalieIntelligenceService) RecordGoalieMatchup(goalieID int, goalieName, opponentTeam string,
+	gameDate time.Time, won bool, saves, shotsAgainst, goalsAgainst int) error {
+
+	gis.mutex.Lock()
+	defer gis.mutex.Unlock()
+
+	key := fmt.Sprintf("%d_%s", goalieID, opponentTeam)
+	matchup, exists := gis.matchups[key]
+	if !exists {
+		matchup = &models.GoalieMatchup{
+			GoalieID:     goalieID,
+			GoalieName:   goalieName,
+			OpponentTeam: opponentTeam,
+			RecentGames:  []models.GoalieStart{},
+		}
+		gis.matchups[key] = matchup
+	}
+
+	// Calculate save percentage
+	savePct := 0.0
+	if shotsAgainst > 0 {
+		savePct = float64(saves) / float64(shotsAgainst)
+	}
+
+	// Create game record
+	start := models.GoalieStart{
+		GameDate:      gameDate,
+		Result:        "L",
+		Saves:         saves,
+		ShotsAgainst:  shotsAgainst,
+		GoalsAgainst:  goalsAgainst,
+		SavePct:       savePct,
+	}
+
+	if won {
+		start.Result = "W"
+	}
+
+	// Add to recent games (keep last 5)
+	matchup.RecentGames = append(matchup.RecentGames, start)
+	if len(matchup.RecentGames) > 5 {
+		matchup.RecentGames = matchup.RecentGames[len(matchup.RecentGames)-5:]
+	}
+
+	// Update overall record
+	if won {
+		matchup.Record.Wins++
+	} else {
+		matchup.Record.Losses++
+	}
+	matchup.Record.GamesPlayed++
+
+	// Recalculate average save percentage
+	totalSavePct := 0.0
+	for _, game := range matchup.RecentGames {
+		totalSavePct += game.SavePct
+	}
+	if len(matchup.RecentGames) > 0 {
+		matchup.AverageSavePct = totalSavePct / float64(len(matchup.RecentGames))
+	}
+
+	matchup.LastFaced = gameDate
+
+	return gis.saveMatchupData()
+}
+
+// GetGoalieMatchupHistory retrieves a goalie's history against a specific team
+func (gis *GoalieIntelligenceService) GetGoalieMatchupHistory(goalieID int, opponentTeam string) *models.GoalieMatchup {
+	gis.mutex.RLock()
+	defer gis.mutex.RUnlock()
+
+	key := fmt.Sprintf("%d_%s", goalieID, opponentTeam)
+	return gis.matchups[key]
+}
+
+// GetGoalieMatchupAdjustment calculates an adjustment factor based on matchup history
+// Returns a value from -0.15 to +0.15 to adjust goalie advantage
+func (gis *GoalieIntelligenceService) GetGoalieMatchupAdjustment(goalieID int, opponentTeam string) float64 {
+	matchup := gis.GetGoalieMatchupHistory(goalieID, opponentTeam)
+	if matchup == nil || len(matchup.RecentGames) == 0 {
+		return 0.0 // No history = no adjustment
+	}
+
+	// Calculate win percentage in this matchup
+	winPct := 0.0
+	if matchup.Record.GamesPlayed > 0 {
+		winPct = float64(matchup.Record.Wins) / float64(matchup.Record.GamesPlayed)
+	}
+
+	// Compare to league average (0.50)
+	advantage := (winPct - 0.50) * 0.30 // Scale to ±0.15
+
+	// Apply confidence factor based on sample size
+	confidence := 1.0 - math.Exp(-float64(matchup.Record.GamesPlayed)/3.0)
+	advantage *= confidence
+
+	// Adjust based on recent save percentage vs typical (0.910)
+	if matchup.AverageSavePct > 0 {
+		savePctBonus := (matchup.AverageSavePct - 0.910) * 0.50 // Up to ±0.05
+		advantage += savePctBonus
+	}
+
+	// Clamp to [-0.15, +0.15]
+	if advantage > 0.15 {
+		advantage = 0.15
+	} else if advantage < -0.15 {
+		advantage = -0.15
+	}
+
+	return advantage
+}
+
+// BackfillGoalieMatchups populates matchup history from historical game data
+// Note: This is a placeholder. Full implementation requires goalie-specific game data
+func (gis *GoalieIntelligenceService) BackfillGoalieMatchups(games []models.Game) error {
+	fmt.Println("🥅 Goalie matchup backfill: placeholder (requires goalie game stats)")
+	// TODO: Implement backfill when we have access to goalie-specific game data
+	// This would require fetching detailed game data with goalie performance
+	return nil
+}
+
+// saveMatchupData persists matchup data to disk
+func (gis *GoalieIntelligenceService) saveMatchupData() error {
+	matchupDir := filepath.Join(gis.dataDir, "matchups")
+	if err := os.MkdirAll(matchupDir, 0755); err != nil {
+		return fmt.Errorf("failed to create matchup directory: %w", err)
+	}
+
+	for key, matchup := range gis.matchups {
+		filePath := filepath.Join(matchupDir, fmt.Sprintf("%s.json", key))
+		data, err := json.MarshalIndent(matchup, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal matchup %s: %w", key, err)
+		}
+		if err := os.WriteFile(filePath, data, 0644); err != nil {
+			return fmt.Errorf("failed to write matchup file %s: %w", key, err)
+		}
+	}
+
+	return nil
+}
+
+// loadMatchupData loads matchup data from disk
+func (gis *GoalieIntelligenceService) loadMatchupData() error {
+	matchupDir := filepath.Join(gis.dataDir, "matchups")
+	files, err := os.ReadDir(matchupDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // No matchup data yet
+		}
+		return fmt.Errorf("failed to read matchup directory: %w", err)
+	}
+
+	loaded := 0
+	for _, file := range files {
+		if file.IsDir() || filepath.Ext(file.Name()) != ".json" {
+			continue
+		}
+
+		filePath := filepath.Join(matchupDir, file.Name())
+		data, err := ioutil.ReadFile(filePath)
+		if err != nil {
+			fmt.Printf("⚠️ Warning: Failed to load %s: %v\n", file.Name(), err)
+			continue
+		}
+
+		var matchup models.GoalieMatchup
+		if err := json.Unmarshal(data, &matchup); err != nil {
+			fmt.Printf("⚠️ Warning: Failed to unmarshal %s: %v\n", file.Name(), err)
+			continue
+		}
+
+		key := fmt.Sprintf("%d_%s", matchup.GoalieID, matchup.OpponentTeam)
+		gis.matchups[key] = &matchup
+		loaded++
+	}
+
+	if loaded > 0 {
+		fmt.Printf("🥅 Loaded %d goalie matchup records\n", loaded)
+	}
 	return nil
 }
 

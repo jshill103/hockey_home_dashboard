@@ -29,11 +29,11 @@ type NeuralNetworkModel struct {
 
 // NewNeuralNetworkModel creates a new neural network prediction model
 func NewNeuralNetworkModel() *NeuralNetworkModel {
-	// UPGRADED: Larger architecture with feature interactions
-	// 176 input features (148 base + 20 interactions + 8 additional) → 512 → 256 → 128 → 3 output classes
-	// Parameters: ~284K (includes powerful interaction features for non-linear relationships)
+	// UPGRADED: Larger architecture with Phase 2 enhanced data quality
+	// 182 input features (148 base + 20 interactions + 8 additional + 6 Phase 2) → 512 → 256 → 128 → 3 output classes
+	// Parameters: ~287K (includes matchup history, rest analysis, and lineup stability)
 	// Still CPU-friendly, but much more powerful for complex pattern learning
-	layers := []int{176, 512, 256, 128, 3}
+	layers := []int{182, 512, 256, 128, 3}
 
 	model := &NeuralNetworkModel{
 		layers:       layers,
@@ -113,9 +113,9 @@ func (nn *NeuralNetworkModel) Predict(homeFactors, awayFactors *models.Predictio
 }
 
 // extractFeatures converts prediction factors to neural network input
-// Feeds into larger 168→512→256→128→3 architecture
+// Feeds into larger 182→512→256→128→3 architecture (Phase 2 enhanced)
 func (nn *NeuralNetworkModel) extractFeatures(home, away *models.PredictionFactors) []float64 {
-	features := make([]float64, 176) // 176 input features (148 base + 20 interactions + 8 additional)
+	features := make([]float64, 182) // 182 input features (148 base + 20 interactions + 8 additional + 6 Phase 2)
 
 	// Basic team stats
 	features[0] = home.WinPercentage
@@ -474,6 +474,24 @@ func (nn *NeuralNetworkModel) extractFeatures(home, away *models.PredictionFacto
 	features[173] = (away.SpecialTeamsDominance+0.04)/0.08
 	features[174] = home.RivalryIntensityFactor              // Already scaled
 	features[175] = home.PlayoffPressure                     // Already scaled
+
+	// ============================================================================
+	// PHASE 2: ENHANCED DATA QUALITY (176-181)
+	// ============================================================================
+	
+	// Head-to-Head Matchup (176-177)
+	features[176] = (home.HeadToHeadAdvantage+0.30)/0.60    // Normalize from [-0.30, 0.30] to [0, 1]
+	features[177] = home.H2HRecentForm                       // Already 0-1 scale
+	
+	// Goalie Matchup History (178)
+	features[178] = (home.GoalieVsTeamRating+0.15)/0.30     // Normalize from [-0.15, 0.15] to [0, 1]
+	
+	// Rest & Fatigue Analysis (179-180)
+	features[179] = (home.RestAdvantageDetailed+0.20)/0.40  // Normalize from [-0.20, 0.20] to [0, 1]
+	features[180] = home.OpponentFatigue                     // Already 0-1 scale
+	
+	// Lineup Stability (181)
+	features[181] = home.LineupStabilityFactor               // Already 0-1 scale
 
 	return features
 }
