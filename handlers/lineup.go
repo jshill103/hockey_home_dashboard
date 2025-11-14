@@ -84,7 +84,7 @@ func formatLineupHTML(lineup *models.PreGameLineup) string {
 	html.WriteString("<div class='lineup-container'>")
 
 	// Header
-	html.WriteString(fmt.Sprintf("<div class='lineup-header'>"))
+	html.WriteString("<div class='lineup-header'>")
 	html.WriteString(fmt.Sprintf("<h3>🏒 %s @ %s</h3>", lineup.AwayTeam, lineup.HomeTeam))
 	html.WriteString(fmt.Sprintf("<div class='lineup-date'>%s</div>", lineup.GameDate.Format("January 2, 2006 at 3:04 PM MST")))
 	html.WriteString("</div>")
@@ -124,7 +124,7 @@ func formatTeamLineupHTML(teamLineup *models.TeamLineup) string {
 	html.WriteString("<div class='lineup-section-title'>🥅 Goalies</div>")
 
 	if teamLineup.StartingGoalie != nil {
-		html.WriteString(fmt.Sprintf("<div class='lineup-player starter'>"))
+		html.WriteString("<div class='lineup-player starter'>")
 		html.WriteString(fmt.Sprintf("⭐ #%d %s <span class='starter-badge'>STARTER</span>",
 			teamLineup.StartingGoalie.SweaterNumber,
 			teamLineup.StartingGoalie.PlayerName))
@@ -132,7 +132,7 @@ func formatTeamLineupHTML(teamLineup *models.TeamLineup) string {
 	}
 
 	if teamLineup.BackupGoalie != nil {
-		html.WriteString(fmt.Sprintf("<div class='lineup-player'>"))
+		html.WriteString("<div class='lineup-player'>")
 		html.WriteString(fmt.Sprintf("#%d %s",
 			teamLineup.BackupGoalie.SweaterNumber,
 			teamLineup.BackupGoalie.PlayerName))
@@ -147,7 +147,7 @@ func formatTeamLineupHTML(teamLineup *models.TeamLineup) string {
 		html.WriteString("<div class='lineup-section-title'>⚔️ Forward Lines</div>")
 
 		for _, line := range teamLineup.ForwardLines {
-			html.WriteString(fmt.Sprintf("<div class='lineup-line'>"))
+			html.WriteString("<div class='lineup-line'>")
 			html.WriteString(fmt.Sprintf("<div class='line-number'>Line %d</div>", line.LineNumber))
 			html.WriteString("<div class='line-players'>")
 
@@ -174,7 +174,7 @@ func formatTeamLineupHTML(teamLineup *models.TeamLineup) string {
 		html.WriteString("<div class='lineup-section-title'>🛡️ Defense Pairs</div>")
 
 		for _, pair := range teamLineup.DefensePairs {
-			html.WriteString(fmt.Sprintf("<div class='lineup-line'>"))
+			html.WriteString("<div class='lineup-line'>")
 			html.WriteString(fmt.Sprintf("<div class='line-number'>Pair %d</div>", pair.PairNumber))
 			html.WriteString("<div class='line-players'>")
 
@@ -198,7 +198,7 @@ func formatTeamLineupHTML(teamLineup *models.TeamLineup) string {
 		html.WriteString("<div class='lineup-section-title'>⚠️ Scratches</div>")
 
 		for _, scratch := range teamLineup.Scratches {
-			html.WriteString(fmt.Sprintf("<div class='lineup-player scratched'>"))
+			html.WriteString("<div class='lineup-player scratched'>")
 			html.WriteString(fmt.Sprintf("#%d %s (%s)",
 				scratch.PlayerID, // Using PlayerID as we don't have SweaterNumber
 				scratch.PlayerName,

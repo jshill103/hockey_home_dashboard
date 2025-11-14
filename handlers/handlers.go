@@ -16,7 +16,6 @@ var (
 	cachedNews            *[]models.NewsHeadline
 	cachedUpcomingGames   *[]models.Game
 	currentSeasonStatus   *models.SeasonStatus
-	isGameCurrentlyLive   *bool
 	teamConfig            *models.TeamConfig
 )
 
@@ -27,14 +26,12 @@ func Init(
 	news *[]models.NewsHeadline,
 	upcomingGames *[]models.Game,
 	seasonStatus *models.SeasonStatus,
-	gameLive *bool,
 ) {
 	cachedSchedule = schedule
 	cachedScheduleUpdated = scheduleUpdated
 	cachedNews = news
 	cachedUpcomingGames = upcomingGames
 	currentSeasonStatus = seasonStatus
-	isGameCurrentlyLive = gameLive
 }
 
 // InitTeamConfig initializes the team configuration for handlers

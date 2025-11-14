@@ -20,6 +20,8 @@ go.work
 # Compiled binaries
 web_server
 uhc-server
+go_uhc
+go_uhc_*
 
 # IDE files
 .vscode/

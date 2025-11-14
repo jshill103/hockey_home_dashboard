@@ -25,7 +25,6 @@ var (
 	cachedNews            []models.NewsHeadline
 	cachedUpcomingGames   []models.Game
 	currentSeasonStatus   models.SeasonStatus
-	isGameCurrentlyLive   bool = false
 	// Player stats caching
 	cachedPlayerStats     models.PlayerStatsLeaders
 	cachedGoalieStats     models.GoalieStatsLeaders
@@ -266,7 +265,6 @@ func main() {
 		&cachedNews,
 		&cachedUpcomingGames,
 		&currentSeasonStatus,
-		&isGameCurrentlyLive,
 	)
 
 	// Initialize team configuration in handlers
