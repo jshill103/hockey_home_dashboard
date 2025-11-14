@@ -4,11 +4,11 @@ import "time"
 
 // ClutchPerformance represents a team's performance in critical situations
 type ClutchPerformance struct {
-	TeamCode              string    `json:"teamCode"`
-	Season                string    `json:"season"`
-	CloseGameRecord       Record    `json:"closeGameRecord"`       // 1-goal games
-	ThirdPeriodComebacks  int       `json:"thirdPeriodComebacks"`  // Comebacks in 3rd period
-	OvertimeRecord        Record    `json:"overtimeRecord"`        // OT/SO performance
+	TeamCode              string       `json:"teamCode"`
+	Season                string       `json:"season"`
+	CloseGameRecord       ClutchRecord `json:"closeGameRecord"`       // 1-goal games
+	ThirdPeriodComebacks  int          `json:"thirdPeriodComebacks"`  // Comebacks in 3rd period
+	OvertimeRecord        ClutchRecord `json:"overtimeRecord"`        // OT/SO performance
 	LateGameCollapses     int       `json:"lateGameCollapses"`     // Blown leads
 	PressurePerformance   float64   `json:"pressurePerformance"`   // Performance under pressure (0-1)
 	ClutchFactor          float64   `json:"clutchFactor"`          // Overall clutch rating (-0.10 to +0.10)
@@ -19,8 +19,8 @@ type ClutchPerformance struct {
 	LastUpdated           time.Time `json:"lastUpdated"`
 }
 
-// Record represents a win-loss record
-type Record struct {
+// ClutchRecord represents a win-loss record for clutch situations
+type ClutchRecord struct {
 	Wins           int     `json:"wins"`
 	Losses         int     `json:"losses"`
 	OvertimeLosses int     `json:"overtimeLosses"` // Optional

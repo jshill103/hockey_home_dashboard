@@ -135,7 +135,7 @@ func (cps *ClutchPerformanceService) AnalyzeClutchPerformance(teamCode string, g
 	}
 
 	// Calculate close game record
-	clutch.CloseGameRecord = models.Record{
+	clutch.CloseGameRecord = models.ClutchRecord{
 		Wins:          closeGameWins,
 		Losses:        closeGameTotal - closeGameWins,
 		Total:         closeGameTotal,
@@ -143,7 +143,7 @@ func (cps *ClutchPerformanceService) AnalyzeClutchPerformance(teamCode string, g
 	}
 
 	// Calculate overtime record
-	clutch.OvertimeRecord = models.Record{
+	clutch.OvertimeRecord = models.ClutchRecord{
 		Wins:          overtimeWins,
 		Losses:        overtimeTotal - overtimeWins,
 		Total:         overtimeTotal,
@@ -275,8 +275,8 @@ func (cps *ClutchPerformanceService) getClutchPerformance(teamCode string) *mode
 		TeamCode:       teamCode,
 		ClutchFactor:   0.0,
 		Confidence:     0.3,
-		CloseGameRecord: models.Record{WinPercentage: 0.50},
-		OvertimeRecord:  models.Record{WinPercentage: 0.50},
+		CloseGameRecord: models.ClutchRecord{WinPercentage: 0.50},
+		OvertimeRecord:  models.ClutchRecord{WinPercentage: 0.50},
 	}
 }
 

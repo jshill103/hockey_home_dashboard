@@ -165,7 +165,7 @@ type PredictionFactors struct {
 
 	// PHASE 6.2: Advanced Rolling Statistics (20 features)
 	FormRating           float64 `json:"formRating"`           // 0-10 current form rating
-	MomentumScore        float64 `json:"momentumScore"`        // -1 to +1 momentum
+	// MomentumScore is defined in Phase 4 above - removed duplicate
 	IsHot                bool    `json:"isHot"`                // 4+ wins in last 5
 	IsCold               bool    `json:"isCold"`               // 4+ losses in last 5
 	IsStreaking          bool    `json:"isStreaking"`          // 3+ game streak

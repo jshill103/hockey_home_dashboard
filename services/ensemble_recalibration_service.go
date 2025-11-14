@@ -266,7 +266,7 @@ func (ers *EnsembleRecalibrationService) GetAllModelPerformance() map[string]*mo
 // ============================================================================
 
 func (ers *EnsembleRecalibrationService) initializeModelTrackers() {
-	models := []string{
+	modelNames := []string{
 		"Enhanced Statistical",
 		"Bayesian Inference",
 		"Monte Carlo Simulation",
@@ -290,15 +290,18 @@ func (ers *EnsembleRecalibrationService) initializeModelTrackers() {
 		"Random Forest":          0.07,
 	}
 
-	for _, model := range models {
+	for _, model := range modelNames {
 		if _, exists := ers.modelPerformance[model]; !exists {
-			ers.modelPerformance[model] = &models.ModelPerformanceMetrics{
+			perf := &models.ModelPerformanceMetrics{
 				ModelName:            model,
 				BaseWeight:           baseWeights[model],
-				CurrentWeight:        baseWeights[model],
+				CurrentWeight:        0.0,
+				WeightAdjustment:     0.0,
 				PerformanceByContext: make(map[string]float64),
 				LastUpdated:          time.Now(),
 			}
+			perf.CurrentWeight = baseWeights[model]
+			ers.modelPerformance[model] = perf
 		}
 	}
 }
