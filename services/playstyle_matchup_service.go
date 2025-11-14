@@ -130,6 +130,19 @@ func (pms *PlaystyleMatchupService) AnalyzePlaystyle(teamCode string, stats mode
 		LastUpdated: time.Now(),
 	}
 
+	// Safety check: If no games played, return neutral profile
+	if stats.GamesPlayed == 0 {
+		profile.PrimaryStyle = "Balanced"
+		profile.StyleConfidence = 0.0
+		profile.OffensiveRating = 0.5
+		profile.DefensiveRating = 0.5
+		profile.PossessionRating = 0.5
+		profile.SpeedRating = 0.5
+		profile.PhysicalRating = 0.5
+		profile.SkillRating = 0.5
+		return profile
+	}
+
 	// Calculate style ratings based on stats
 	profile.OffensiveRating = pms.calculateOffensiveRating(stats)
 	profile.DefensiveRating = pms.calculateDefensiveRating(stats)
@@ -142,7 +155,7 @@ func (pms *PlaystyleMatchupService) AnalyzePlaystyle(teamCode string, stats mode
 	profile.PrimaryStyle = pms.determinePrimaryStyle(profile)
 	profile.StyleConfidence = 0.75 // Base confidence
 
-	// Store supporting stats
+	// Store supporting stats (safe now - GamesPlayed > 0)
 	profile.AvgGoalsFor = stats.GoalsFor / float64(stats.GamesPlayed)
 	profile.AvgGoalsAgainst = stats.GoalsAgainst / float64(stats.GamesPlayed)
 	profile.AvgShots = stats.ShotsFor / float64(stats.GamesPlayed)
@@ -154,6 +167,10 @@ func (pms *PlaystyleMatchupService) AnalyzePlaystyle(teamCode string, stats mode
 }
 
 func (pms *PlaystyleMatchupService) calculateOffensiveRating(stats models.TeamStats) float64 {
+	if stats.GamesPlayed == 0 {
+		return 0.5 // Neutral rating
+	}
+	
 	// Based on goals scored and shot volume
 	gfPerGame := stats.GoalsFor / float64(stats.GamesPlayed)
 	shotsPerGame := stats.ShotsFor / float64(stats.GamesPlayed)
@@ -166,6 +183,10 @@ func (pms *PlaystyleMatchupService) calculateOffensiveRating(stats models.TeamSt
 }
 
 func (pms *PlaystyleMatchupService) calculateDefensiveRating(stats models.TeamStats) float64 {
+	if stats.GamesPlayed == 0 {
+		return 0.5 // Neutral rating
+	}
+	
 	// Based on goals against (lower is better)
 	gaPerGame := stats.GoalsAgainst / float64(stats.GamesPlayed)
 	

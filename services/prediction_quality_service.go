@@ -172,6 +172,11 @@ func (pqs *PredictionQualityService) calculateModelAgreement(modelResults []mode
 		predictions = append(predictions, result.WinProbability)
 	}
 
+	// Safety check: ensure we have predictions
+	if len(predictions) == 0 {
+		return 0.5 // No predictions to assess
+	}
+
 	// Calculate mean
 	mean := 0.0
 	for _, p := range predictions {

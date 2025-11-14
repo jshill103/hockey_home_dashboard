@@ -190,6 +190,23 @@ func (tas *TacticalAdvantageService) AnalyzeTeamTendencies(teamCode string, stat
 		LastUpdated: time.Now(),
 	}
 
+	// Safety check: If no games played, return default tendencies
+	if stats.GamesPlayed == 0 {
+		tendencies.PreferredPace = "Variable"
+		tendencies.LeadBehavior = "Balanced"
+		tendencies.TrailingBehavior = "Measured"
+		tendencies.LeadProtectionRate = 0.70
+		tendencies.ComebackFrequency = 0.30
+		tendencies.FirstGoalImportance = 0.55
+		tendencies.ForeCheckSystem = "Neutral"
+		tendencies.DefensiveSystem = "Hybrid"
+		tendencies.PowerPlayStyle = "Movement"
+		tendencies.PenaltyKillStyle = "Box"
+		tendencies.StrongestPeriod = 2
+		tendencies.WeakestPeriod = 1
+		return tendencies
+	}
+
 	// Simplified tendency analysis based on available stats
 	// Estimate period performance from overall stats
 	avgGoals := stats.GoalsFor / float64(stats.GamesPlayed)
