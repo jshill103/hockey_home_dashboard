@@ -720,6 +720,15 @@ func main() {
 
 	// Register handlers
 	http.HandleFunc("/schedule", handlers.HandleSchedule)
+	
+	// Schedule API endpoints (JSON) for external applications
+	http.HandleFunc("/api/schedule/next", handlers.HandleScheduleAPI)
+	http.HandleFunc("/api/schedule/upcoming", handlers.HandleScheduleAPI)
+	http.HandleFunc("/api/schedule/season", handlers.HandleScheduleAPI)
+	http.HandleFunc("/api/schedule/all-teams", handlers.HandleAllTeamsScheduleAPI)
+	http.HandleFunc("/api/schedule/health", handlers.HandleScheduleHealthAPI)
+	fmt.Println("📅 Schedule API endpoints registered (for external apps like video analyzer)")
+	
 	http.HandleFunc("/news", handlers.HandleNews)
 	http.HandleFunc("/banner", handlers.HandleBanner)
 	http.HandleFunc("/mammoth-analysis", handlers.HandleTeamAnalysis)
