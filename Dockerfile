@@ -16,8 +16,8 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags="-w -s" -o web_server main.go
+# Build the application (auto-detects architecture for multi-platform support)
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-w -s" -o web_server main.go
 
 # Runtime stage
 FROM alpine:latest
