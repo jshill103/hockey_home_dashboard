@@ -18,6 +18,7 @@ import (
 type EloRatingModel struct {
 	teamRatings       map[string]float64        // Current Elo ratings for each team
 	ratingHistory     map[string][]RatingRecord // Historical rating changes
+	processedGames    map[int]bool              // Track which GameIDs have been processed to prevent duplicates
 	initialRating     float64                   // Starting rating for new teams
 	kFactor           float64                   // Learning rate
 	homeAdvantage     float64                   // Home ice advantage adjustment
@@ -34,6 +35,7 @@ type EloRatingModel struct {
 type EloModelData struct {
 	TeamRatings       map[string]float64        `json:"teamRatings"`
 	RatingHistory     map[string][]RatingRecord `json:"ratingHistory"`
+	ProcessedGames    map[int]bool              `json:"processedGames"` // Track processed GameIDs
 	ConfidenceFactors map[string]float64        `json:"confidenceFactors"`
 	LastUpdated       time.Time                 `json:"lastUpdated"`
 	Version           string                    `json:"version"`
@@ -58,6 +60,7 @@ func NewEloRatingModel() *EloRatingModel {
 	model := &EloRatingModel{
 		teamRatings:       make(map[string]float64),
 		ratingHistory:     make(map[string][]RatingRecord),
+		processedGames:    make(map[int]bool),
 		confidenceFactors: make(map[string]float64),
 		initialRating:     1500.0, // Standard Elo starting rating
 		kFactor:           32.0,   // Standard K-factor (higher = more volatile)
@@ -435,6 +438,7 @@ func (elo *EloRatingModel) Update(data *LiveGameData) error {
 	saveData := EloModelData{
 		TeamRatings:       make(map[string]float64),
 		RatingHistory:     make(map[string][]RatingRecord),
+		ProcessedGames:    make(map[int]bool),
 		ConfidenceFactors: make(map[string]float64),
 		LastUpdated:       time.Now(),
 		Version:           "1.0",
@@ -447,6 +451,9 @@ func (elo *EloRatingModel) Update(data *LiveGameData) error {
 		historyCopy := make([]RatingRecord, len(v))
 		copy(historyCopy, v)
 		saveData.RatingHistory[k] = historyCopy
+	}
+	for k, v := range elo.processedGames {
+		saveData.ProcessedGames[k] = v
 	}
 	for k, v := range elo.confidenceFactors {
 		saveData.ConfidenceFactors[k] = v
@@ -521,6 +528,13 @@ func (elo *EloRatingModel) processGameResult(gameResult *models.GameResult) erro
 		return fmt.Errorf("game %d not finished yet", gameResult.GameID)
 	}
 
+	// Check if this game has already been processed (prevent duplicates)
+	if elo.processedGames[gameResult.GameID] {
+		log.Printf("⏭️ Skipping already processed game %d (%s vs %s)", 
+			gameResult.GameID, gameResult.HomeTeam, gameResult.AwayTeam)
+		return nil // Return nil to not count as an error
+	}
+
 	homeTeam := gameResult.HomeTeam
 	awayTeam := gameResult.AwayTeam
 	homeScore := gameResult.HomeScore
@@ -589,9 +603,12 @@ func (elo *EloRatingModel) processGameResult(gameResult *models.GameResult) erro
 	elo.recordRatingChange(awayTeam, awayRating, newAwayRating, awayChange, homeTeam, awayResultStr,
 		fmt.Sprintf("%d-%d", awayScore, homeScore), kFactor, false, gameResult.GameDate)
 
-	log.Printf("🏆 Elo Update: %s %.0f→%.0f (%+.0f), %s %.0f→%.0f (%+.0f)",
+	// Mark this game as processed
+	elo.processedGames[gameResult.GameID] = true
+
+	log.Printf("🏆 Elo Update: %s %.0f→%.0f (%+.0f), %s %.0f→%.0f (%+.0f) [Game %d]",
 		homeTeam, homeRating, newHomeRating, homeChange,
-		awayTeam, awayRating, newAwayRating, awayChange)
+		awayTeam, awayRating, newAwayRating, awayChange, gameResult.GameID)
 
 	return nil
 }
@@ -822,6 +839,7 @@ func (elo *EloRatingModel) saveRatings() error {
 	data := EloModelData{
 		TeamRatings:       elo.teamRatings,
 		RatingHistory:     elo.ratingHistory,
+		ProcessedGames:    elo.processedGames,
 		ConfidenceFactors: elo.confidenceFactors,
 		LastUpdated:       time.Now(),
 		Version:           "1.0",
@@ -875,9 +893,46 @@ func (elo *EloRatingModel) loadRatings() error {
 	elo.ratingHistory = data.RatingHistory
 	elo.confidenceFactors = data.ConfidenceFactors
 	elo.lastUpdated = data.LastUpdated
+	
+	// Load processed games (if available - may not exist in old data files)
+	if data.ProcessedGames != nil {
+		elo.processedGames = data.ProcessedGames
+	} else {
+		elo.processedGames = make(map[int]bool)
+	}
 
-	log.Printf("📊 Loaded Elo ratings: %d teams tracked (last updated: %s)",
-		len(elo.teamRatings), data.LastUpdated.Format("2006-01-02 15:04:05"))
+	log.Printf("📊 Loaded Elo ratings: %d teams tracked, %d games processed (last updated: %s)",
+		len(elo.teamRatings), len(elo.processedGames), data.LastUpdated.Format("2006-01-02 15:04:05"))
 
 	return nil
+}
+
+// ResetRatings clears all Elo ratings and processed games, starting fresh
+// This is useful when duplicate game processing has corrupted the ratings
+func (elo *EloRatingModel) ResetRatings() {
+	elo.mutex.Lock()
+	defer elo.mutex.Unlock()
+
+	log.Printf("🔄 Resetting all Elo ratings to initial state...")
+
+	// Clear all data
+	elo.teamRatings = make(map[string]float64)
+	elo.ratingHistory = make(map[string][]RatingRecord)
+	elo.processedGames = make(map[int]bool)
+	elo.confidenceFactors = make(map[string]float64)
+	elo.lastUpdated = time.Now()
+
+	// Save the reset state
+	if err := elo.saveRatings(); err != nil {
+		log.Printf("⚠️ Failed to save reset Elo ratings: %v", err)
+	} else {
+		log.Printf("✅ Elo ratings reset complete - all teams will start at %0.f", elo.initialRating)
+	}
+}
+
+// GetProcessedGameCount returns the number of games that have been processed
+func (elo *EloRatingModel) GetProcessedGameCount() int {
+	elo.mutex.RLock()
+	defer elo.mutex.RUnlock()
+	return len(elo.processedGames)
 }
