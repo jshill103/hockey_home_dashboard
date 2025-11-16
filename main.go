@@ -785,6 +785,10 @@ func main() {
 	http.HandleFunc("/system-stats-popup", handlers.HandleSystemStatsPopup)
 	http.HandleFunc("/api/health", handlers.HandleHealth) // Alternative endpoint
 
+	// Team Tier List endpoints
+	http.HandleFunc("/tier-list-popup", handlers.HandleTierListPopup)
+	http.HandleFunc("/api/tier-list", handlers.HandleTierListAPI)
+
 	// Feature Importance Analysis endpoints
 	http.HandleFunc("/api/feature-importance", handlers.HandleFeatureImportance)
 	http.HandleFunc("/api/feature-importance/markdown", handlers.HandleFeatureImportanceMarkdown)

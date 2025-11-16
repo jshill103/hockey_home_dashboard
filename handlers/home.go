@@ -2223,7 +2223,7 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         </div>
         
         <div class="model-insights-section hockey-season-only">
-            <h2 style="margin: 0 0 15px 0; font-size: 1.4em;">🤖 AI Insights <span id="predictions-stats-icon" style="cursor: pointer; font-size: 0.8em; margin-left: 10px;" title="View Prediction Statistics">📊</span></h2>
+            <h2 style="margin: 0 0 15px 0; font-size: 1.4em;">🤖 AI Insights <span id="predictions-stats-icon" style="cursor: pointer; font-size: 0.8em; margin-left: 10px;" title="View Prediction Statistics">📊</span><span id="tier-list-icon" style="cursor: pointer; font-size: 0.8em; margin-left: 10px;" title="View NHL Power Rankings Tier List">🏆</span></h2>
             <div id="model-insights-content">
                 <p>Loading AI model insights...</p>
             </div>
@@ -2798,6 +2798,22 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
                     predictionsIcon.style.transform = 'scale(1)';
                 });
             }
+            
+            // Tier list icon functionality
+            const tierListIcon = document.getElementById('tier-list-icon');
+            if (tierListIcon) {
+                tierListIcon.addEventListener('click', openTierListPopup);
+                
+                // Add hover effect
+                tierListIcon.addEventListener('mouseover', function() {
+                    tierListIcon.style.transform = 'scale(1.3)';
+                    tierListIcon.style.transition = 'transform 0.2s ease';
+                });
+                
+                tierListIcon.addEventListener('mouseout', function() {
+                    tierListIcon.style.transform = 'scale(1)';
+                });
+            }
         });
         
         // Functions for predictions popup
@@ -2832,6 +2848,43 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         
         function closePredictionsPopup() {
             const overlay = document.getElementById('predictions-popup-overlay');
+            if (overlay) {
+                overlay.classList.remove('active');
+            }
+        }
+        
+        // Functions for tier list popup
+        function openTierListPopup() {
+            fetch('/tier-list-popup')
+                .then(response => response.text())
+                .then(html => {
+                    // Create overlay
+                    let overlay = document.getElementById('tier-list-popup-overlay');
+                    if (!overlay) {
+                        overlay = document.createElement('div');
+                        overlay.id = 'tier-list-popup-overlay';
+                        overlay.className = 'stats-popup-overlay';
+                        document.body.appendChild(overlay);
+                        
+                        // Close on overlay click
+                        overlay.addEventListener('click', function(e) {
+                            if (e.target === overlay) {
+                                closeTierListPopup();
+                            }
+                        });
+                    }
+                    
+                    overlay.innerHTML = html;
+                    overlay.classList.add('active');
+                })
+                .catch(error => {
+                    console.error('Failed to load tier list:', error);
+                    alert('Failed to load NHL tier list');
+                });
+        }
+        
+        function closeTierListPopup() {
+            const overlay = document.getElementById('tier-list-popup-overlay');
             if (overlay) {
                 overlay.classList.remove('active');
             }
