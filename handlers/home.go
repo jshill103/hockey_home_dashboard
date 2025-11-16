@@ -2202,16 +2202,6 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
 <body>
     
     <div class="main-layout">
-        <div class="news-section offseason-only">
-            <h2><span id="season-toggle" style="cursor: pointer; user-select: none;" title="Click to toggle season/offseason view for testing">📰</span> NHL News</h2>
-            <div id="news-content">
-                <p>Loading NHL news headlines...</p>
-            </div>
-            <div class="last-updated">
-                News automatically updates every 10 minutes
-            </div>
-        </div>
-        
         <div class="upcoming-games-section hockey-season-only">
             <h2>🗓️ Upcoming Games <span id="stats-calendar" style="cursor: pointer; font-size: 0.8em; margin-left: 10px;" title="View System Statistics">📅</span></h2>
             <div id="upcoming-games-content">
@@ -2483,30 +2473,6 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
                 });
         }
 
-        function loadNews() {
-            const newsContent = document.getElementById('news-content');
-            const lastUpdated = document.querySelector('.news-section .last-updated');
-            
-            // Show loading state
-            if (lastUpdated) {
-                lastUpdated.innerHTML = '<span class="news-loading">Updating news...</span>';
-            }
-            
-            htmx.ajax('GET', '/news', '#news-content', {
-                afterRequest: function(xhr) {
-                    if (lastUpdated) {
-                        if (xhr.status === 200) {
-                            const now = new Date();
-                            const timeString = now.toLocaleTimeString();
-                            lastUpdated.innerHTML = '<span class="news-updated">News updated at ' + timeString + ' (auto-updates every 10 minutes)</span>';
-                        } else {
-                            lastUpdated.innerHTML = '<span class="news-error">Error updating news</span>';
-                        }
-                    }
-                }
-            });
-        }
-        
         function loadSeasonCountdown() {
             const countdownContent = document.getElementById('season-countdown-content');
             const lastUpdated = document.querySelector('.season-countdown-section .last-updated');
@@ -2612,9 +2578,6 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         
         // Initialize the page
         document.addEventListener('DOMContentLoaded', function() {
-            // Load news immediately (always available)
-            loadNews();
-            
             // Load model insights immediately (always load data, even if hidden by CSS)
             loadModelInsights();
             setInterval(loadModelInsights, 300000); // Update model insights every 5 minutes
@@ -2643,10 +2606,9 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
                     // Set up automatic updates
                     setInterval(loadUpcomingGames, 3600000); // Update upcoming games every hour
                 } else {
-                    // Offseason: Load news, countdown, and mammoth analysis
+                    // Offseason: Load countdown and mammoth analysis
                     loadSeasonCountdown();
                     loadTeamAnalysis();
-                    setInterval(loadNews, 600000); // 10 minutes
                     setInterval(loadSeasonCountdown, 3600000); // 60 minutes
                     setInterval(loadTeamAnalysis, 1800000); // 30 minutes
                     

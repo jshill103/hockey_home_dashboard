@@ -22,7 +22,6 @@ import (
 var (
 	cachedSchedule        models.Game
 	cachedScheduleUpdated time.Time
-	cachedNews            []models.NewsHeadline
 	cachedUpcomingGames   []models.Game
 	currentSeasonStatus   models.SeasonStatus
 	// Player stats caching
@@ -42,7 +41,6 @@ var (
 // Channels for background communication
 var (
 	scheduleChannel      = make(chan models.Game, 1)
-	newsChannel          = make(chan []models.NewsHeadline, 1)
 	upcomingGamesChannel = make(chan []models.Game, 1)
 	playerStatsChannel   = make(chan models.PlayerStatsLeaders, 1)
 	goalieStatsChannel   = make(chan models.GoalieStatsLeaders, 1)
@@ -180,17 +178,6 @@ func main() {
 			awayTeam, homeTeam, game.GameDate)
 	}
 
-	// Initialize news data on startup
-	fmt.Println("Initializing news data...")
-	headlines, err := services.ScrapeNHLNews()
-	if err != nil {
-		fmt.Printf("Error fetching initial news: %v\n", err)
-	} else {
-		cacheMu.Lock()
-		cachedNews = headlines
-		cacheMu.Unlock()
-		fmt.Printf("Initial news loaded: %d headlines\n", len(headlines))
-	}
 
 	// Initialize season status on startup
 	fmt.Println("Initializing season status...")
@@ -253,7 +240,6 @@ func main() {
 
 	// Start background fetchers
 	go scheduleFetcher()
-	go newsFetcher()
 	if currentSeasonStatus.IsHockeySeason {
 		go playerStatsFetcher()
 	}
@@ -262,7 +248,6 @@ func main() {
 	handlers.Init(
 		&cachedSchedule,
 		&cachedScheduleUpdated,
-		&cachedNews,
 		&cachedUpcomingGames,
 		&currentSeasonStatus,
 	)
@@ -729,7 +714,6 @@ func main() {
 	http.HandleFunc("/api/schedule/health", handlers.HandleScheduleHealthAPI)
 	fmt.Println("📅 Schedule API endpoints registered (for external apps like video analyzer)")
 	
-	http.HandleFunc("/news", handlers.HandleNews)
 	http.HandleFunc("/banner", handlers.HandleBanner)
 	http.HandleFunc("/mammoth-analysis", handlers.HandleTeamAnalysis)
 	http.HandleFunc("/season-status", handlers.HandleSeasonStatus)
@@ -914,7 +898,6 @@ func main() {
 
 	fmt.Println("Server starting on http://localhost:8080")
 	fmt.Println("Schedule will be automatically updated every night at midnight")
-	fmt.Println("News will be automatically updated every 10 minutes")
 	fmt.Println("🤖 Live prediction models will update automatically every hour")
 	fmt.Println("Press Ctrl+C to shutdown gracefully")
 
@@ -989,40 +972,6 @@ func scheduleFetcher() {
 					// Channel is full, skip this update
 				}
 			}
-		}
-	}
-}
-
-func newsFetcher() {
-	for {
-		// Sleep for 10 minutes
-		sleepDuration := 10 * time.Minute
-		fmt.Printf("Next news update scheduled for: %s (in %v)\n",
-			time.Now().Add(sleepDuration).Format("2006-01-02 15:04:05"),
-			sleepDuration)
-
-		time.Sleep(sleepDuration)
-
-		// Fetch new news
-		fmt.Println("Fetching updated news...")
-		headlines, err := services.ScrapeNHLNews()
-		if err != nil {
-			fmt.Printf("Error fetching news: %v\n", err)
-			continue
-		}
-
-		// Update cached news
-		cacheMu.Lock()
-		cachedNews = headlines
-		cacheMu.Unlock()
-		fmt.Printf("News updated: %d headlines\n", len(headlines))
-
-		// Send update to channel
-		select {
-		case newsChannel <- headlines:
-			// Successfully sent to channel
-		default:
-			// Channel is full, skip this update
 		}
 	}
 }

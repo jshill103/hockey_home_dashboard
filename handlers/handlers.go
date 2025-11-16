@@ -13,7 +13,6 @@ import (
 var (
 	cachedSchedule        *models.Game
 	cachedScheduleUpdated *time.Time
-	cachedNews            *[]models.NewsHeadline
 	cachedUpcomingGames   *[]models.Game
 	currentSeasonStatus   *models.SeasonStatus
 	teamConfig            *models.TeamConfig
@@ -23,13 +22,11 @@ var (
 func Init(
 	schedule *models.Game,
 	scheduleUpdated *time.Time,
-	news *[]models.NewsHeadline,
 	upcomingGames *[]models.Game,
 	seasonStatus *models.SeasonStatus,
 ) {
 	cachedSchedule = schedule
 	cachedScheduleUpdated = scheduleUpdated
-	cachedNews = news
 	cachedUpcomingGames = upcomingGames
 	currentSeasonStatus = seasonStatus
 }
