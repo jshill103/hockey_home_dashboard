@@ -95,21 +95,23 @@ func buildModelInsightsHTML(
 				confidence = "low"
 			}
 
-			winner := homeTeam
-			if modelResult.WinProbability < 0.5 {
-				winner = awayTeam
-			}
+		winner := homeTeam
+		winnerProb := modelResult.WinProbability
+		if modelResult.WinProbability < 0.5 {
+			winner = awayTeam
+			winnerProb = 1.0 - modelResult.WinProbability // Show away team's probability
+		}
 
-			html += fmt.Sprintf(`
-		<div class="model-card">
-			<div class="model-name">%s</div>
-			<div class="model-prediction">
-				<span class="model-winner">%s</span>
-				<span class="model-confidence confidence-%s">%.1f%%</span>
-			</div>
-			<div class="model-weight">Weight: %.1f%%</div>
+		html += fmt.Sprintf(`
+	<div class="model-card">
+		<div class="model-name">%s</div>
+		<div class="model-prediction">
+			<span class="model-winner">%s</span>
+			<span class="model-confidence confidence-%s">%.1f%%</span>
 		</div>
-			`, modelResult.ModelName, winner, confidence, modelResult.WinProbability*100, modelResult.Weight*100)
+		<div class="model-weight">Weight: %.1f%%</div>
+	</div>
+		`, modelResult.ModelName, winner, confidence, winnerProb*100, modelResult.Weight*100)
 		}
 	} else {
 		html += `<div class="model-card"><div class="model-name">Model data loading...</div></div>`
