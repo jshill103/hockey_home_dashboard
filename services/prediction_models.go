@@ -95,10 +95,8 @@ func (m *StatisticalModel) Predict(homeFactors, awayFactors *models.PredictionFa
 	// Clamp confidence to valid range [0, 1]
 	confidence = math.Max(0.0, math.Min(1.0, confidence))
 
-	// Determine final probability (for the home team)
-	if homeWinProb < 0.5 {
-		homeWinProb = 1.0 - homeWinProb
-	}
+	// homeWinProb is the actual probability the home team wins
+	// (no artificial boosting - let the model make accurate predictions)
 
 	return &models.ModelResult{
 		ModelName:      m.GetName(),
@@ -405,10 +403,8 @@ func (m *BayesianModel) Predict(homeFactors, awayFactors *models.PredictionFacto
 	// Clamp confidence to valid range [0, 1]
 	confidence = math.Max(0.0, math.Min(1.0, confidence))
 
-	// Determine final probability (for the home team)
-	if posteriorHomeWin < 0.5 {
-		posteriorHomeWin = 1.0 - posteriorHomeWin
-	}
+	// posteriorHomeWin represents the actual probability the home team wins
+	// (no artificial boosting)
 
 	return &models.ModelResult{
 		ModelName:      m.GetName(),
@@ -664,10 +660,8 @@ func (m *MonteCarloModel) Predict(homeFactors, awayFactors *models.PredictionFac
 	// Confidence based on consistency of results
 	confidence := m.calculateMonteCarloConfidence(homeWinProb, homeWins)
 
-	// Determine final probability (for the home team)
-	if homeWinProb < 0.5 {
-		homeWinProb = 1.0 - homeWinProb
-	}
+	// homeWinProb represents the actual probability the home team wins
+	// (no artificial boosting)
 
 	return &models.ModelResult{
 		ModelName:      m.GetName(),

@@ -1567,16 +1567,16 @@ func (eps *EnsemblePredictionService) combineWithMetaLearner(results []models.Mo
 		predictedScore = fmt.Sprintf("%d-%d", homeScore, awayScore)
 	}
 
-	// Determine winner
+	// Determine winner based on win probability
+	// winProb represents home team's win probability
 	winner := homeFactors.TeamCode
 	if winProb < 0.5 {
 		winner = awayFactors.TeamCode
-		winProb = 1.0 - winProb
 	}
 
 	return &models.PredictionResult{
 		Winner:         winner,
-		WinProbability: winProb,
+		WinProbability: winProb, // Keep as home team win probability for consistency
 		Confidence:     confidence,
 		PredictedScore: predictedScore,
 	}
