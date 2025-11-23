@@ -127,13 +127,35 @@ func buildModelInsightsHTML(
 		html += `<div class="section-title">📊 Matchup Intelligence</div>`
 		html += `<div class="insight-grid">`
 
-		history := matchupService.GetMatchupHistory(homeCode, awayCode)
-		if history != nil && history.TotalGames > 0 {
-			html += fmt.Sprintf(`
-			<div class="insight-item">
-				✓ All-Time Record: %s leads %d-%d (Total: %d games)
-			</div>
-			`, homeCode, history.TeamAWins, history.TeamBWins, history.TotalGames)
+	history := matchupService.GetMatchupHistory(homeCode, awayCode)
+	if history != nil && history.TotalGames > 0 {
+		// Determine which team is TeamA and TeamB (alphabetically sorted)
+		teamAIsHome := history.TeamA == homeCode
+		
+		var homeWins, awayWins int
+		if teamAIsHome {
+			homeWins = history.TeamAWins
+			awayWins = history.TeamBWins
+		} else {
+			homeWins = history.TeamBWins
+			awayWins = history.TeamAWins
+		}
+		
+		// Determine leader
+		var leaderText string
+		if homeWins > awayWins {
+			leaderText = fmt.Sprintf("%s leads %d-%d", homeCode, homeWins, awayWins)
+		} else if awayWins > homeWins {
+			leaderText = fmt.Sprintf("%s leads %d-%d", awayCode, awayWins, homeWins)
+		} else {
+			leaderText = fmt.Sprintf("Series tied %d-%d", homeWins, awayWins)
+		}
+		
+		html += fmt.Sprintf(`
+		<div class="insight-item">
+			✓ All-Time Record: %s (Total: %d games)
+		</div>
+		`, leaderText, history.TotalGames)
 
 			if len(history.RecentGames) > 0 {
 				recentWins := 0
@@ -158,20 +180,21 @@ func buildModelInsightsHTML(
 			}
 		}
 
-		if advantage.TotalAdvantage != 0 {
-			sign := "+"
-			if advantage.TotalAdvantage < 0 {
-				sign = ""
-			}
-			team := homeCode
-			if advantage.TotalAdvantage < 0 {
-				team = awayCode
-			}
-			html += fmt.Sprintf(`
-			<div class="insight-item highlight">
-				<strong>H2H Advantage:</strong> %s%.1f%% for %s
-			</div>
-			`, sign, advantage.TotalAdvantage*100, team)
+	if advantage.TotalAdvantage != 0 {
+		team := homeCode
+		advantagePct := advantage.TotalAdvantage * 100
+		
+		// If advantage is negative, switch to away team and make percentage positive
+		if advantage.TotalAdvantage < 0 {
+			team = awayCode
+			advantagePct = -advantagePct // Make positive for display
+		}
+		
+		html += fmt.Sprintf(`
+		<div class="insight-item highlight">
+			<strong>H2H Advantage:</strong> +%.1f%% for %s
+		</div>
+		`, advantagePct, team)
 		}
 
 		html += `</div></div>` // Close insight-grid and matchup-section
