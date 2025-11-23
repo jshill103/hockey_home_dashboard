@@ -295,6 +295,9 @@ func (mes *ModelEvaluationService) AddGameToBatch(game models.CompletedGame) err
 	// NEW: Persist batch queues after every update (survives pod restarts)
 	if err := mes.saveBatchQueues(); err != nil {
 		log.Printf("⚠️ Failed to save batch queues: %v", err)
+	} else {
+		log.Printf("💾 Batch queues saved: NN:%d GB:%d LSTM:%d RF:%d",
+			len(mes.nnBatch), len(mes.gbBatch), len(mes.lstmBatch), len(mes.rfBatch))
 	}
 
 	return nil
@@ -815,9 +818,10 @@ func (mes *ModelEvaluationService) saveBatchQueues() error {
 
 	err = ioutil.WriteFile(filePath, jsonData, 0644)
 	if err != nil {
-		return fmt.Errorf("error writing batch queues file: %w", err)
+		return fmt.Errorf("error writing batch queues file (%s): %w", filePath, err)
 	}
 
+	log.Printf("📝 Batch queues written to %s", filePath)
 	return nil
 }
 
