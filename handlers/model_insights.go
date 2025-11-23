@@ -278,41 +278,56 @@ func buildModelInsightsHTML(
 		html += `<div class="section-title">⭐ Player Impact Analysis</div>`
 		html += `<div class="insight-grid">`
 
-		if comparison.StarPowerAdvantage != 0 {
-			team := homeCode
-			if comparison.StarPowerAdvantage < 0 {
-				team = awayCode
-			}
-			html += fmt.Sprintf(`
-			<div class="insight-item">
-				⭐ Star Power Edge: %s (%+.1f%%)
-			</div>
-			`, team, comparison.StarPowerAdvantage*100)
+	if comparison.StarPowerAdvantage != 0 {
+		team := homeCode
+		advantage := comparison.StarPowerAdvantage * 100
+		
+		// If advantage is negative, switch to away team and make percentage positive
+		if comparison.StarPowerAdvantage < 0 {
+			team = awayCode
+			advantage = -advantage
 		}
+		
+		html += fmt.Sprintf(`
+		<div class="insight-item">
+			⭐ Star Power Edge: %s (+%.1f%%)
+		</div>
+		`, team, advantage)
+	}
 
-		if comparison.DepthAdvantage != 0 {
-			team := homeCode
-			if comparison.DepthAdvantage < 0 {
-				team = awayCode
-			}
-			html += fmt.Sprintf(`
-			<div class="insight-item">
-				📊 Depth Advantage: %s (%+.1f%%)
-			</div>
-			`, team, comparison.DepthAdvantage*100)
+	if comparison.DepthAdvantage != 0 {
+		team := homeCode
+		advantage := comparison.DepthAdvantage * 100
+		
+		// If advantage is negative, switch to away team and make percentage positive
+		if comparison.DepthAdvantage < 0 {
+			team = awayCode
+			advantage = -advantage
 		}
+		
+		html += fmt.Sprintf(`
+		<div class="insight-item">
+			📊 Depth Advantage: %s (+%.1f%%)
+		</div>
+		`, team, advantage)
+	}
 
-		if comparison.TotalPlayerImpact != 0 {
-			team := homeCode
-			if comparison.TotalPlayerImpact < 0 {
-				team = awayCode
-			}
-			html += fmt.Sprintf(`
-			<div class="insight-item highlight">
-				<strong>Total Player Edge:</strong> %s (%+.1f%%)
-			</div>
-			`, team, comparison.TotalPlayerImpact*100)
+	if comparison.TotalPlayerImpact != 0 {
+		team := homeCode
+		advantage := comparison.TotalPlayerImpact * 100
+		
+		// If advantage is negative, switch to away team and make percentage positive
+		if comparison.TotalPlayerImpact < 0 {
+			team = awayCode
+			advantage = -advantage
 		}
+		
+		html += fmt.Sprintf(`
+		<div class="insight-item highlight">
+			<strong>Total Player Edge:</strong> %s (+%.1f%%)
+		</div>
+		`, team, advantage)
+	}
 
 		html += `</div></div>` // Close insight-grid and player-section
 	}
