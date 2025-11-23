@@ -19,6 +19,7 @@ import (
 type ModelEvaluationService struct {
 	dataDir        string
 	metricsDir     string
+	batchesDir     string // NEW: Directory for persisting batch queues
 	modelMetrics   map[string]*models.ModelEvaluationMetrics
 	predictions    []models.PredictionOutcome
 	completedGames []models.CompletedGame
@@ -46,6 +47,7 @@ func NewModelEvaluationService(neuralNet *NeuralNetworkModel, elo *EloRatingMode
 	service := &ModelEvaluationService{
 		dataDir:      "data/evaluation",
 		metricsDir:   "data/metrics",
+		batchesDir:   "data/batches", // NEW: Persistent batch storage
 		modelMetrics: make(map[string]*models.ModelEvaluationMetrics),
 		predictions:  []models.PredictionOutcome{},
 		neuralNet:    neuralNet,
@@ -63,6 +65,7 @@ func NewModelEvaluationService(neuralNet *NeuralNetworkModel, elo *EloRatingMode
 	// Create directories
 	os.MkdirAll(service.dataDir, 0755)
 	os.MkdirAll(service.metricsDir, 0755)
+	os.MkdirAll(service.batchesDir, 0755) // NEW: Create batch storage directory
 
 	// Load existing metrics
 	if err := service.loadMetrics(); err != nil {
@@ -74,6 +77,14 @@ func NewModelEvaluationService(neuralNet *NeuralNetworkModel, elo *EloRatingMode
 	// Load completed games for evaluation
 	if err := service.loadCompletedGames(); err != nil {
 		log.Printf("⚠️ Could not load completed games: %v", err)
+	}
+
+	// NEW: Load persisted batch queues
+	if err := service.loadBatchQueues(); err != nil {
+		log.Printf("⚠️ Could not load batch queues: %v (starting fresh)", err)
+	} else {
+		log.Printf("📦 Loaded batch queues: NN:%d GB:%d LSTM:%d RF:%d",
+			len(service.nnBatch), len(service.gbBatch), len(service.lstmBatch), len(service.rfBatch))
 	}
 
 	return service
@@ -279,6 +290,11 @@ func (mes *ModelEvaluationService) AddGameToBatch(game models.CompletedGame) err
 			len(mes.gbBatch), gbBatchSize,
 			len(mes.lstmBatch), lstmBatchSize,
 			len(mes.rfBatch), rfBatchSize)
+	}
+
+	// NEW: Persist batch queues after every update (survives pod restarts)
+	if err := mes.saveBatchQueues(); err != nil {
+		log.Printf("⚠️ Failed to save batch queues: %v", err)
 	}
 
 	return nil
@@ -771,6 +787,79 @@ func (mes *ModelEvaluationService) loadCompletedGames() error {
 	return nil
 }
 
+// saveBatchQueues persists all model-specific batch queues to disk
+// This ensures batch queues survive pod restarts
+func (mes *ModelEvaluationService) saveBatchQueues() error {
+	type BatchQueues struct {
+		NNBatch    []models.CompletedGame `json:"nn_batch"`
+		GBBatch    []models.CompletedGame `json:"gb_batch"`
+		LSTMBatch  []models.CompletedGame `json:"lstm_batch"`
+		RFBatch    []models.CompletedGame `json:"rf_batch"`
+		SavedAt    time.Time              `json:"saved_at"`
+	}
+
+	queues := BatchQueues{
+		NNBatch:   mes.nnBatch,
+		GBBatch:   mes.gbBatch,
+		LSTMBatch: mes.lstmBatch,
+		RFBatch:   mes.rfBatch,
+		SavedAt:   time.Now(),
+	}
+
+	filePath := filepath.Join(mes.batchesDir, "batch_queues.json")
+
+	jsonData, err := json.MarshalIndent(queues, "", "  ")
+	if err != nil {
+		return fmt.Errorf("error marshaling batch queues: %w", err)
+	}
+
+	err = ioutil.WriteFile(filePath, jsonData, 0644)
+	if err != nil {
+		return fmt.Errorf("error writing batch queues file: %w", err)
+	}
+
+	return nil
+}
+
+// loadBatchQueues loads persisted batch queues from disk
+func (mes *ModelEvaluationService) loadBatchQueues() error {
+	type BatchQueues struct {
+		NNBatch    []models.CompletedGame `json:"nn_batch"`
+		GBBatch    []models.CompletedGame `json:"gb_batch"`
+		LSTMBatch  []models.CompletedGame `json:"lstm_batch"`
+		RFBatch    []models.CompletedGame `json:"rf_batch"`
+		SavedAt    time.Time              `json:"saved_at"`
+	}
+
+	filePath := filepath.Join(mes.batchesDir, "batch_queues.json")
+
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		// No batch queues file - this is fine on first run
+		return nil
+	}
+
+	jsonData, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("error reading batch queues file: %w", err)
+	}
+
+	var queues BatchQueues
+	err = json.Unmarshal(jsonData, &queues)
+	if err != nil {
+		return fmt.Errorf("error unmarshaling batch queues: %w", err)
+	}
+
+	// Restore batch queues
+	mes.nnBatch = queues.NNBatch
+	mes.gbBatch = queues.GBBatch
+	mes.lstmBatch = queues.LSTMBatch
+	mes.rfBatch = queues.RFBatch
+
+	log.Printf("📦 Restored batch queues from %s", queues.SavedAt.Format("2006-01-02 15:04:05"))
+
+	return nil
+}
+
 // Helper methods
 func (mes *ModelEvaluationService) buildFactors(game models.CompletedGame, isHome bool) *models.PredictionFactors {
 	var team, opponent models.TeamGameResult
@@ -845,13 +934,18 @@ func (mes *ModelEvaluationService) getLosingTeam(game *models.CompletedGame) str
 // PHASE 4: PERIODIC AUTO-SAVE
 // ============================================================================
 
-// StartPeriodicSave saves all model weights every 30 minutes
+// StartPeriodicSave saves all model weights and batch queues every 30 minutes
 func (mes *ModelEvaluationService) StartPeriodicSave() {
 	ticker := time.NewTicker(30 * time.Minute)
 	go func() {
 		for range ticker.C {
 			log.Printf("💾 Periodic model save triggered...")
 			mes.SaveAllModels()
+			
+			// Also save batch queues
+			if err := mes.saveBatchQueues(); err != nil {
+				log.Printf("⚠️ Failed to save batch queues during periodic save: %v", err)
+			}
 		}
 	}()
 }
