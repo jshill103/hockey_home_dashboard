@@ -336,9 +336,10 @@ func (gis *GoalieIntelligenceService) FetchGoalieStats(teamCode string, season i
 						goalieName, goalie.PlayerID, teamCode)
 				}
 			}
+			totalGoalies := len(clubStats.Goalies)
 			clubStats.Goalies = validGoalies
 			log.Printf("🏒 Goalie roster validation: %d/%d goalies on current roster",
-				len(validGoalies), len(clubStats.Goalies))
+				len(validGoalies), totalGoalies)
 		}
 	}
 
@@ -364,6 +365,7 @@ func (gis *GoalieIntelligenceService) FetchGoalieStats(teamCode string, season i
 			PlayerID:             starter.PlayerID,
 			Name:                 fmt.Sprintf("%s %s", starter.FirstName.Default, starter.LastName.Default),
 			TeamCode:             teamCode,
+			LastUpdated:          time.Now(),
 			SeasonGamesPlayed:    starter.GamesPlayed,
 			SeasonWins:           starter.Wins,
 			SeasonLosses:         starter.Losses,
@@ -387,6 +389,7 @@ func (gis *GoalieIntelligenceService) FetchGoalieStats(teamCode string, season i
 			PlayerID:             backup.PlayerID,
 			Name:                 fmt.Sprintf("%s %s", backup.FirstName.Default, backup.LastName.Default),
 			TeamCode:             teamCode,
+			LastUpdated:          time.Now(),
 			SeasonGamesPlayed:    backup.GamesPlayed,
 			SeasonWins:           backup.Wins,
 			SeasonLosses:         backup.Losses,
@@ -418,6 +421,7 @@ func (gis *GoalieIntelligenceService) FetchGoalieStats(teamCode string, season i
 			Starter:         starterInfoPtr,
 			Backup:          backupInfoPtr,
 			StartingTonight: nil, // Would be updated from injury reports / team news
+			LastUpdated:     time.Now(),
 		}
 	}
 
@@ -599,12 +603,12 @@ func (gis *GoalieIntelligenceService) RecordGoalieMatchup(goalieID int, goalieNa
 
 	// Create game record
 	start := models.GoalieStart{
-		GameDate:      gameDate,
-		Result:        "L",
-		Saves:         saves,
-		ShotsAgainst:  shotsAgainst,
-		GoalsAgainst:  goalsAgainst,
-		SavePct:       savePct,
+		GameDate:     gameDate,
+		Result:       "L",
+		Saves:        saves,
+		ShotsAgainst: shotsAgainst,
+		GoalsAgainst: goalsAgainst,
+		SavePct:      savePct,
 	}
 
 	if won {

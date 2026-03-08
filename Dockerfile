@@ -60,11 +60,6 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Default team (can be overridden)
 ENV TEAM_CODE=UTA
 
-# Weather API Keys (optional - if not set, weather analysis will be disabled)
-# ENV OPENWEATHER_API_KEY=""
-# ENV WEATHER_API_KEY=""
-# ENV ACCUWEATHER_API_KEY=""
-
 # Run the application directly (directory initialization now in Go code)
 # Using exec form - TEAM_CODE environment variable read by Go code
 CMD ["/app/web_server"]

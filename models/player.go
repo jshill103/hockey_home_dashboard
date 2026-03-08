@@ -80,8 +80,8 @@ type ClubGoalieStats struct {
 	Wins            int        `json:"wins"`
 	Losses          int        `json:"losses"`
 	OvertimeLosses  int        `json:"overtimeLosses"`
-	SavePct         float64    `json:"savePctg"`
-	GoalsAgainstAvg float64    `json:"goalsAgainstAvg"`
+	SavePct         float64    `json:"savePercentage"`
+	GoalsAgainstAvg float64    `json:"goalsAgainstAverage"`
 	Shutouts        int        `json:"shutouts"`
 	GoalsAgainst    int        `json:"goalsAgainst"`
 	ShotsAgainst    int        `json:"shotsAgainst"`

@@ -50,7 +50,7 @@ var (
 // This replaces the docker-entrypoint.sh script functionality
 func initializeDataDirectories() error {
 	fmt.Println("📁 Initializing data directories...")
-	
+
 	directories := []string{
 		"data/accuracy",
 		"data/models",
@@ -70,12 +70,11 @@ func initializeDataDirectories() error {
 		"data/rosters",
 		"data/evaluation",
 		"data/goalies",
-		"data/betting_markets",
 		"data/architecture_search",
 		"data/time_weighted_stats",
 		"data/feature_importance",
 	}
-	
+
 	for _, dir := range directories {
 		fullPath := "/app/" + dir
 		if err := os.MkdirAll(fullPath, 0755); err != nil {
@@ -83,7 +82,7 @@ func initializeDataDirectories() error {
 			fmt.Printf("   ⚠️  Warning: Could not create %s: %v (continuing anyway)\n", dir, err)
 		}
 	}
-	
+
 	// Try to create a test file to verify write permissions
 	testFile := "/app/data/.write_test"
 	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
@@ -94,7 +93,7 @@ func initializeDataDirectories() error {
 		os.Remove(testFile)
 		fmt.Println("   ✅ Data directory is writable")
 	}
-	
+
 	fmt.Println("✅ Data directories initialized successfully")
 	return nil
 }
@@ -105,38 +104,11 @@ func main() {
 	if defaultTeam == "" {
 		defaultTeam = "UTA"
 	}
-	
+
 	// Parse command line arguments
 	teamCodeFlag := flag.String("team", defaultTeam, "NHL team code (e.g., UTA, COL, NYR, BOS)")
 
-	// Weather API key flags (optional - for enabling weather analysis)
-	openWeatherAPIKey := flag.String("openweather-key", "", "OpenWeatherMap API key for weather analysis")
-	weatherAPIKey := flag.String("weather-key", "", "WeatherAPI key for weather analysis")
-	accuWeatherAPIKey := flag.String("accuweather-key", "", "AccuWeather API key for weather analysis")
-
-	// Odds API key flag (optional - for enabling betting market integration)
-	oddsAPIKey := flag.String("odds-key", "", "The Odds API key for betting market data")
-
 	flag.Parse()
-
-	// Set environment variables from command line flags if provided
-	// This allows command line flags to override environment variables
-	if *openWeatherAPIKey != "" {
-		os.Setenv("OPENWEATHER_API_KEY", *openWeatherAPIKey)
-		fmt.Printf("🌦️ OpenWeatherMap API key set via command line\n")
-	}
-	if *weatherAPIKey != "" {
-		os.Setenv("WEATHER_API_KEY", *weatherAPIKey)
-		fmt.Printf("🌦️ WeatherAPI key set via command line\n")
-	}
-	if *accuWeatherAPIKey != "" {
-		os.Setenv("ACCUWEATHER_API_KEY", *accuWeatherAPIKey)
-		fmt.Printf("🌦️ AccuWeather API key set via command line\n")
-	}
-	if *oddsAPIKey != "" {
-		os.Setenv("ODDS_API_KEY", *oddsAPIKey)
-		fmt.Printf("💰 Odds API key set via command line\n")
-	}
 
 	// Initialize team configuration
 	teamCode := strings.ToUpper(*teamCodeFlag)
@@ -177,7 +149,6 @@ func main() {
 		fmt.Printf("Initial schedule loaded: %s vs %s on %s\n",
 			awayTeam, homeTeam, game.GameDate)
 	}
-
 
 	// Initialize season status on startup
 	fmt.Println("Initializing season status...")
@@ -389,18 +360,18 @@ func main() {
 		eloModel := liveSys.GetEloModel()
 		poissonModel := liveSys.GetPoissonModel()
 
-	if err := services.InitializeEvaluationService(neuralNet, eloModel, poissonModel); err != nil {
-		fmt.Printf("⚠️ Warning: Failed to initialize evaluation service: %v\n", err)
-	} else {
-		fmt.Printf("✅ Model Evaluation Service initialized\n")
-		
-		// Start periodic auto-save (every 30 minutes)
-		if evalSvc := services.GetEvaluationService(); evalSvc != nil {
-			evalSvc.StartPeriodicSave()
-			fmt.Println("✅ Periodic model save started (every 30 minutes)")
+		if err := services.InitializeEvaluationService(neuralNet, eloModel, poissonModel); err != nil {
+			fmt.Printf("⚠️ Warning: Failed to initialize evaluation service: %v\n", err)
+		} else {
+			fmt.Printf("✅ Model Evaluation Service initialized\n")
+
+			// Start periodic auto-save (every 30 minutes)
+			if evalSvc := services.GetEvaluationService(); evalSvc != nil {
+				evalSvc.StartPeriodicSave()
+				fmt.Println("✅ Periodic model save started (every 30 minutes)")
+			}
 		}
 	}
-}
 
 	// Initialize Game Results Collection Service for automatic model learning
 	// NOTE: This MUST come AFTER EvaluationService so they can be linked for batch training
@@ -462,14 +433,6 @@ func main() {
 	// Goalie Intelligence Service (already initialized above, skip duplicate)
 	// Note: Goalie service was initialized earlier at line 337-342
 
-	// Betting Market Service (optional - requires ODDS_API_KEY)
-	fmt.Println("Initializing Betting Market Service...")
-	if err := services.InitializeBettingMarketService(); err != nil {
-		fmt.Printf("⚠️ Warning: Failed to initialize betting market service: %v\n", err)
-	} else {
-		fmt.Printf("✅ Betting Market Service initialized\n")
-	}
-
 	// Schedule Context Service
 	fmt.Println("Initializing Schedule Context Service...")
 	if err := services.InitializeScheduleContextService(); err != nil {
@@ -485,9 +448,8 @@ func main() {
 
 	fmt.Println("🎉 Phase 4 services ready! Predictions now include:")
 	fmt.Println("   🥅 Goalie Intelligence (+3-4% accuracy)")
-	fmt.Println("   💰 Betting Market Data (+2-3% accuracy)")
 	fmt.Println("   📅 Schedule Context (+1-2% accuracy)")
-	fmt.Println("   🎯 Expected Total: +6-9% accuracy improvement!")
+	fmt.Println("   🎯 Expected Total: +4-6% accuracy improvement!")
 
 	// ============================================================================
 	// PHASE 6: FEATURE ENGINEERING
@@ -705,7 +667,7 @@ func main() {
 
 	// Register handlers
 	http.HandleFunc("/schedule", handlers.HandleSchedule)
-	
+
 	// Schedule API endpoints (JSON) for external applications
 	http.HandleFunc("/api/schedule/next", handlers.HandleScheduleAPI)
 	http.HandleFunc("/api/schedule/upcoming", handlers.HandleScheduleAPI)
@@ -713,7 +675,7 @@ func main() {
 	http.HandleFunc("/api/schedule/all-teams", handlers.HandleAllTeamsScheduleAPI)
 	http.HandleFunc("/api/schedule/health", handlers.HandleScheduleHealthAPI)
 	fmt.Println("📅 Schedule API endpoints registered (for external apps like video analyzer)")
-	
+
 	http.HandleFunc("/banner", handlers.HandleBanner)
 	http.HandleFunc("/mammoth-analysis", handlers.HandleTeamAnalysis)
 	http.HandleFunc("/season-status", handlers.HandleSeasonStatus)
@@ -724,10 +686,10 @@ func main() {
 	http.HandleFunc("/season-countdown-json", handlers.HandleSeasonCountdownJSON)
 	http.HandleFunc("/api-test", handlers.HandleAPITest)
 	http.HandleFunc("/playoff-odds", handlers.HandlePlayoffOdds)
-	http.HandleFunc("/api/what-if", handlers.HandleWhatIf)                    // Phase 4.3: What-If simulator
-	http.HandleFunc("/api/what-if/scenarios", handlers.HandleWhatIfScenarios) // Phase 4.3: Common scenarios
-	http.HandleFunc("/api/simulation/metrics", handlers.HandleSimulationMetrics)    // Phase 5.5: Performance metrics
-	http.HandleFunc("/api/simulation/reset-metrics", handlers.HandleResetMetrics)   // Phase 5.5: Reset metrics
+	http.HandleFunc("/api/what-if", handlers.HandleWhatIf)                        // Phase 4.3: What-If simulator
+	http.HandleFunc("/api/what-if/scenarios", handlers.HandleWhatIfScenarios)     // Phase 4.3: Common scenarios
+	http.HandleFunc("/api/simulation/metrics", handlers.HandleSimulationMetrics)  // Phase 5.5: Performance metrics
+	http.HandleFunc("/api/simulation/reset-metrics", handlers.HandleResetMetrics) // Phase 5.5: Reset metrics
 
 	// AI Prediction endpoints
 	// Register prediction routes (available regardless of season status for testing)
@@ -748,13 +710,13 @@ func main() {
 	// Play-by-Play Analytics endpoints
 	http.HandleFunc("/api/backfill-pbp", handlers.HandleBackfillPlayByPlay)
 	http.HandleFunc("/api/pbp-stats", handlers.HandlePlayByPlayStats)
-	
+
 	// Game Results backfill endpoint (for processing missed games)
 	http.HandleFunc("/api/backfill-games", handlers.HandleBackfillGameResults)
-	
+
 	// Force training endpoint (for training on existing completed games)
 	http.HandleFunc("/api/force-training", handlers.HandleForceTraining)
-	
+
 	// Check unprocessed predictions endpoint
 	http.HandleFunc("/api/check-predictions", handlers.HandleCheckUnprocessedPredictions)
 

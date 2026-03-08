@@ -13,7 +13,6 @@ import (
 type SituationalAnalyzer struct {
 	teamCode          string
 	advancedAnalytics *AdvancedAnalyticsService
-	weatherService    *WeatherAnalysisService
 }
 
 // NewSituationalAnalyzer creates a new situational analyzer
@@ -21,7 +20,6 @@ func NewSituationalAnalyzer(teamCode string) *SituationalAnalyzer {
 	return &SituationalAnalyzer{
 		teamCode:          teamCode,
 		advancedAnalytics: NewAdvancedAnalyticsService(),
-		weatherService:    NewWeatherAnalysisService(),
 	}
 }
 
@@ -71,74 +69,15 @@ func (sa *SituationalAnalyzer) AnalyzeSituationalFactors(teamCode, opponentCode 
 	baseFactors.MomentumFactors = momentumFactors
 	baseFactors.AdvancedStats = *advancedStats // Advanced analytics integration
 
-	// 🌦️ Weather impact analysis (skip if weather service is disabled)
-	var weatherAnalysis models.WeatherAnalysis
-	if sa.weatherService != nil && sa.weatherService.IsEnabled() {
-		weatherAnalysis = sa.analyzeWeatherImpact(teamCode, opponentCode, gameVenue)
-	} else {
-		// Create a neutral weather analysis when service is disabled
-		weatherAnalysis = models.WeatherAnalysis{
-			GameID:        fmt.Sprintf("%s_vs_%s", teamCode, opponentCode),
-			HomeTeam:      teamCode,
-			AwayTeam:      opponentCode,
-			GameDate:      time.Now().Add(24 * time.Hour),
-			VenueName:     gameVenue,
-			VenueCity:     gameVenue,
-			IsOutdoorGame: false,
-			WeatherConditions: models.WeatherConditions{
-				DataSource:  "Disabled",
-				Reliability: 0.0,
-			},
-			TravelImpact: models.TravelWeatherImpact{
-				OverallImpact: 0.0,
-			},
-			GameImpact: models.GameWeatherImpact{
-				OverallGameImpact: 0.0,
-			},
-			OverallImpact: 0.0,
-			Confidence:    0.0,
-			LastUpdated:   time.Now(),
-		}
-		log.Printf("⚠️ Weather analysis skipped - service disabled (no API keys)")
-	}
-	baseFactors.WeatherAnalysis = weatherAnalysis
+	// Weather is intentionally disabled for prediction quality and consistency.
+	baseFactors.WeatherAnalysis = sa.defaultWeatherAnalysis(teamCode, opponentCode, gameVenue)
 
 	fmt.Printf("✅ Situational analysis complete for %s (Advanced Rating: %.1f)\n",
 		teamCode, advancedStats.OverallRating)
 	return baseFactors, nil
 }
 
-// analyzeWeatherImpact analyzes weather conditions and their impact on the game
-func (sa *SituationalAnalyzer) analyzeWeatherImpact(teamCode, opponentCode, gameVenue string) models.WeatherAnalysis {
-	log.Printf("🌦️ Analyzing weather impact for %s vs %s at %s...", teamCode, opponentCode, gameVenue)
-
-	if sa.weatherService == nil || !sa.weatherService.IsEnabled() {
-		log.Printf("⚠️ Weather service not available, using default analysis")
-		return sa.generateDefaultWeatherAnalysis(teamCode, opponentCode, gameVenue)
-	}
-
-	// Convert venue name to city name for weather lookup
-	cityName := sa.venueToCityName(gameVenue, teamCode)
-
-	// Get weather analysis from the weather service
-	// For now, we'll generate a game ID and use current time for the game date
-	gameID := fmt.Sprintf("%s_vs_%s", teamCode, opponentCode)
-	gameDate := time.Now().Add(24 * time.Hour) // Assume game is tomorrow
-
-	weatherAnalysis, err := sa.weatherService.AnalyzeWeatherImpact(teamCode, opponentCode, cityName, gameDate, gameID)
-	if err != nil {
-		log.Printf("⚠️ Error getting weather analysis: %v, using default", err)
-		return sa.generateDefaultWeatherAnalysis(teamCode, opponentCode, cityName)
-	}
-
-	log.Printf("✅ Weather analysis complete: Overall Impact %.2f, Confidence %.1f%%",
-		weatherAnalysis.OverallImpact, weatherAnalysis.Confidence*100)
-
-	return *weatherAnalysis
-}
-
-// generateDefaultWeatherAnalysis creates a default weather analysis when service is unavailable
-func (sa *SituationalAnalyzer) generateDefaultWeatherAnalysis(teamCode, opponentCode, gameVenue string) models.WeatherAnalysis {
+func (sa *SituationalAnalyzer) defaultWeatherAnalysis(teamCode, opponentCode, gameVenue string) models.WeatherAnalysis {
 	return models.WeatherAnalysis{
 		GameID:        fmt.Sprintf("%s_vs_%s", teamCode, opponentCode),
 		HomeTeam:      teamCode,
@@ -158,8 +97,8 @@ func (sa *SituationalAnalyzer) generateDefaultWeatherAnalysis(teamCode, opponent
 			PrecipType:    "none",
 			Visibility:    10.0,
 			CloudCover:    30.0,
-			DataSource:    "Default",
-			Reliability:   0.5,
+			DataSource:    "Disabled",
+			Reliability:   0.0,
 		},
 		TravelImpact: models.TravelWeatherImpact{
 			OverallImpact: 0.0,
@@ -168,71 +107,9 @@ func (sa *SituationalAnalyzer) generateDefaultWeatherAnalysis(teamCode, opponent
 			OverallGameImpact: 0.0,
 		},
 		OverallImpact: 0.0,
-		Confidence:    0.5,
+		Confidence:    0.0,
 		LastUpdated:   time.Now(),
 	}
-}
-
-// venueToCityName converts venue names to city names for weather lookup
-func (sa *SituationalAnalyzer) venueToCityName(venueName, homeTeamCode string) string {
-	// Venue name to city mapping
-	venueToCity := map[string]string{
-		"Delta Center":             "Utah",
-		"Ball Arena":               "Colorado",
-		"T-Mobile Arena":           "Vegas",
-		"Crypto.com Arena":         "Los Angeles",
-		"SAP Center":               "San Jose",
-		"Climate Pledge Arena":     "Seattle",
-		"Rogers Arena":             "Vancouver",
-		"Scotiabank Arena":         "Toronto",
-		"Bell Centre":              "Montreal",
-		"TD Garden":                "Boston",
-		"Madison Square Garden":    "New York",
-		"Prudential Center":        "New Jersey",
-		"Wells Fargo Center":       "Philadelphia",
-		"PPG Paints Arena":         "Pittsburgh",
-		"Capital One Arena":        "Washington",
-		"PNC Arena":                "Carolina",
-		"FLA Live Arena":           "Florida",
-		"Amalie Arena":             "Tampa Bay",
-		"Little Caesars Arena":     "Detroit",
-		"Nationwide Arena":         "Columbus",
-		"KeyBank Center":           "Buffalo",
-		"Canadian Tire Centre":     "Ottawa",
-		"United Center":            "Chicago",
-		"Xcel Energy Center":       "Minnesota",
-		"Enterprise Center":        "St. Louis",
-		"American Airlines Center": "Dallas",
-		"Bridgestone Arena":        "Nashville",
-		"Rogers Place":             "Edmonton",
-		"Scotiabank Saddledome":    "Calgary",
-		"Canada Life Centre":       "Winnipeg",
-		"Honda Center":             "Anaheim",
-	}
-
-	// Check if we have a direct mapping
-	if city, exists := venueToCity[venueName]; exists {
-		return city
-	}
-
-	// Fallback: use team code to city mapping
-	teamToCity := map[string]string{
-		"UTA": "Utah", "COL": "Colorado", "VGK": "Vegas", "LAK": "Los Angeles",
-		"SJS": "San Jose", "SEA": "Seattle", "VAN": "Vancouver", "TOR": "Toronto",
-		"MTL": "Montreal", "BOS": "Boston", "NYR": "New York", "NJD": "New Jersey",
-		"PHI": "Philadelphia", "PIT": "Pittsburgh", "WSH": "Washington", "CAR": "Carolina",
-		"FLA": "Florida", "TBL": "Tampa Bay", "DET": "Detroit", "CBJ": "Columbus",
-		"BUF": "Buffalo", "OTT": "Ottawa", "CHI": "Chicago", "MIN": "Minnesota",
-		"STL": "St. Louis", "DAL": "Dallas", "NSH": "Nashville", "EDM": "Edmonton",
-		"CGY": "Calgary", "WPG": "Winnipeg", "ANA": "Anaheim",
-	}
-
-	if city, exists := teamToCity[homeTeamCode]; exists {
-		return city
-	}
-
-	// Final fallback: return the venue name (will likely fail, but at least we tried)
-	return venueName
 }
 
 // analyzeTravelFatigue calculates travel-related fatigue factors

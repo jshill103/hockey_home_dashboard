@@ -208,7 +208,7 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 			// Initialize with defaults
 			homeFactors.OpponentFatigue = 0.0 // No fatigue by default
 			awayFactors.OpponentFatigue = 0.0
-			
+
 			if restAdv.AwayOnB2B {
 				homeFactors.OpponentFatigue = 0.75 + (restAdv.AwayB2BPenalty * -2.0) // Convert penalty to fatigue
 			}
@@ -280,7 +280,7 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 	if streakService != nil {
 		homeStreak := streakService.GetCurrentStreak(homeFactors.TeamCode)
 		awayStreak := streakService.GetCurrentStreak(awayFactors.TeamCode)
-		
+
 		streakImpact := streakService.CalculateStreakImpact(homeStreak, awayStreak)
 		homeFactors.CurrentStreak = homeStreak.Length
 		if homeStreak.Type == "Loss" {
@@ -290,10 +290,10 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 		if awayStreak.Type == "Loss" {
 			awayFactors.CurrentStreak = -awayStreak.Length
 		}
-		
+
 		homeFactors.StreakImpact = streakImpact
 		awayFactors.StreakImpact = -streakImpact
-		
+
 		if math.Abs(streakImpact) > 0.03 {
 			fmt.Printf("🔥 Streak Impact: %s (%d-game %s) vs %s (%d-game %s) = %.1f%%\n",
 				homeFactors.TeamCode, homeStreak.Length, homeStreak.Type,
@@ -307,12 +307,12 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 	if momentumService != nil {
 		homeMomentum := momentumService.GetMomentum(homeFactors.TeamCode)
 		awayMomentum := momentumService.GetMomentum(awayFactors.TeamCode)
-		
+
 		homeFactors.MomentumScore = homeMomentum.Overall
 		homeFactors.MomentumTrend = homeMomentum.Trend
 		awayFactors.MomentumScore = awayMomentum.Overall
 		awayFactors.MomentumTrend = awayMomentum.Trend
-		
+
 		momentumGap := homeMomentum.Overall - awayMomentum.Overall
 		if math.Abs(momentumGap) > 0.3 {
 			fmt.Printf("📈 Momentum: %s (%.2f) vs %s (%.2f) - Gap: %.2f\n",
@@ -327,13 +327,13 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 	if clutchService != nil {
 		homeClutch := clutchService.GetClutchFactor(homeFactors.TeamCode)
 		awayClutch := clutchService.GetClutchFactor(awayFactors.TeamCode)
-		
+
 		homeFactors.ClutchFactor = homeClutch
 		awayFactors.ClutchFactor = awayClutch
-		
+
 		// Get additional clutch metrics if needed
 		// (CloseGamePerformance and ThirdPeriodStrength would be populated here)
-		
+
 		clutchGap := homeClutch - awayClutch
 		if math.Abs(clutchGap) > 0.03 {
 			fmt.Printf("🎯 Clutch Factor: %s (%.2f) vs %s (%.2f) - Advantage: %.2f\n",
@@ -362,11 +362,11 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 	playstyleService := GetPlaystyleMatchupService()
 	if playstyleService != nil {
 		matchup := playstyleService.ComparePlaystyles(homeFactors.TeamCode, awayFactors.TeamCode)
-		
+
 		if matchup != nil {
 			homeFactors.PlaystyleAdvantage = matchup.ImpactFactor
 			awayFactors.PlaystyleAdvantage = -matchup.ImpactFactor
-			
+
 			if math.Abs(matchup.ImpactFactor) > 0.03 {
 				fmt.Printf("🎨 Playstyle: %s (%s) vs %s (%s) - %s advantage: %.1f%%\n",
 					homeFactors.TeamCode, matchup.HomeStyle,
@@ -382,22 +382,22 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 		// Create TeamStats from PredictionFactors
 		homeStats := convertPredictionFactorsToTeamStats(homeFactors)
 		awayStats := convertPredictionFactorsToTeamStats(awayFactors)
-		
+
 		advantages := tacticalService.AnalyzeTacticalAdvantages(
 			homeFactors.TeamCode, awayFactors.TeamCode,
 			homeStats, awayStats)
-		
+
 		tacticalImpact := tacticalService.CalculateTotalTacticalImpact(advantages)
 		homeFactors.TacticalAdvantage = tacticalImpact
 		awayFactors.TacticalAdvantage = -tacticalImpact
-		
+
 		// Special teams matchup
 		stImpact := tacticalService.GetSpecialTeamsAdvantage(
 			homeFactors.TeamCode, awayFactors.TeamCode,
 			homeStats, awayStats)
 		homeFactors.SpecialTeamsMatchup = stImpact
 		awayFactors.SpecialTeamsMatchup = -stImpact
-		
+
 		if math.Abs(tacticalImpact) > 0.03 {
 			fmt.Printf("⚔️ Tactical Advantage: %s by %.1f%% (ST: %.1f%%)\n",
 				getTacticalAdvantageTeam(tacticalImpact, homeFactors.TeamCode, awayFactors.TeamCode),
@@ -411,22 +411,11 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 	homeFactors.OpponentSpecificAdjust = opponentAdjustment
 	awayFactors.OpponentSpecificAdjust = -opponentAdjustment
 
-	// 2. Betting Market Intelligence
-	marketService := GetBettingMarketService()
-	if marketService != nil && marketService.isEnabled {
-		marketAdj, err := marketService.GetMarketAdjustment(homeFactors.TeamCode, awayFactors.TeamCode, time.Now())
-		if err == nil && marketAdj != nil {
-			homeFactors.MarketConsensus = marketAdj.MarketPrediction
-			awayFactors.MarketConsensus = 1.0 - marketAdj.MarketPrediction
-			homeFactors.MarketConfidenceVal = marketAdj.MarketEfficiency
-
-			if marketAdj.MarketPrediction > 0 {
-				fmt.Printf("💰 Market Consensus: %.1f%% home win (confidence: %.1f%%)\n",
-					marketAdj.MarketPrediction*100,
-					marketAdj.MarketEfficiency*100)
-			}
-		}
-	}
+	// Betting market inputs are intentionally disabled. Keep market factors neutral.
+	homeFactors.MarketConsensus = 0.0
+	awayFactors.MarketConsensus = 0.0
+	homeFactors.MarketConfidenceVal = 0.0
+	awayFactors.MarketConfidenceVal = 0.0
 
 	// ============================================================================
 	// NEW: FEATURE INTERACTION ENGINEERING (+20 compound features)
@@ -435,12 +424,12 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 	interactionService := NewFeatureInteractionService()
 	interactionService.EnrichWithInteractions(homeFactors)
 	interactionService.EnrichWithInteractions(awayFactors)
-	
+
 	// Log key interactions for debugging
 	if ensembleDEBUG {
-		fmt.Printf("   Home Offensive Potency: %.2f | Defensive Strength: %.2f\n", 
+		fmt.Printf("   Home Offensive Potency: %.2f | Defensive Strength: %.2f\n",
 			homeFactors.OffensivePotency, homeFactors.DefensiveStrength)
-		fmt.Printf("   Away Offensive Potency: %.2f | Defensive Strength: %.2f\n", 
+		fmt.Printf("   Away Offensive Potency: %.2f | Defensive Strength: %.2f\n",
 			awayFactors.OffensivePotency, awayFactors.DefensiveStrength)
 		fmt.Printf("   Home Fatigue Compound: %.2f | Away Fatigue Compound: %.2f\n",
 			homeFactors.FatigueCompound, awayFactors.FatigueCompound)
@@ -1110,6 +1099,26 @@ func (eps *EnsemblePredictionService) combineWeightedPredictions(results []model
 	if validScores > 0 {
 		avgHomeGoals := int(math.Round(homeGoalsSum))
 		avgAwayGoals := int(math.Round(awayGoalsSum))
+		if avgHomeGoals < 0 {
+			avgHomeGoals = 0
+		}
+		if avgAwayGoals < 0 {
+			avgAwayGoals = 0
+		}
+
+		// Ensure the displayed score matches the predicted winner.
+		if avgHomeGoals == avgAwayGoals {
+			if winner == homeFactors.TeamCode {
+				avgHomeGoals++
+			} else {
+				avgAwayGoals++
+			}
+		} else if winner == homeFactors.TeamCode && avgHomeGoals < avgAwayGoals {
+			avgHomeGoals = avgAwayGoals + 1
+		} else if winner == awayFactors.TeamCode && avgAwayGoals < avgHomeGoals {
+			avgAwayGoals = avgHomeGoals + 1
+		}
+
 		predictedScore = fmt.Sprintf("%d-%d", avgHomeGoals, avgAwayGoals)
 	}
 
@@ -1258,15 +1267,15 @@ func (eps *EnsemblePredictionService) RecordPredictionOutcome(homeTeam, awayTeam
 			ActualWinner: actualWinner,
 			RecordedAt:   time.Now(),
 			GameContext: GameContext{
-				IsPlayoffGame:     false,     // Would need to determine this
-				TeamStrengthGap:   0.1,       // Would calculate from team stats
-				IsUpsetPrediction: false,     // Would determine from prediction
+				IsPlayoffGame:      false,     // Would need to determine this
+				TeamStrengthGap:    0.1,       // Would calculate from team stats
+				IsUpsetPrediction:  false,     // Would determine from prediction
 				IsBackToBack:       false,     // Would check B2B status
 				RestDaysAdvantage:  0,         // Rest days differential
 				TravelDistance:     0.0,       // Miles traveled
 				AltitudeDifference: 0.0,       // Altitude differential
-				GameImportance:    "medium",  // Would assess importance
-				OpponentType:      "average", // Would classify opponent
+				GameImportance:     "medium",  // Would assess importance
+				OpponentType:       "average", // Would classify opponent
 			},
 		}
 
@@ -1596,7 +1605,7 @@ func convertPredictionFactorsToTeamStats(factors *models.PredictionFactors) mode
 	gamesPlayed := 41 // Rough midseason estimate
 	wins := int(factors.WinPercentage * float64(gamesPlayed))
 	losses := gamesPlayed - wins
-	
+
 	return models.TeamStats{
 		TeamCode:       factors.TeamCode,
 		GamesPlayed:    gamesPlayed,
