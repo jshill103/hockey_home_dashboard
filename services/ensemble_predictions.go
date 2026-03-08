@@ -1099,26 +1099,13 @@ func (eps *EnsemblePredictionService) combineWeightedPredictions(results []model
 	if validScores > 0 {
 		avgHomeGoals := int(math.Round(homeGoalsSum))
 		avgAwayGoals := int(math.Round(awayGoalsSum))
-		if avgHomeGoals < 0 {
-			avgHomeGoals = 0
-		}
-		if avgAwayGoals < 0 {
-			avgAwayGoals = 0
-		}
-
-		// Ensure the displayed score matches the predicted winner.
-		if avgHomeGoals == avgAwayGoals {
-			if winner == homeFactors.TeamCode {
-				avgHomeGoals++
-			} else {
-				avgAwayGoals++
-			}
-		} else if winner == homeFactors.TeamCode && avgHomeGoals < avgAwayGoals {
-			avgHomeGoals = avgAwayGoals + 1
-		} else if winner == awayFactors.TeamCode && avgAwayGoals < avgHomeGoals {
-			avgAwayGoals = avgHomeGoals + 1
-		}
-
+		avgHomeGoals, avgAwayGoals = normalizeWinningScore(
+			avgHomeGoals,
+			avgAwayGoals,
+			winner,
+			homeFactors.TeamCode,
+			awayFactors.TeamCode,
+		)
 		predictedScore = fmt.Sprintf("%d-%d", avgHomeGoals, avgAwayGoals)
 	}
 
@@ -1565,13 +1552,17 @@ func (eps *EnsemblePredictionService) combineWithMetaLearner(results []models.Mo
 	if validScores > 0 {
 		homeScore := int(math.Round(homeGoalsSum / float64(validScores)))
 		awayScore := int(math.Round(awayGoalsSum / float64(validScores)))
-
-		// Adjust based on win probability
-		if winProb > 0.6 && homeScore <= awayScore {
-			homeScore = awayScore + 1
-		} else if winProb < 0.4 && awayScore <= homeScore {
-			awayScore = homeScore + 1
+		winner := homeFactors.TeamCode
+		if winProb < 0.5 {
+			winner = awayFactors.TeamCode
 		}
+		homeScore, awayScore = normalizeWinningScore(
+			homeScore,
+			awayScore,
+			winner,
+			homeFactors.TeamCode,
+			awayFactors.TeamCode,
+		)
 
 		predictedScore = fmt.Sprintf("%d-%d", homeScore, awayScore)
 	}

@@ -664,8 +664,21 @@ func (ps *PredictionService) generateDegradedPrediction(homeFactors, awayFactors
 	if winProb > 0.65 {
 		predictedScore = "3-1"
 	} else if winProb < 0.55 {
-		predictedScore = "2-2" // Very close
+		predictedScore = "2-1"
 	}
+
+	homeGoals, awayGoals := 2, 1
+	if predictedScore == "3-1" {
+		homeGoals, awayGoals = 3, 1
+	}
+	homeGoals, awayGoals = normalizeWinningScore(
+		homeGoals,
+		awayGoals,
+		winner,
+		homeFactors.TeamCode,
+		awayFactors.TeamCode,
+	)
+	predictedScore = fmt.Sprintf("%d-%d", homeGoals, awayGoals)
 
 	fmt.Printf("🆘 Degraded prediction: %s wins (%.1f%% confidence)\n", winner, winProb*100)
 

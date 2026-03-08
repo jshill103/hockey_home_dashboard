@@ -10,9 +10,7 @@ import (
 	"github.com/jaredshillingburg/go_uhc/services"
 )
 
-// Global prediction cache
 var (
-	cachedPrediction  *models.GamePrediction
 	predictionService *services.PredictionService
 )
 
@@ -76,19 +74,13 @@ func HandlePredictionWidget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use cached prediction or generate new one
-	var prediction *models.GamePrediction
-	if cachedPrediction != nil {
-		prediction = cachedPrediction
-	} else {
-		var err error
-		prediction, err = predictionService.PredictNextGame()
-		if err != nil {
-			fmt.Printf("Error generating prediction: %v\n", err)
-			fmt.Fprintf(w, `<div class="prediction-error">Unable to generate prediction: %v</div>`, err)
-			return
-		}
-		cachedPrediction = prediction
+	// Always go through the service layer so the widget and JSON API
+	// share the same cache/refresh behavior.
+	prediction, err := predictionService.PredictNextGame()
+	if err != nil {
+		fmt.Printf("Error generating prediction: %v\n", err)
+		fmt.Fprintf(w, `<div class="prediction-error">Unable to generate prediction: %v</div>`, err)
+		return
 	}
 
 	html := formatPredictionHTML(prediction)
