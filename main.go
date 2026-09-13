@@ -579,6 +579,14 @@ func main() {
 		fmt.Printf("✅ Confidence Calibration Service initialized\n")
 	}
 
+	// Model Uncertainty Service (Brier score decomposition, reliability, calibration curve)
+	fmt.Println("📐 Initializing Model Uncertainty Service...")
+	if err := services.InitializeModelUncertaintyService(); err != nil {
+		fmt.Printf("⚠️ Warning: Failed to initialize model uncertainty service: %v\n", err)
+	} else {
+		fmt.Printf("✅ Model Uncertainty Service initialized\n")
+	}
+
 	// Prediction Quality Service
 	fmt.Println("✅ Initializing Prediction Quality Service...")
 	if err := services.InitializePredictionQuality(); err != nil {

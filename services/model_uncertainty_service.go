@@ -1,9 +1,11 @@
 package services
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/jaredshillingburg/go_uhc/models"
@@ -11,10 +13,31 @@ import (
 
 // ModelUncertaintyService quantifies and analyzes prediction uncertainty
 type ModelUncertaintyService struct {
+	mu                    sync.RWMutex
 	historicalPredictions []UncertaintyDataPoint
 	calibrationCurve      []CalibrationPoint
 	uncertaintyMetrics    UncertaintyMetrics
 	lastUpdate            time.Time
+}
+
+var (
+	modelUncertaintyInstance *ModelUncertaintyService
+	modelUncertaintyOnce     sync.Once
+)
+
+// InitializeModelUncertaintyService initializes the singleton ModelUncertaintyService.
+// Mirrors the InitializeConfidenceCalibration pattern in confidence_calibration_service.go.
+func InitializeModelUncertaintyService() error {
+	modelUncertaintyOnce.Do(func() {
+		modelUncertaintyInstance = NewModelUncertaintyService()
+		fmt.Println("✅ Model Uncertainty Service initialized")
+	})
+	return nil
+}
+
+// GetModelUncertaintyService returns the singleton instance (nil if not yet initialized).
+func GetModelUncertaintyService() *ModelUncertaintyService {
+	return modelUncertaintyInstance
 }
 
 // UncertaintyDataPoint represents a historical prediction with uncertainty
@@ -466,8 +489,13 @@ func (mus *ModelUncertaintyService) determineRecommendedAction(totalUncertainty,
 	}
 }
 
-// UpdateCalibration updates the calibration curve with new prediction outcomes
+// UpdateCalibration updates the calibration curve with new prediction outcomes.
+// Now called from EnsemblePredictionService.RecordHistoricalPrediction once a
+// game's actual result is known, so calibration tracks real outcomes over time.
 func (mus *ModelUncertaintyService) UpdateCalibration(predictions []UncertaintyDataPoint) {
+	mus.mu.Lock()
+	defer mus.mu.Unlock()
+
 	log.Printf("📊 Updating uncertainty calibration with %d predictions", len(predictions))
 
 	// Add to historical data
@@ -829,10 +857,14 @@ func (mus *ModelUncertaintyService) calculateBucketMetrics(bucketName string, pr
 
 // GetUncertaintyMetrics returns the current uncertainty metrics
 func (mus *ModelUncertaintyService) GetUncertaintyMetrics() UncertaintyMetrics {
+	mus.mu.RLock()
+	defer mus.mu.RUnlock()
 	return mus.uncertaintyMetrics
 }
 
 // GetCalibrationCurve returns the current calibration curve
 func (mus *ModelUncertaintyService) GetCalibrationCurve() []CalibrationPoint {
+	mus.mu.RLock()
+	defer mus.mu.RUnlock()
 	return mus.calibrationCurve
 }

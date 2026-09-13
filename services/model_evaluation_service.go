@@ -865,6 +865,22 @@ func (mes *ModelEvaluationService) loadBatchQueues() error {
 }
 
 // Helper methods
+//
+// BUGFIX (training data leakage): buildFactors used to set GoalsFor/GoalsAgainst
+// directly from this same completed game's own final score (team.Score /
+// opponent.Score), and PowerPlayPct/PenaltyKillPct from this same game's own
+// special-teams conversion rates. Since the label the model is being trained to
+// predict (who won) is a direct function of the final score, feeding the game's
+// own score/special-teams numbers back in as "input features" let the model see
+// the answer before making its "prediction" -- this is classic label leakage and
+// made training metrics meaningless.
+//
+// Fix: reconstruct each team's PRE-GAME state (season-to-date averages as of the
+// day of the game, excluding the game itself) from the evaluation service's own
+// history of completed games, mirroring how the live prediction path computes
+// PredictionFactors from season standings rather than from the outcome of the
+// game being predicted (see predictions.go/situational_analysis.go, which divide
+// TeamStanding.GoalFor by games played). See computePreGameTeamStats below.
 func (mes *ModelEvaluationService) buildFactors(game models.CompletedGame, isHome bool) *models.PredictionFactors {
 	var team, opponent models.TeamGameResult
 
@@ -881,18 +897,39 @@ func (mes *ModelEvaluationService) buildFactors(game models.CompletedGame, isHom
 		homeAdvantage = 1.0
 	}
 
+	// Reconstruct this team's state strictly BEFORE this game using only other
+	// completed games on record -- never this game's own result.
+	teamStats := mes.computePreGameTeamStats(team.TeamCode, game.GameID, game.GameDate)
+	h2h := mes.computeHeadToHeadWinPct(team.TeamCode, opponent.TeamCode, game.GameID, game.GameDate)
+
+	// TODO(data-pipeline): the fields below (TravelFatigue, AltitudeAdjust,
+	// ScheduleStrength, InjuryImpact, MomentumFactors, AdvancedStats i.e.
+	// Corsi/xG/possession, WeatherAnalysis, MarketData/betting odds, goalie
+	// matchup ratings, etc.) cannot be reconstructed "as of a past date" from
+	// anything currently persisted in this codebase -- models.CompletedGame only
+	// stores basic box-score totals (goals, shots, PP/PK, hits, faceoffs), not
+	// advanced analytics, weather, injury reports, or market odds history, and
+	// there is no historical-stats-snapshot service that indexes those by
+	// team+date. Reconstructing them for training would require a proper
+	// historical feature store / snapshot mechanism that captures each of these
+	// signals as they existed before each game, which does not exist yet. Until
+	// that pipeline exists, these remain neutral defaults during training, which
+	// means the Neural Network is only really trained on the box-score-derived
+	// subset of its live feature set (goals, win%, recent form, PP/PK%, rest,
+	// head-to-head) -- not neutral-but-wrong (as before), but still an
+	// intentionally reduced feature set versus live inference.
 	return &models.PredictionFactors{
 		TeamCode:          team.TeamCode,
-		GoalsFor:          float64(team.Score),
-		GoalsAgainst:      float64(opponent.Score),
-		PowerPlayPct:      team.PowerPlayPct,
-		PenaltyKillPct:    team.PenaltyKillPct,
-		WinPercentage:     0.5,
-		RecentForm:        0.5,
-		RestDays:          1,
+		GoalsFor:          teamStats.avgGoalsFor,
+		GoalsAgainst:      teamStats.avgGoalsAgainst,
+		PowerPlayPct:      teamStats.powerPlayPct,
+		PenaltyKillPct:    teamStats.penaltyKillPct,
+		WinPercentage:     teamStats.winPercentage,
+		RecentForm:        teamStats.recentForm,
+		RestDays:          teamStats.restDays,
 		HomeAdvantage:     homeAdvantage,
-		BackToBackPenalty: 0.0,
-		HeadToHead:        0.5,
+		BackToBackPenalty: teamStats.backToBackPenalty,
+		HeadToHead:        h2h,
 		TravelFatigue:     models.TravelFatigue{},
 		AltitudeAdjust:    models.AltitudeAdjust{},
 		ScheduleStrength:  models.ScheduleStrength{},
@@ -902,6 +939,174 @@ func (mes *ModelEvaluationService) buildFactors(game models.CompletedGame, isHom
 		WeatherAnalysis:   models.WeatherAnalysis{},
 		MarketData:        models.MarketAdjustment{},
 	}
+}
+
+// preGameTeamStats holds a team's rolling/season-to-date statistics computed
+// strictly from games completed before a cutoff date.
+type preGameTeamStats struct {
+	gamesPlayed       int
+	winPercentage     float64
+	recentForm        float64 // win rate over the last (up to) 10 games
+	avgGoalsFor       float64
+	avgGoalsAgainst   float64
+	powerPlayPct      float64
+	penaltyKillPct    float64
+	restDays          int
+	backToBackPenalty float64
+}
+
+// computePreGameTeamStats reconstructs teamCode's box-score-derived statistics
+// using only completed games strictly before cutoff (and excluding
+// excludeGameID defensively, in case of same-day timestamp collisions). This is
+// the training-time analogue of "season-to-date standings as of right now" used
+// by the live prediction path -- except there is no historical standings
+// snapshot to query, so we replay the team's own stored game history instead.
+func (mes *ModelEvaluationService) computePreGameTeamStats(teamCode string, excludeGameID int, cutoff time.Time) preGameTeamStats {
+	mes.mutex.RLock()
+	defer mes.mutex.RUnlock()
+
+	type teamGameRecord struct {
+		date     time.Time
+		goalsFor int
+		goalsAgt int
+		win      bool
+		ppGoals  int
+		ppOpps   int
+		pkSaves  int
+		pkOpps   int
+	}
+
+	var history []teamGameRecord
+	for _, g := range mes.completedGames {
+		if g.GameID == excludeGameID || !g.GameDate.Before(cutoff) {
+			continue // only strictly earlier games count as "pre-game" state
+		}
+
+		var team, opp models.TeamGameResult
+		switch teamCode {
+		case g.HomeTeam.TeamCode:
+			team, opp = g.HomeTeam, g.AwayTeam
+		case g.AwayTeam.TeamCode:
+			team, opp = g.AwayTeam, g.HomeTeam
+		default:
+			continue
+		}
+
+		history = append(history, teamGameRecord{
+			date:     g.GameDate,
+			goalsFor: team.Score,
+			goalsAgt: opp.Score,
+			win:      g.Winner == teamCode,
+			ppGoals:  team.PowerPlayGoals,
+			ppOpps:   team.PowerPlayOpps,
+			pkSaves:  team.PenaltyKillSaves,
+			pkOpps:   team.PenaltyKillOpps,
+		})
+	}
+
+	// League-average fallbacks for teams with no prior recorded games (e.g.
+	// start of the historical dataset). 2.8 goals/game matches the same
+	// league-average fallback already used by the live prediction path
+	// (see predictions.go / situational_analysis.go).
+	stats := preGameTeamStats{
+		winPercentage:   0.5,
+		recentForm:      0.5,
+		avgGoalsFor:     2.8,
+		avgGoalsAgainst: 2.8,
+		powerPlayPct:    20.0,
+		penaltyKillPct:  80.0,
+		restDays:        2,
+	}
+
+	if len(history) == 0 {
+		return stats
+	}
+
+	sort.Slice(history, func(i, j int) bool { return history[i].date.Before(history[j].date) })
+
+	var goalsForSum, goalsAgainstSum float64
+	var wins int
+	var ppGoalsSum, ppOppsSum, pkSavesSum, pkOppsSum int
+	for _, hg := range history {
+		goalsForSum += float64(hg.goalsFor)
+		goalsAgainstSum += float64(hg.goalsAgt)
+		if hg.win {
+			wins++
+		}
+		ppGoalsSum += hg.ppGoals
+		ppOppsSum += hg.ppOpps
+		pkSavesSum += hg.pkSaves
+		pkOppsSum += hg.pkOpps
+	}
+
+	gamesPlayed := len(history)
+	stats.gamesPlayed = gamesPlayed
+	stats.avgGoalsFor = goalsForSum / float64(gamesPlayed)
+	stats.avgGoalsAgainst = goalsAgainstSum / float64(gamesPlayed)
+	stats.winPercentage = float64(wins) / float64(gamesPlayed)
+
+	if ppOppsSum > 0 {
+		stats.powerPlayPct = float64(ppGoalsSum) / float64(ppOppsSum) * 100.0
+	}
+	if pkOppsSum > 0 {
+		stats.penaltyKillPct = float64(pkSavesSum) / float64(pkOppsSum) * 100.0
+	}
+
+	// Recent form: win rate over the last (up to) 10 games.
+	recentWindow := history
+	if len(recentWindow) > 10 {
+		recentWindow = recentWindow[len(recentWindow)-10:]
+	}
+	recentWins := 0
+	for _, hg := range recentWindow {
+		if hg.win {
+			recentWins++
+		}
+	}
+	stats.recentForm = float64(recentWins) / float64(len(recentWindow))
+
+	// Rest days: gap between the team's most recent prior game and this one.
+	lastGameDate := history[len(history)-1].date
+	restDays := int(cutoff.Sub(lastGameDate).Hours() / 24)
+	if restDays < 0 {
+		restDays = 0
+	}
+	stats.restDays = restDays
+	if restDays <= 1 {
+		stats.backToBackPenalty = 0.1
+	}
+
+	return stats
+}
+
+// computeHeadToHeadWinPct computes teamCode's historical win rate against
+// opponentCode using only games strictly before cutoff.
+func (mes *ModelEvaluationService) computeHeadToHeadWinPct(teamCode, opponentCode string, excludeGameID int, cutoff time.Time) float64 {
+	mes.mutex.RLock()
+	defer mes.mutex.RUnlock()
+
+	var wins, total int
+	for _, g := range mes.completedGames {
+		if g.GameID == excludeGameID || !g.GameDate.Before(cutoff) {
+			continue
+		}
+
+		isMatchup := (g.HomeTeam.TeamCode == teamCode && g.AwayTeam.TeamCode == opponentCode) ||
+			(g.AwayTeam.TeamCode == teamCode && g.HomeTeam.TeamCode == opponentCode)
+		if !isMatchup {
+			continue
+		}
+
+		total++
+		if g.Winner == teamCode {
+			wins++
+		}
+	}
+
+	if total == 0 {
+		return 0.5 // No prior matchups on record; neutral default
+	}
+	return float64(wins) / float64(total)
 }
 
 func (mes *ModelEvaluationService) convertToGameResult(game *models.CompletedGame) *models.GameResult {

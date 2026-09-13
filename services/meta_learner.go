@@ -557,18 +557,29 @@ func (mlm *MetaLearnerModel) AutoTrain() error {
 		}
 
 		// Extract base model predictions
+		//
+		// BUGFIX: these string literals must exactly match each model's
+		// GetName() implementation (see prediction_models.go,
+		// elo_rating_model.go, poisson_regression_model.go). Four of them
+		// previously carried a spurious " Model" suffix ("Enhanced
+		// Statistical Model", "Bayesian Inference Model", "Elo Rating Model",
+		// "Poisson Regression Model") that never matched any real
+		// ModelResult.ModelName ("Enhanced Statistical", "Bayesian
+		// Inference", "Elo Rating", "Poisson Regression" respectively), so
+		// those four models' predictions were silently dropped (left at
+		// their zero value) from every meta-learner training example.
 		modelPreds := ModelPredictions{}
 		for _, modelResult := range pred.Prediction.Prediction.ModelResults {
 			switch modelResult.ModelName {
-			case "Enhanced Statistical Model":
+			case "Enhanced Statistical":
 				modelPreds.Statistical = modelResult.WinProbability
-			case "Bayesian Inference Model":
+			case "Bayesian Inference":
 				modelPreds.Bayesian = modelResult.WinProbability
 			case "Monte Carlo Simulation":
 				modelPreds.MonteCarlo = modelResult.WinProbability
-			case "Elo Rating Model":
+			case "Elo Rating":
 				modelPreds.Elo = modelResult.WinProbability
-			case "Poisson Regression Model":
+			case "Poisson Regression":
 				modelPreds.Poisson = modelResult.WinProbability
 			case "Neural Network":
 				modelPreds.NeuralNetwork = modelResult.WinProbability
