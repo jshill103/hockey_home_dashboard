@@ -662,6 +662,20 @@ func (mes *ModelEvaluationService) calculateModelMetrics(modelName string, predi
 	return metrics
 }
 
+// GetCompletedGames returns a copy of the historical completed games loaded
+// for evaluation/batch training. Exposed so other services (e.g. the
+// Dixon-Coles rho fit in PoissonRegressionModel) can source historical
+// (homeGoals, awayGoals) pairs without reaching into this service's private
+// state.
+func (mes *ModelEvaluationService) GetCompletedGames() []models.CompletedGame {
+	mes.mutex.RLock()
+	defer mes.mutex.RUnlock()
+
+	gamesCopy := make([]models.CompletedGame, len(mes.completedGames))
+	copy(gamesCopy, mes.completedGames)
+	return gamesCopy
+}
+
 // GetMetrics returns current metrics for all models
 func (mes *ModelEvaluationService) GetMetrics() map[string]*models.ModelEvaluationMetrics {
 	mes.mutex.RLock()
@@ -794,11 +808,11 @@ func (mes *ModelEvaluationService) loadCompletedGames() error {
 // This ensures batch queues survive pod restarts
 func (mes *ModelEvaluationService) saveBatchQueues() error {
 	type BatchQueues struct {
-		NNBatch    []models.CompletedGame `json:"nn_batch"`
-		GBBatch    []models.CompletedGame `json:"gb_batch"`
-		LSTMBatch  []models.CompletedGame `json:"lstm_batch"`
-		RFBatch    []models.CompletedGame `json:"rf_batch"`
-		SavedAt    time.Time              `json:"saved_at"`
+		NNBatch   []models.CompletedGame `json:"nn_batch"`
+		GBBatch   []models.CompletedGame `json:"gb_batch"`
+		LSTMBatch []models.CompletedGame `json:"lstm_batch"`
+		RFBatch   []models.CompletedGame `json:"rf_batch"`
+		SavedAt   time.Time              `json:"saved_at"`
 	}
 
 	queues := BatchQueues{
@@ -828,11 +842,11 @@ func (mes *ModelEvaluationService) saveBatchQueues() error {
 // loadBatchQueues loads persisted batch queues from disk
 func (mes *ModelEvaluationService) loadBatchQueues() error {
 	type BatchQueues struct {
-		NNBatch    []models.CompletedGame `json:"nn_batch"`
-		GBBatch    []models.CompletedGame `json:"gb_batch"`
-		LSTMBatch  []models.CompletedGame `json:"lstm_batch"`
-		RFBatch    []models.CompletedGame `json:"rf_batch"`
-		SavedAt    time.Time              `json:"saved_at"`
+		NNBatch   []models.CompletedGame `json:"nn_batch"`
+		GBBatch   []models.CompletedGame `json:"gb_batch"`
+		LSTMBatch []models.CompletedGame `json:"lstm_batch"`
+		RFBatch   []models.CompletedGame `json:"rf_batch"`
+		SavedAt   time.Time              `json:"saved_at"`
 	}
 
 	filePath := filepath.Join(mes.batchesDir, "batch_queues.json")
@@ -1150,7 +1164,7 @@ func (mes *ModelEvaluationService) StartPeriodicSave() {
 		for range ticker.C {
 			log.Printf("💾 Periodic model save triggered...")
 			mes.SaveAllModels()
-			
+
 			// Also save batch queues
 			if err := mes.saveBatchQueues(); err != nil {
 				log.Printf("⚠️ Failed to save batch queues during periodic save: %v", err)
