@@ -37,6 +37,15 @@ type PoissonRegressionModel struct {
 	// independent of lastUpdated (which is rewritten on every Update() call,
 	// including the hourly scheduler tick). See applySeasonalDecay.
 	lastDecayAppliedAt time.Time
+
+	// rho is the single global Dixon-Coles correlation parameter applied to
+	// low-scoring joint outcomes (0-0, 1-0, 0-1, 1-1) to correct for the
+	// negative correlation between two teams' goal totals that independent
+	// Poisson sampling ignores. It starts at a standard literature-typical
+	// value and is replaced by a value fit from historical completed games
+	// the first time it's needed (see ensureRhoFitted), then cached.
+	rho       float64
+	rhoFitted bool
 }
 
 // PoissonModelData represents the serializable state of the Poisson model
@@ -83,6 +92,7 @@ func NewPoissonRegressionModel() *PoissonRegressionModel {
 		lastUpdated:           time.Now(),
 		rand:                  rand.New(rand.NewSource(time.Now().UnixNano())),
 		dataDir:               "data/models",
+		rho:                   defaultDixonColesRho, // fallback until fit from historical data (see ensureRhoFitted)
 		updateStats: ModelUpdateStats{
 			UpdateFrequency: 1 * time.Hour,
 		},
@@ -361,22 +371,246 @@ func (pr *PoissonRegressionModel) calculateAnalyticsMultiplier(teamFactors *mode
 	return multiplier
 }
 
-// calculateWinProbability calculates win probability using Poisson distributions
+// calculateWinProbability calculates the home team's win probability from two
+// independent-Poisson full-game expected-goal lambdas.
+//
+// Historically this used a plain independent-Poisson Monte Carlo simulation,
+// which has a known bias: it treats the two teams' goal totals as
+// statistically independent, when in reality low-scoring outcomes (0-0, 1-0,
+// 0-1, 1-1) are negatively correlated (close, low-scoring games happen more
+// often than pure independence predicts -- the Dixon-Coles effect). It also
+// simply never counted simulated ties as home wins, silently handing 100% of
+// tied trials to "away" instead of resolving them the way real hockey games
+// are actually decided (OT/shootout).
+//
+// This now builds an explicit discrete joint probability matrix, applies the
+// Dixon-Coles tau correction to the four low-score cells, renormalizes, and
+// resolves the (now explicit) regulation-tie probability mass using the same
+// home-ice-advantage factor already applied to expected goals elsewhere in
+// this model, rather than an arbitrary/disconnected 50/50 split.
 func (pr *PoissonRegressionModel) calculateWinProbability(homeExpected, awayExpected float64) float64 {
-	// Monte Carlo simulation using Poisson distributions
-	simulations := 10000
-	homeWins := 0
+	homeWinProb, _, tieProb := pr.calculateWinProbabilityDixonColes(homeExpected, awayExpected)
 
-	for i := 0; i < simulations; i++ {
-		homeGoals := pr.samplePoisson(homeExpected)
-		awayGoals := pr.samplePoisson(awayExpected)
+	tieHomeShare := pr.homeAdvantage / (pr.homeAdvantage + 1.0)
+	return homeWinProb + tieProb*tieHomeShare
+}
 
-		if homeGoals > awayGoals {
-			homeWins++
+// dixonColesMaxGoals bounds the truncated joint probability matrix. Poisson
+// tail mass beyond 10 goals is negligible at hockey-scale lambdas, and the
+// final renormalization step redistributes that negligible truncated mass
+// proportionally across the retained cells.
+const dixonColesMaxGoals = 10
+
+// defaultDixonColesRho is used until enough historical data is available to
+// fit a real value (see ensureRhoFitted). It's a standard literature-typical
+// magnitude for goal-based team sports.
+const defaultDixonColesRho = -0.1
+
+// minGamesForDixonColesRhoFit is the minimum number of historical completed
+// games required before we trust a fitted rho over the default.
+const minGamesForDixonColesRhoFit = 30
+
+// calculateWinProbabilityDixonColes builds a truncated joint Poisson
+// probability matrix for (homeGoals, awayGoals), applies the Dixon-Coles tau
+// correction to the four low-scoring cells, renormalizes so the matrix sums
+// to 1, and returns the summed home-win / away-win / regulation-tie
+// probabilities.
+func (pr *PoissonRegressionModel) calculateWinProbabilityDixonColes(homeExpected, awayExpected float64) (homeWinProb, awayWinProb, tieProb float64) {
+	pr.ensureRhoFitted()
+
+	pr.mutex.RLock()
+	rho := pr.rho
+	pr.mutex.RUnlock()
+
+	var matrix [dixonColesMaxGoals + 1][dixonColesMaxGoals + 1]float64
+	total := 0.0
+
+	for x := 0; x <= dixonColesMaxGoals; x++ {
+		px := poissonPMF(x, homeExpected)
+		for y := 0; y <= dixonColesMaxGoals; y++ {
+			py := poissonPMF(y, awayExpected)
+			tau := dixonColesTau(x, y, homeExpected, awayExpected, rho)
+			p := tau * px * py
+			if p < 0 {
+				// Guard against a pathological rho pushing tau negative for
+				// an extreme lambda combination; shouldn't happen for rho in
+				// the fitted/default range against realistic hockey lambdas.
+				p = 0
+			}
+			matrix[x][y] = p
+			total += p
 		}
 	}
 
-	return float64(homeWins) / float64(simulations)
+	if total <= 0 {
+		// Degenerate fallback (shouldn't happen with valid positive lambdas).
+		return 0.5, 0.5, 0
+	}
+
+	for x := 0; x <= dixonColesMaxGoals; x++ {
+		for y := 0; y <= dixonColesMaxGoals; y++ {
+			p := matrix[x][y] / total
+			switch {
+			case x > y:
+				homeWinProb += p
+			case y > x:
+				awayWinProb += p
+			default:
+				tieProb += p
+			}
+		}
+	}
+
+	return homeWinProb, awayWinProb, tieProb
+}
+
+// dixonColesTau is the standard Dixon-Coles low-score correlation correction
+// factor for a single global rho (not fit per team-pair).
+func dixonColesTau(x, y int, lambdaHome, lambdaAway, rho float64) float64 {
+	switch {
+	case x == 0 && y == 0:
+		return 1 - (lambdaHome * lambdaAway * rho)
+	case x == 0 && y == 1:
+		return 1 + (lambdaHome * rho)
+	case x == 1 && y == 0:
+		return 1 + (lambdaAway * rho)
+	case x == 1 && y == 1:
+		return 1 - rho
+	default:
+		return 1.0
+	}
+}
+
+// poissonPMF computes P(X = k) for X ~ Poisson(lambda) using log-space
+// evaluation (via math.Lgamma for k!) so it stays numerically stable for
+// larger k without overflowing a naive factorial. Shared by the Dixon-Coles
+// joint-probability matrix above and the player prop projections in
+// player_prop_service.go.
+func poissonPMF(k int, lambda float64) float64 {
+	if k < 0 {
+		return 0
+	}
+	if lambda <= 0 {
+		if k == 0 {
+			return 1
+		}
+		return 0
+	}
+	logFactorial, _ := math.Lgamma(float64(k) + 1)
+	logPMF := -lambda + float64(k)*math.Log(lambda) - logFactorial
+	return math.Exp(logPMF)
+}
+
+// poissonCDF computes P(X <= k) for X ~ Poisson(lambda).
+func poissonCDF(k int, lambda float64) float64 {
+	if k < 0 {
+		return 0
+	}
+	sum := 0.0
+	for i := 0; i <= k; i++ {
+		sum += poissonPMF(i, lambda)
+	}
+	return sum
+}
+
+// poissonProbOverLine computes P(X > line) for X ~ Poisson(lambda) and a
+// sportsbook-style line (typically a half-integer like 1.5, but works for any
+// value via floor).
+func poissonProbOverLine(line float64, lambda float64) float64 {
+	threshold := int(math.Floor(line))
+	p := 1.0 - poissonCDF(threshold, lambda)
+	if p < 0 {
+		p = 0
+	}
+	if p > 1 {
+		p = 1
+	}
+	return p
+}
+
+// ensureRhoFitted fits the global Dixon-Coles rho from historical completed
+// games the first time it's needed, then caches it -- refitting on every
+// prediction would be wasteful and unnecessary since rho is a slow-moving,
+// league-wide constant. If insufficient historical data is available yet
+// (e.g. right after a fresh deploy with no data/results history loaded), it
+// leaves the default in place and tries again on the next call instead of
+// permanently locking in an unfit value.
+func (pr *PoissonRegressionModel) ensureRhoFitted() {
+	pr.mutex.RLock()
+	fitted := pr.rhoFitted
+	pr.mutex.RUnlock()
+	if fitted {
+		return
+	}
+
+	mes := GetEvaluationService()
+	if mes == nil {
+		return
+	}
+	games := mes.GetCompletedGames()
+	if len(games) < minGamesForDixonColesRhoFit {
+		return
+	}
+
+	rho := fitDixonColesRho(games)
+
+	pr.mutex.Lock()
+	pr.rho = rho
+	pr.rhoFitted = true
+	pr.mutex.Unlock()
+
+	log.Printf("📐 Fitted Dixon-Coles rho = %.4f from %d historical games", rho, len(games))
+}
+
+// fitDixonColesRho fits the single global Dixon-Coles correlation parameter
+// via grid search over rho in [-0.3, 0.3], minimizing the negative
+// log-likelihood of the Dixon-Coles-adjusted joint Poisson probability
+// against each historical game's actual (homeGoals, awayGoals). As is
+// standard practice for a global rho fit, the league-average home/away
+// goals-per-game (rather than each historical team's contemporaneous rate)
+// is used as the lambda input for every game.
+func fitDixonColesRho(games []models.CompletedGame) float64 {
+	if len(games) == 0 {
+		return defaultDixonColesRho
+	}
+
+	var sumHome, sumAway float64
+	for _, g := range games {
+		sumHome += float64(g.HomeTeam.Score)
+		sumAway += float64(g.AwayTeam.Score)
+	}
+	n := float64(len(games))
+	lambdaHome := sumHome / n
+	lambdaAway := sumAway / n
+
+	bestRho := defaultDixonColesRho
+	bestNLL := math.Inf(1)
+
+	const rhoMin = -0.30
+	const rhoMax = 0.30
+	const rhoStep = 0.005
+
+	for rho := rhoMin; rho <= rhoMax+1e-9; rho += rhoStep {
+		nll := 0.0
+		valid := true
+
+		for _, g := range games {
+			tau := dixonColesTau(g.HomeTeam.Score, g.AwayTeam.Score, lambdaHome, lambdaAway, rho)
+			joint := tau * poissonPMF(g.HomeTeam.Score, lambdaHome) * poissonPMF(g.AwayTeam.Score, lambdaAway)
+			if joint <= 0 {
+				valid = false
+				break
+			}
+			nll -= math.Log(joint)
+		}
+
+		if valid && nll < bestNLL {
+			bestNLL = nll
+			bestRho = rho
+		}
+	}
+
+	return bestRho
 }
 
 // predictMostLikelyScore predicts the most probable score outcome

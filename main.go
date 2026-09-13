@@ -807,6 +807,11 @@ func main() {
 	http.HandleFunc("/api/pattern-summary/", handlers.GetPatternSummary)
 	fmt.Println("🔥 Phase 4 advanced pattern recognition API endpoints registered")
 
+	// Tier 1 prediction features: live in-game win probability and player prop projections
+	http.HandleFunc("/api/live-win-probability", handlers.HandleLiveWinProbability)
+	http.HandleFunc("/api/player-props", handlers.GetPlayerProps)
+	fmt.Println("🎯 Live win probability and player prop endpoints registered")
+
 	if currentSeasonStatus.IsHockeySeason {
 		// Currently no additional routes needed only during hockey season
 	}
