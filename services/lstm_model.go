@@ -14,6 +14,39 @@ import (
 	"github.com/jaredshillingburg/go_uhc/models"
 )
 
+// ============================================================================
+// DISABLED: this LSTM model is currently EXCLUDED from live ensemble
+// predictions (see NewEnsemblePredictionService in ensemble_predictions.go).
+//
+// Why: two independent bugs mean it contributes noise, not signal:
+//  1. trainSequence (below) computes gradients for the LSTM gates but never
+//     applies a weight update from them -- so every "trained" prediction is
+//     still running on the original random Xavier-initialized weights,
+//     regardless of how many games it has "trained" on.
+//  2. extractSequence (below) feeds the SAME current-game feature snapshot
+//     into all `sequenceLen` (10) timesteps instead of that team's actual
+//     last 10 games' features, so even if weights did update, the model
+//     would never see genuine temporal/sequential structure to learn from.
+//
+// Net effect: Predict() output is close to random noise dressed up as a
+// confident-looking probability, which is worse than not having a prediction
+// at all when averaged into an ensemble. Rather than attempt a full rewrite
+// here, the model's ensemble weight has been zeroed out (see `weight: 0` in
+// NewLSTMModel below) and it has been removed from the active model list in
+// ensemble_predictions.go, so it no longer influences combined predictions.
+//
+// The code is intentionally left in place (not deleted) so it can keep
+// running/logging for future debugging, and so a future rewrite has a
+// starting point. Before re-enabling it in the ensemble:
+//   - Implement real backpropagation-through-time in trainSequence: compute
+//     gradients for every gate at every timestep and actually apply them
+//     (with an optimizer step) to lstm.weights* / lstm.biases*.
+//   - Rework extractSequence (and the training-side equivalent) to build a
+//     true per-timestep sequence of that team's actual last N games' features,
+//     consistently between training and inference -- not the same snapshot
+//     repeated 10 times.
+// ============================================================================
+
 // LSTMModel implements a Long Short-Term Memory network for sequential game prediction
 type LSTMModel struct {
 	// Architecture
@@ -85,7 +118,11 @@ func NewLSTMModel() *LSTMModel {
 			outputSize:    outputSize,
 			sequenceLen:   sequenceLen,
 			learningRate:  0.001,
-			weight:        0.08, // 8% weight in ensemble
+			// DISABLED (see file header comment): weight forced to 0 so this
+			// model cannot influence the ensemble even if something calls
+			// GetWeight() directly. It is also removed from the active model
+			// list in NewEnsemblePredictionService as the primary safeguard.
+			weight:        0,
 			trained:       false,
 			dataDir:       "data/models",
 			lastUpdated:   time.Now(),

@@ -50,8 +50,18 @@ func NewEnsemblePredictionService(teamCode string) *EnsemblePredictionService {
 			NewPoissonRegressionModel(), // 12%
 			NewNeuralNetworkModel(),     // 6%
 			NewGradientBoostingModel(),  // 7%
-			NewLSTMModel(),              // 7%
-			NewRandomForestModel(),      // 7%
+			// LSTM DISABLED: intentionally excluded from the active model
+			// list. Its trainSequence never applies gradient updates (so it
+			// predicts on random Xavier-initialized weights) and its
+			// extractSequence feeds one repeated feature snapshot into all 10
+			// "timesteps" instead of a real historical sequence -- it
+			// currently contributes noise, not signal. See the DISABLED
+			// header comment in lstm_model.go for details and what's needed
+			// before re-enabling it. Removing it from this list (rather than
+			// relying solely on weight=0) ensures it cannot influence either
+			// the weighted-average path or the meta-learner stacking path.
+			// NewLSTMModel(),
+			NewRandomForestModel(), // 7%
 		},
 	}
 }
@@ -1034,7 +1044,22 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 		}
 	}
 
-	// 3. Attach Game Context to Result
+	// 3. Quantify Prediction Uncertainty (additive: logs/tracks uncertainty
+	// decomposition without altering WinProbability/Confidence). Wired the
+	// same way as ConfidenceCalibrationService above -- see
+	// RecordHistoricalPrediction for where calibration is updated once the
+	// actual game result is known.
+	uncertaintyService := GetModelUncertaintyService()
+	if uncertaintyService != nil {
+		uncertainty := uncertaintyService.QuantifyUncertainty(combinedResult, homeFactors, awayFactors)
+		if uncertainty != nil {
+			fmt.Printf("📐 Uncertainty: %.1f%% total (epistemic %.1f%%, aleatory %.1f%%) - %s\n",
+				uncertainty.TotalUncertainty*100, uncertainty.EpistemicUncertainty*100,
+				uncertainty.AleatoryUncertainty*100, uncertainty.RecommendedAction)
+		}
+	}
+
+	// 4. Attach Game Context to Result
 	if gameContext != nil {
 		combinedResult.Context = gameContext
 	}
@@ -1048,9 +1073,24 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 	return combinedResult, nil
 }
 
-// combineWeightedPredictions combines model results using weighted averaging
+// combineWeightedPredictions combines model results using a genuine weight-normalized
+// average of each model's home-win probability.
+//
+// BUGFIX: this used to bucket each model's WinProbability into a "home" pile or an
+// "away" pile depending on which side of 0.5 that model favored, then normalize only
+// within whichever bucket ended up larger (weightedHomeProb / (weightedHomeProb +
+// weightedAwayProb)). If every model weakly agreed on the same side (e.g. all models
+// at ~0.51 home), the losing bucket stayed at exactly 0, and normalizing collapsed the
+// result to exactly 1.0 (or 0.0) -- manufacturing false certainty out of a genuinely
+// close game. ModelResult.WinProbability is consistently defined as "probability the
+// HOME team wins" across every model's Predict() implementation (statistical,
+// Bayesian, Monte Carlo, Elo, Poisson, neural network, gradient boosting, random
+// forest, and LSTM all populate it this way), so the correct aggregation is a single
+// weighted average of that one home-relative probability:
+//
+//	finalHomeProb = Σ(weight_i * homeWinProb_i) / Σ(weight_i)
 func (eps *EnsemblePredictionService) combineWeightedPredictions(results []models.ModelResult, totalWeight float64, homeFactors, awayFactors *models.PredictionFactors) *models.PredictionResult {
-	var weightedHomeProb, weightedAwayProb float64
+	var weightedHomeProbSum, probWeightSum float64
 	var weightedConfidence float64
 	var homeGoalsSum, awayGoalsSum float64
 	var validScores int
@@ -1063,13 +1103,11 @@ func (eps *EnsemblePredictionService) combineWeightedPredictions(results []model
 		confidenceBoost := 1.0 + (result.Confidence-0.5)*0.4 // Boost high-confidence models
 		adjustedWeight := normalizedWeight * confidenceBoost
 
-		if result.WinProbability > 0.5 {
-			// Model predicts home team wins
-			weightedHomeProb += result.WinProbability * adjustedWeight
-		} else {
-			// Model predicts away team wins
-			weightedAwayProb += (1.0 - result.WinProbability) * adjustedWeight
-		}
+		// Accumulate a straight weight-normalized average of the home-win
+		// probability (see function comment for why this replaced the old
+		// bucket-and-normalize-winning-side approach).
+		weightedHomeProbSum += result.WinProbability * adjustedWeight
+		probWeightSum += adjustedWeight
 
 		weightedConfidence += result.Confidence * normalizedWeight
 
@@ -1082,16 +1120,23 @@ func (eps *EnsemblePredictionService) combineWeightedPredictions(results []model
 		}
 	}
 
-	// Determine final winner and probability
+	// Weight-normalized average probability that the home team wins.
+	finalHomeProb := 0.5
+	if probWeightSum > 0 {
+		finalHomeProb = weightedHomeProbSum / probWeightSum
+	}
+	finalHomeProb = math.Max(0.0, math.Min(1.0, finalHomeProb))
+
+	// Determine final winner and the probability of that winner winning
 	var winner string
 	var finalProb float64
 
-	if weightedHomeProb > weightedAwayProb {
+	if finalHomeProb >= 0.5 {
 		winner = homeFactors.TeamCode
-		finalProb = weightedHomeProb / (weightedHomeProb + weightedAwayProb)
+		finalProb = finalHomeProb
 	} else {
 		winner = awayFactors.TeamCode
-		finalProb = weightedAwayProb / (weightedHomeProb + weightedAwayProb)
+		finalProb = 1.0 - finalHomeProb
 	}
 
 	// Create final score prediction
@@ -1279,6 +1324,49 @@ func (eps *EnsemblePredictionService) RecordPredictionOutcome(homeTeam, awayTeam
 // RecordHistoricalPrediction records a prediction for cross-validation analysis
 func (eps *EnsemblePredictionService) RecordHistoricalPrediction(homeTeam, awayTeam string, gameDate time.Time,
 	prediction *models.PredictionResult, actualWinner string, actualScore string) error {
+
+	// Update ModelUncertaintyService's calibration curve now that the actual
+	// outcome is known -- the counterpart to the QuantifyUncertainty call made
+	// in PredictGame when the prediction was first produced. This runs
+	// independently of cross-validation being enabled below.
+	if uncertaintyService := GetModelUncertaintyService(); uncertaintyService != nil && actualWinner != "" {
+		actualOutcome := 0.0
+		if actualWinner == homeTeam {
+			actualOutcome = 1.0
+		}
+		wasCorrect := prediction.Winner == actualWinner
+
+		// Reuse the model-agreement calculation (same package) as a proxy for
+		// uncertainty since the original PredictionFactors used to compute
+		// full epistemic/aleatory uncertainty aren't available at this call
+		// site -- only the finished PredictionResult and the actual outcome.
+		modelAgreement := uncertaintyService.calculateModelAgreement(prediction.ModelResults)
+		totalUncertainty := 1.0 - modelAgreement
+
+		uncertaintyBucket := "Medium"
+		if totalUncertainty < 0.3 {
+			uncertaintyBucket = "Low"
+		} else if totalUncertainty >= 0.6 {
+			uncertaintyBucket = "High"
+		}
+
+		uncertaintyService.UpdateCalibration([]UncertaintyDataPoint{{
+			PredictionID:      fmt.Sprintf("%s_vs_%s_%s", homeTeam, awayTeam, gameDate.Format("2006-01-02")),
+			GameDate:          gameDate,
+			HomeTeam:          homeTeam,
+			AwayTeam:          awayTeam,
+			PredictedWinner:   prediction.Winner,
+			WinProbability:    prediction.WinProbability,
+			RawConfidence:     prediction.Confidence,
+			ModelUncertainty:  totalUncertainty,
+			DataUncertainty:   0,
+			TotalUncertainty:  totalUncertainty,
+			ActualWinner:      actualWinner,
+			WasCorrect:        wasCorrect,
+			ConfidenceError:   math.Abs(prediction.WinProbability - actualOutcome),
+			UncertaintyBucket: uncertaintyBucket,
+		}})
+	}
 
 	if eps.crossValidation == nil {
 		return nil // Cross-validation not enabled

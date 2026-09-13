@@ -32,6 +32,11 @@ type PoissonRegressionModel struct {
 	seasonDecayRate       float64            // Rate decay over time
 	rand                  *rand.Rand         // For Poisson sampling
 	dataDir               string             // Directory for persistent storage
+
+	// lastDecayAppliedAt tracks the last time seasonal decay actually ran,
+	// independent of lastUpdated (which is rewritten on every Update() call,
+	// including the hourly scheduler tick). See applySeasonalDecay.
+	lastDecayAppliedAt time.Time
 }
 
 // PoissonModelData represents the serializable state of the Poisson model
@@ -41,6 +46,7 @@ type PoissonModelData struct {
 	RateHistory        map[string][]RateRecord `json:"rateHistory"`
 	ConfidenceTracking map[string]float64      `json:"confidenceTracking"`
 	LastUpdated        time.Time               `json:"lastUpdated"`
+	LastDecayAppliedAt time.Time               `json:"lastDecayAppliedAt,omitempty"`
 	Version            string                  `json:"version"`
 }
 
@@ -199,6 +205,17 @@ func (pr *PoissonRegressionModel) getDefensiveRate(teamCode string) float64 {
 }
 
 // calculateInitialOffensiveRate determines initial offensive rate based on team performance
+// TODO(data): the offensiveAdjustments table below is a hardcoded, stale,
+// point-in-time snapshot of subjective judgments about ~10 of 32 teams, not
+// derived from any actual data. It should eventually be replaced with a value
+// computed from each team's prior-season offensive output (goals for per
+// game, relative to league average). A proper implementation would need a
+// historical-standings/stats-by-season lookup, which does not currently exist
+// in this codebase (standings_cache.go / nhl_api.go's GetStandings only
+// expose the CURRENT season's live standings, not a specific past season's
+// final numbers). Until that data source exists, this table is technical
+// debt: it silently goes stale as rosters change and does not cover the
+// other ~22 teams at all.
 func (pr *PoissonRegressionModel) calculateInitialOffensiveRate(teamCode string) float64 {
 	// Base rate of 1.0 represents league average offensive capability
 	baseRate := 1.0
@@ -225,6 +242,16 @@ func (pr *PoissonRegressionModel) calculateInitialOffensiveRate(teamCode string)
 }
 
 // calculateInitialDefensiveRate determines initial defensive rate based on team performance
+//
+// TODO(data): the defensiveAdjustments table below is a hardcoded, stale,
+// point-in-time snapshot of subjective judgments about ~10 of 32 teams, not
+// derived from any actual data. It should eventually be replaced with a value
+// computed from each team's prior-season defensive output (goals against per
+// game, relative to league average) -- same caveat as
+// calculateInitialOffensiveRate above: this needs a historical-standings/
+// stats-by-season lookup that does not currently exist in this codebase.
+// Until then, this table is technical debt: it silently goes stale and does
+// not cover the other ~22 teams at all.
 func (pr *PoissonRegressionModel) calculateInitialDefensiveRate(teamCode string) float64 {
 	// Base rate of 1.0 represents league average defensive capability
 	// Lower values = better defense (allow fewer goals)
@@ -575,6 +602,7 @@ func (pr *PoissonRegressionModel) Update(data *LiveGameData) error {
 		RateHistory:        make(map[string][]RateRecord),
 		ConfidenceTracking: make(map[string]float64),
 		LastUpdated:        time.Now(),
+		LastDecayAppliedAt: pr.lastDecayAppliedAt,
 		Version:            "1.0",
 	}
 	// Deep copy the maps
@@ -857,10 +885,25 @@ func (pr *PoissonRegressionModel) updateFromStandings(standings *models.Standing
 }
 
 // applySeasonalDecay applies gradual rate decay toward league average
+//
+// BUGFIX: this used to gate on time.Since(pr.lastUpdated) >= 7*24*time.Hour,
+// but lastUpdated is reset to time.Now() at the end of every Update() call
+// (see below), and Update() runs on an hourly scheduler -- so the 7-day gate
+// could never realistically be satisfied. Fix: (1) track decay application in
+// its own timestamp, lastDecayAppliedAt, only ever written here, independent
+// of routine rate updates; and (2) only decay during the offseason (using the
+// codebase's existing calendar-based season-phase detection,
+// determineSeasonPhase in season.go), since decaying rates toward league
+// average while games are actively being played would erase real,
+// current-season signal rather than just resetting stale rates between
+// seasons. See the identical fix and rationale in elo_rating_model.go.
 func (pr *PoissonRegressionModel) applySeasonalDecay() {
-	// Apply decay if it's been more than a week since last update
-	if time.Since(pr.lastUpdated) < 7*24*time.Hour {
-		return
+	if determineSeasonPhase(time.Now()) != "offseason" {
+		return // Only decay rates toward league average between seasons
+	}
+
+	if !pr.lastDecayAppliedAt.IsZero() && time.Since(pr.lastDecayAppliedAt) < 7*24*time.Hour {
+		return // Already decayed recently; don't re-decay on every offseason tick
 	}
 
 	decayApplied := false
@@ -886,8 +929,10 @@ func (pr *PoissonRegressionModel) applySeasonalDecay() {
 		}
 	}
 
+	pr.lastDecayAppliedAt = time.Now()
+
 	if decayApplied {
-		log.Printf("📉 Applied seasonal decay to Poisson rates")
+		log.Printf("📉 Applied seasonal decay to Poisson rates (offseason)")
 	}
 }
 
@@ -1040,6 +1085,7 @@ func (pr *PoissonRegressionModel) saveRates() error {
 		RateHistory:        pr.rateHistory,
 		ConfidenceTracking: pr.confidenceTracking,
 		LastUpdated:        time.Now(),
+		LastDecayAppliedAt: pr.lastDecayAppliedAt,
 		Version:            "1.0",
 	}
 
@@ -1092,6 +1138,7 @@ func (pr *PoissonRegressionModel) loadRates() error {
 	pr.rateHistory = data.RateHistory
 	pr.confidenceTracking = data.ConfidenceTracking
 	pr.lastUpdated = data.LastUpdated
+	pr.lastDecayAppliedAt = data.LastDecayAppliedAt
 
 	log.Printf("📊 Loaded Poisson rates: %d teams tracked (last updated: %s)",
 		len(pr.teamOffensiveRates), data.LastUpdated.Format("2006-01-02 15:04:05"))

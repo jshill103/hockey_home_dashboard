@@ -29,16 +29,24 @@ type EloRatingModel struct {
 	seasonDecayRate   float64            // How much ratings decay over time
 	confidenceFactors map[string]float64 // Confidence in each team's rating
 	dataDir           string             // Directory for persistent storage
+
+	// lastDecayAppliedAt tracks the last time seasonal decay actually ran.
+	// Deliberately kept separate from lastUpdated (which is rewritten on
+	// every Update()/processGameResult() call, including the hourly
+	// scheduler tick) so the decay gate in applySeasonalDecay isn't reset
+	// before it can ever fire. See applySeasonalDecay for details.
+	lastDecayAppliedAt time.Time
 }
 
 // EloModelData represents the serializable state of the Elo model
 type EloModelData struct {
-	TeamRatings       map[string]float64        `json:"teamRatings"`
-	RatingHistory     map[string][]RatingRecord `json:"ratingHistory"`
-	ProcessedGames    map[int]bool              `json:"processedGames"` // Track processed GameIDs
-	ConfidenceFactors map[string]float64        `json:"confidenceFactors"`
-	LastUpdated       time.Time                 `json:"lastUpdated"`
-	Version           string                    `json:"version"`
+	TeamRatings        map[string]float64        `json:"teamRatings"`
+	RatingHistory      map[string][]RatingRecord `json:"ratingHistory"`
+	ProcessedGames     map[int]bool              `json:"processedGames"` // Track processed GameIDs
+	ConfidenceFactors  map[string]float64        `json:"confidenceFactors"`
+	LastUpdated        time.Time                 `json:"lastUpdated"`
+	LastDecayAppliedAt time.Time                 `json:"lastDecayAppliedAt,omitempty"`
+	Version            string                    `json:"version"`
 }
 
 // RatingRecord tracks historical rating changes
@@ -152,6 +160,17 @@ func (elo *EloRatingModel) getTeamRating(teamCode string) float64 {
 }
 
 // calculateInitialRating determines starting Elo rating based on team historical performance
+// TODO(data): the teamAdjustments table below is a hardcoded, stale,
+// point-in-time snapshot of subjective judgments about ~10 of 32 teams (e.g.
+// "EDM": +120 "McDavid effect"), not derived from any actual data. It should
+// eventually be replaced with a value computed from each team's prior-season
+// standings/goal differential (a proper implementation would need a
+// historical-standings-by-season lookup, which does not currently exist in
+// this codebase -- services/standings_cache.go and nhl_api.go's GetStandings
+// only expose the CURRENT season's live standings via /standings/now, not a
+// specific past season's final standings). Until that data source exists,
+// this table is technical debt: it silently goes stale as rosters change
+// (e.g. trades, retirements) and does not cover the other ~22 teams at all.
 func (elo *EloRatingModel) calculateInitialRating(teamCode string) float64 {
 	// Base rating for all NHL teams
 	baseRating := elo.initialRating
@@ -436,12 +455,13 @@ func (elo *EloRatingModel) Update(data *LiveGameData) error {
 	// Save ratings to disk after update
 	// Copy data we need while holding the lock, then unlock and save
 	saveData := EloModelData{
-		TeamRatings:       make(map[string]float64),
-		RatingHistory:     make(map[string][]RatingRecord),
-		ProcessedGames:    make(map[int]bool),
-		ConfidenceFactors: make(map[string]float64),
-		LastUpdated:       time.Now(),
-		Version:           "1.0",
+		TeamRatings:        make(map[string]float64),
+		RatingHistory:      make(map[string][]RatingRecord),
+		ProcessedGames:     make(map[int]bool),
+		ConfidenceFactors:  make(map[string]float64),
+		LastUpdated:        time.Now(),
+		LastDecayAppliedAt: elo.lastDecayAppliedAt,
+		Version:            "1.0",
 	}
 	// Deep copy the maps
 	for k, v := range elo.teamRatings {
@@ -727,10 +747,28 @@ func (elo *EloRatingModel) calculateExpectedRatingFromStandings(position, totalT
 }
 
 // applySeasonalDecay applies gradual rating decay over time
+//
+// BUGFIX: this used to gate on time.Since(elo.lastUpdated) >= 7*24*time.Hour,
+// but lastUpdated is reset to time.Now() at the end of every Update() call
+// (see the end of Update() above and processGameResult()), and Update() runs
+// on an hourly scheduler -- so lastUpdated is essentially always "a few
+// minutes ago" and the 7-day gate could never realistically be satisfied.
+//
+// Fix: (1) track decay application in its own timestamp,
+// lastDecayAppliedAt, which is only ever written here -- never touched by
+// routine rating updates -- so the elapsed-time check actually works; and
+// (2) only decay during the offseason, using the codebase's existing
+// calendar-based season-phase detection (determineSeasonPhase in season.go),
+// since decaying ratings toward the mean while games are actively being
+// played would erase real, current-season signal rather than just resetting
+// stale ratings between seasons.
 func (elo *EloRatingModel) applySeasonalDecay() {
-	// Apply decay if it's been more than a week since last update
-	if time.Since(elo.lastUpdated) < 7*24*time.Hour {
-		return
+	if determineSeasonPhase(time.Now()) != "offseason" {
+		return // Only decay ratings toward the mean between seasons
+	}
+
+	if !elo.lastDecayAppliedAt.IsZero() && time.Since(elo.lastDecayAppliedAt) < 7*24*time.Hour {
+		return // Already decayed recently; don't re-decay on every offseason tick
 	}
 
 	decayApplied := false
@@ -745,8 +783,10 @@ func (elo *EloRatingModel) applySeasonalDecay() {
 		}
 	}
 
+	elo.lastDecayAppliedAt = time.Now()
+
 	if decayApplied {
-		log.Printf("📉 Applied seasonal decay to Elo ratings")
+		log.Printf("📉 Applied seasonal decay to Elo ratings (offseason)")
 	}
 }
 
@@ -837,12 +877,13 @@ func (elo *EloRatingModel) saveRatings() error {
 	defer elo.mutex.RUnlock()
 
 	data := EloModelData{
-		TeamRatings:       elo.teamRatings,
-		RatingHistory:     elo.ratingHistory,
-		ProcessedGames:    elo.processedGames,
-		ConfidenceFactors: elo.confidenceFactors,
-		LastUpdated:       time.Now(),
-		Version:           "1.0",
+		TeamRatings:        elo.teamRatings,
+		RatingHistory:      elo.ratingHistory,
+		ProcessedGames:     elo.processedGames,
+		ConfidenceFactors:  elo.confidenceFactors,
+		LastUpdated:        time.Now(),
+		LastDecayAppliedAt: elo.lastDecayAppliedAt,
+		Version:            "1.0",
 	}
 
 	return elo.saveRatingsWithData(data)
@@ -893,7 +934,8 @@ func (elo *EloRatingModel) loadRatings() error {
 	elo.ratingHistory = data.RatingHistory
 	elo.confidenceFactors = data.ConfidenceFactors
 	elo.lastUpdated = data.LastUpdated
-	
+	elo.lastDecayAppliedAt = data.LastDecayAppliedAt
+
 	// Load processed games (if available - may not exist in old data files)
 	if data.ProcessedGames != nil {
 		elo.processedGames = data.ProcessedGames
