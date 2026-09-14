@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/jaredshillingburg/go_uhc/models"
@@ -22,9 +23,11 @@ func HandleSystemHealthPopup(w http.ResponseWriter, r *http.Request) {
 
 // healthCheckOrder pins the display order of well-known checks; anything else
 // reported by the health service is appended after these in map order.
-var healthCheckOrder = []string{"nhl_api", "ml_models", "data_persistence", "cache", "api_cache", "memory"}
+var healthCheckOrder = []string{"tier1_features", "model_accuracy", "nhl_api", "ml_models", "data_persistence", "cache", "api_cache", "memory"}
 
 var healthCheckIcons = map[string]string{
+	"tier1_features":   "🎯",
+	"model_accuracy":   "📈",
 	"nhl_api":          "🌐",
 	"ml_models":        "🤖",
 	"data_persistence": "💾",
@@ -110,11 +113,56 @@ func generateHealthPopupHTML(status *models.HealthStatus) string {
 		if check.ResponseTime > 0 {
 			b.WriteString(`<div class="health-check-meta">Response: ` + check.ResponseTime.String() + `</div>`)
 		}
+		if key == "model_accuracy" {
+			b.WriteString(renderModelAccuracyDetails(check.Details))
+		}
 		b.WriteString(`<div class="health-check-meta">Checked ` + formatTimeAgo(check.LastChecked) + `</div>`)
 		b.WriteString(`</div>`)
 	}
 
 	b.WriteString(`</div></div></div>`)
+
+	return b.String()
+}
+
+// renderModelAccuracyDetails renders the per-model accuracy breakdown
+// (populated by HealthCheckService.checkModelAccuracy's "per_model" detail)
+// as a mini version of the model-stat-row table used elsewhere in the popup.
+func renderModelAccuracyDetails(details interface{}) string {
+	detailsMap, ok := details.(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	perModel, ok := detailsMap["per_model"].(map[string]interface{})
+	if !ok || len(perModel) == 0 {
+		return ""
+	}
+
+	names := make([]string, 0, len(perModel))
+	for name := range perModel {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var b strings.Builder
+	b.WriteString(`<div class="model-stats">`)
+	for _, name := range names {
+		entry, ok := perModel[name].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		accuracy, _ := entry["accuracy"].(float64)
+		total, _ := entry["totalPredictions"].(int)
+		correct, _ := entry["correctPredictions"].(int)
+
+		b.WriteString(`<div class="model-stat-row">`)
+		b.WriteString(`<span class="model-name">` + name + `</span>`)
+		b.WriteString(`<div class="model-accuracy-bar"><div class="accuracy-fill" style="width: ` + fmt.Sprintf("%.1f%%", accuracy*100) + `"></div></div>`)
+		b.WriteString(`<span class="model-accuracy">` + fmt.Sprintf("%.1f%%", accuracy*100) + `</span>`)
+		b.WriteString(`<span class="model-count">` + fmt.Sprintf("(%d/%d)", correct, total) + `</span>`)
+		b.WriteString(`</div>`)
+	}
+	b.WriteString(`</div>`)
 
 	return b.String()
 }
