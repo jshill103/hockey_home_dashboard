@@ -737,6 +737,7 @@ func main() {
 	// System Statistics endpoints
 	http.HandleFunc("/system-stats", handlers.HandleSystemStats)
 	http.HandleFunc("/system-stats-popup", handlers.HandleSystemStatsPopup)
+	http.HandleFunc("/system-health-popup", handlers.HandleSystemHealthPopup)
 	http.HandleFunc("/api/health", handlers.HandleHealth) // Alternative endpoint
 
 	// Team Tier List endpoints

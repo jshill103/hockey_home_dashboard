@@ -2181,6 +2181,87 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
             font-style: italic;
         }
         
+        /* System Health Popup Specific Styles */
+        .health-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.95em;
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .health-badge.healthy {
+            color: #28a745;
+        }
+
+        .health-badge.degraded {
+            color: #ffc107;
+        }
+
+        .health-badge.unhealthy {
+            color: #dc3545;
+        }
+
+        .health-overall-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 5px;
+        }
+
+        .health-check-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .health-check-card {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 3px solid #6c757d;
+            transition: all 0.3s ease;
+        }
+
+        .health-check-card:hover {
+            background: rgba(0, 0, 0, 0.5);
+            transform: translateX(5px);
+        }
+
+        .health-check-card.healthy {
+            border-left-color: #28a745;
+        }
+
+        .health-check-card.degraded {
+            border-left-color: #ffc107;
+        }
+
+        .health-check-card.unhealthy {
+            border-left-color: #dc3545;
+        }
+
+        .health-check-title {
+            font-weight: 600;
+            color: white;
+            margin-bottom: 8px;
+        }
+
+        .health-check-message {
+            color: #ddd;
+            font-size: 0.9em;
+            margin-top: 8px;
+        }
+
+        .health-check-meta {
+            color: #aaa;
+            font-size: 0.8em;
+            margin-top: 4px;
+        }
+
         /* Responsive popup */
         @media (max-width: 768px) {
             .system-stats-popup {
@@ -2213,7 +2294,7 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         </div>
         
         <div class="model-insights-section hockey-season-only">
-            <h2 style="margin: 0 0 15px 0; font-size: 1.4em;">🤖 AI Insights <span id="predictions-stats-icon" style="cursor: pointer; font-size: 0.8em; margin-left: 10px;" title="View Prediction Statistics">📊</span><span id="tier-list-icon" style="cursor: pointer; font-size: 0.8em; margin-left: 10px;" title="View NHL Power Rankings Tier List">🏆</span></h2>
+            <h2 style="margin: 0 0 15px 0; font-size: 1.4em;">🤖 AI Insights <span id="predictions-stats-icon" style="cursor: pointer; font-size: 0.8em; margin-left: 10px;" title="View Prediction Statistics">📊</span><span id="tier-list-icon" style="cursor: pointer; font-size: 0.8em; margin-left: 10px;" title="View NHL Power Rankings Tier List">🏆</span><span id="system-health-icon" style="cursor: pointer; font-size: 0.8em; margin-left: 10px;" title="View System Health Check">🩺</span></h2>
             <div id="model-insights-content">
                 <p>Loading AI model insights...</p>
             </div>
@@ -2776,6 +2857,22 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
                     tierListIcon.style.transform = 'scale(1)';
                 });
             }
+
+            // System health icon functionality
+            const systemHealthIcon = document.getElementById('system-health-icon');
+            if (systemHealthIcon) {
+                systemHealthIcon.addEventListener('click', openSystemHealthPopup);
+
+                // Add hover effect
+                systemHealthIcon.addEventListener('mouseover', function() {
+                    systemHealthIcon.style.transform = 'scale(1.3)';
+                    systemHealthIcon.style.transition = 'transform 0.2s ease';
+                });
+
+                systemHealthIcon.addEventListener('mouseout', function() {
+                    systemHealthIcon.style.transform = 'scale(1)';
+                });
+            }
         });
         
         // Functions for predictions popup
@@ -2847,6 +2944,43 @@ func HandleHome(w http.ResponseWriter, r *http.Request) {
         
         function closeTierListPopup() {
             const overlay = document.getElementById('tier-list-popup-overlay');
+            if (overlay) {
+                overlay.classList.remove('active');
+            }
+        }
+
+        // Functions for system health popup
+        function openSystemHealthPopup() {
+            fetch('/system-health-popup')
+                .then(response => response.text())
+                .then(html => {
+                    // Create overlay
+                    let overlay = document.getElementById('system-health-popup-overlay');
+                    if (!overlay) {
+                        overlay = document.createElement('div');
+                        overlay.id = 'system-health-popup-overlay';
+                        overlay.className = 'stats-popup-overlay';
+                        document.body.appendChild(overlay);
+
+                        // Close on overlay click
+                        overlay.addEventListener('click', function(e) {
+                            if (e.target === overlay) {
+                                closeSystemHealthPopup();
+                            }
+                        });
+                    }
+
+                    overlay.innerHTML = html;
+                    overlay.classList.add('active');
+                })
+                .catch(error => {
+                    console.error('Failed to load system health:', error);
+                    alert('Failed to load system health status');
+                });
+        }
+
+        function closeSystemHealthPopup() {
+            const overlay = document.getElementById('system-health-popup-overlay');
             if (overlay) {
                 overlay.classList.remove('active');
             }
