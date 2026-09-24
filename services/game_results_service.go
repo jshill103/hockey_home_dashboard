@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -723,6 +724,73 @@ func (grs *GameResultsService) feedToModels(game *models.CompletedGame) {
 			log.Printf("⚠️ Failed to update prediction with result: %v", err)
 		} else {
 			log.Printf("✅ Prediction updated with actual result for game %d", game.GameID)
+		}
+
+		// Feed each model's per-game result to the ensemble recalibration
+		// tracker and the dynamic weighting service so their performance
+		// metrics (and eventually calibrated weights) reflect real outcomes
+		// instead of staying permanently empty. Needs the original stored
+		// prediction for the model-by-model WinProbability values and the
+		// home/away team codes.
+		if stored, err := predictionStorage.LoadPrediction(game.GameID); err == nil && stored != nil {
+			modelResults := stored.Prediction.Prediction.ModelResults
+			homeTeam, awayTeam := stored.HomeTeam, stored.AwayTeam
+
+			contextType := "regular"
+			if game.GameType == 3 {
+				contextType = "playoff"
+			} else if game.GameType == 1 {
+				contextType = "preseason"
+			}
+
+			if recalService := GetRecalibrationService(); recalService != nil {
+				if err := recalService.RecordPredictionOutcome(
+					modelResults, game.Winner, homeTeam, awayTeam, contextType,
+				); err != nil {
+					log.Printf("⚠️ Failed to record recalibration outcome: %v", err)
+				}
+			}
+
+			if dynamicWeights := GetDynamicWeightingService(); dynamicWeights != nil {
+				actualOutcome := 0.0
+				if game.Winner == homeTeam {
+					actualOutcome = 1.0
+				}
+				for _, result := range modelResults {
+					// Every ModelResult.WinProbability is the home team's win
+					// probability (see models.ModelResult), so >0.5 means the
+					// model picked the home team, otherwise the away team.
+					predictedWinner := awayTeam
+					if result.WinProbability > 0.5 {
+						predictedWinner = homeTeam
+					}
+					record := AccuracyRecord{
+						PredictionID:     fmt.Sprintf("%s_vs_%s_%s_%s", homeTeam, awayTeam, game.GameDate.Format("2006-01-02"), result.ModelName),
+						GameDate:         game.GameDate,
+						HomeTeam:         homeTeam,
+						AwayTeam:         awayTeam,
+						PredictedWinner:  predictedWinner,
+						ActualWinner:     game.Winner,
+						WinProbability:   result.WinProbability,
+						Confidence:       result.Confidence,
+						IsCorrect:        predictedWinner == game.Winner,
+						ProbabilityError: math.Abs(result.WinProbability - actualOutcome),
+						GameContext: GameContext{
+							IsHomeGame:        true,
+							IsPlayoffGame:     game.GameType == 3,
+							TeamStrengthGap:   0.1,       // Would need team ratings to compute properly
+							IsUpsetPrediction: false,     // Would need pre-game odds/ratings to determine
+							GameImportance:    "medium",  // Would need standings context to assess
+							OpponentType:      "average", // Would need opponent rating to classify
+						},
+						ProcessingTime: result.ProcessingTime,
+						RecordedAt:     time.Now(),
+					}
+					if err := dynamicWeights.RecordPredictionOutcome(result.ModelName, record); err != nil {
+						log.Printf("⚠️ Failed to record dynamic weighting outcome for %s: %v", result.ModelName, err)
+					}
+				}
+			}
 		}
 	}
 

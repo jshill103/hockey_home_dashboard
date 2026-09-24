@@ -1,9 +1,13 @@
 package services
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"math"
+	"os"
+	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -124,6 +128,9 @@ type DynamicWeightingService struct {
 	lastFullUpdate      time.Time
 	isEnabled           bool
 	settings            DynamicWeightingSettings
+
+	dataDir string
+	mutex   sync.RWMutex
 }
 
 // DynamicWeightingSettings configures the dynamic weighting behavior
@@ -196,11 +203,159 @@ func NewDynamicWeightingService() *DynamicWeightingService {
 		updateInterval:      settings.WeightUpdateFrequency,
 		isEnabled:           settings.EnableDynamicWeights,
 		settings:            settings,
+		dataDir:             "data/models",
 	}
+}
+
+var (
+	dynamicWeightingInstance *DynamicWeightingService
+	dynamicWeightingOnce     sync.Once
+)
+
+// GetDynamicWeightingService returns the singleton instance, loading any
+// persisted performance history/weights from disk on first access. Previously
+// NewEnsemblePredictionService called NewDynamicWeightingService() directly,
+// creating a brand-new in-memory-only instance on every single prediction
+// request -- so RecordPredictionOutcome's accumulated history and
+// updateWeights's adjustments never survived past that one request, and
+// GetCurrentWeights could never report anything but the hardcoded starting
+// weights no matter how much accuracy data existed. Making this a persisted
+// singleton (matching every other model/service in this package) is what
+// lets it actually learn across requests and restarts.
+func GetDynamicWeightingService() *DynamicWeightingService {
+	dynamicWeightingOnce.Do(func() {
+		dynamicWeightingInstance = NewDynamicWeightingService()
+		os.MkdirAll(dynamicWeightingInstance.dataDir, 0755)
+		if err := dynamicWeightingInstance.loadWeightingData(); err != nil {
+			log.Printf("⚖️ Initializing new Dynamic Weighting Service (no saved data found)")
+		} else {
+			log.Printf("⚖️ Dynamic Weighting Service loaded from disk (%d models tracked)", len(dynamicWeightingInstance.performanceTrackers))
+		}
+	})
+	return dynamicWeightingInstance
+}
+
+// modelPerformanceTrackerData is the serializable form of
+// ModelPerformanceTracker (whose fields are all unexported).
+type modelPerformanceTrackerData struct {
+	AccuracyHistory   []AccuracyRecord                  `json:"accuracyHistory"`
+	ContextualMetrics map[string]*ContextualPerformance `json:"contextualMetrics"`
+	RecentPerformance *RecentPerformanceWindow          `json:"recentPerformance"`
+	LastUpdate        time.Time                         `json:"lastUpdate"`
+}
+
+// dynamicWeightingData is the serializable form of the state that actually
+// needs to survive a restart: per-model accuracy history and the weights
+// derived from it. The calculator's baseWeights/constraints/settings are
+// re-derived from code on every startup rather than persisted, so a code
+// change to those defaults takes effect immediately rather than being
+// shadowed by a stale saved value.
+type dynamicWeightingData struct {
+	Trackers         map[string]*modelPerformanceTrackerData `json:"trackers"`
+	CurrentWeights    map[string]float64                     `json:"currentWeights"`
+	ContextWeights    map[string]float64                     `json:"contextWeights"`
+	WeightHistory     []WeightSnapshot                       `json:"weightHistory"`
+	LastWeightUpdate  time.Time                               `json:"lastWeightUpdate"`
+	LastFullUpdate    time.Time                               `json:"lastFullUpdate"`
+	Version           string                                  `json:"version"`
+}
+
+func (dws *DynamicWeightingService) weightingDataPath() string {
+	return filepath.Join(dws.dataDir, "dynamic_weighting.json")
+}
+
+// saveWeightingData persists performance history and derived weights. Not
+// locked internally -- callers already hold dws.mutex, matching the
+// no-self-lock convention every other model's saveModel/saveWeights uses in
+// this package (see e.g. GradientBoostingModel.saveModel).
+func (dws *DynamicWeightingService) saveWeightingData() error {
+	trackers := make(map[string]*modelPerformanceTrackerData, len(dws.performanceTrackers))
+	for name, t := range dws.performanceTrackers {
+		trackers[name] = &modelPerformanceTrackerData{
+			AccuracyHistory:   t.accuracyHistory,
+			ContextualMetrics: t.contextualMetrics,
+			RecentPerformance: t.recentPerformance,
+			LastUpdate:        t.lastUpdate,
+		}
+	}
+
+	data := dynamicWeightingData{
+		Trackers:         trackers,
+		CurrentWeights:   dws.calculator.currentWeights,
+		ContextWeights:   dws.calculator.contextWeights,
+		WeightHistory:    dws.calculator.weightHistory,
+		LastWeightUpdate: dws.calculator.lastWeightUpdate,
+		LastFullUpdate:   dws.lastFullUpdate,
+		Version:          "1.0",
+	}
+
+	jsonData, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return fmt.Errorf("error marshaling dynamic weighting data: %w", err)
+	}
+	if err := os.WriteFile(dws.weightingDataPath(), jsonData, 0644); err != nil {
+		return fmt.Errorf("error writing dynamic weighting data: %w", err)
+	}
+	return nil
+}
+
+// loadWeightingData restores performance history and derived weights saved
+// by saveWeightingData. Not locked internally -- only called from the
+// sync.Once initializer in GetDynamicWeightingService, before the instance is
+// published, so nothing else can be concurrently accessing it yet.
+func (dws *DynamicWeightingService) loadWeightingData() error {
+	path := dws.weightingDataPath()
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return fmt.Errorf("no saved dynamic weighting data found")
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("error reading dynamic weighting data: %w", err)
+	}
+
+	var data dynamicWeightingData
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return fmt.Errorf("error unmarshaling dynamic weighting data: %w", err)
+	}
+
+	for name, t := range data.Trackers {
+		tracker := &ModelPerformanceTracker{
+			modelName:         name,
+			accuracyHistory:   t.AccuracyHistory,
+			contextualMetrics: t.ContextualMetrics,
+			recentPerformance: t.RecentPerformance,
+			performanceCache:  make(map[string]float64),
+			lastUpdate:        t.LastUpdate,
+		}
+		if tracker.contextualMetrics == nil {
+			tracker.contextualMetrics = make(map[string]*ContextualPerformance)
+		}
+		if tracker.recentPerformance == nil {
+			tracker.recentPerformance = &RecentPerformanceWindow{}
+		}
+		dws.performanceTrackers[name] = tracker
+	}
+	if data.CurrentWeights != nil {
+		dws.calculator.currentWeights = data.CurrentWeights
+	}
+	if data.ContextWeights != nil {
+		dws.calculator.contextWeights = data.ContextWeights
+	}
+	if data.WeightHistory != nil {
+		dws.calculator.weightHistory = data.WeightHistory
+	}
+	dws.calculator.lastWeightUpdate = data.LastWeightUpdate
+	dws.lastFullUpdate = data.LastFullUpdate
+
+	return nil
 }
 
 // RecordPredictionOutcome records the result of a prediction for weight calculation
 func (dws *DynamicWeightingService) RecordPredictionOutcome(modelName string, record AccuracyRecord) error {
+	dws.mutex.Lock()
+	defer dws.mutex.Unlock()
+
 	if !dws.isEnabled {
 		return nil // Dynamic weighting disabled
 	}
@@ -239,11 +394,18 @@ func (dws *DynamicWeightingService) RecordPredictionOutcome(modelName string, re
 	log.Printf("📊 Recorded %s prediction: %s vs %s, Correct: %v, Confidence: %.1f%%",
 		modelName, record.HomeTeam, record.AwayTeam, record.IsCorrect, record.Confidence*100)
 
+	if err := dws.saveWeightingData(); err != nil {
+		log.Printf("⚠️ Failed to save dynamic weighting data: %v", err)
+	}
+
 	return nil
 }
 
 // GetCurrentWeights returns the current dynamic weights for all models
 func (dws *DynamicWeightingService) GetCurrentWeights() map[string]float64 {
+	dws.mutex.Lock()
+	defer dws.mutex.Unlock()
+
 	if !dws.isEnabled {
 		return dws.calculator.baseWeights
 	}
@@ -251,6 +413,9 @@ func (dws *DynamicWeightingService) GetCurrentWeights() map[string]float64 {
 	// Update weights if enough time has passed
 	if time.Since(dws.lastFullUpdate) > dws.updateInterval {
 		dws.updateWeights()
+		if err := dws.saveWeightingData(); err != nil {
+			log.Printf("⚠️ Failed to save dynamic weighting data: %v", err)
+		}
 	}
 
 	return dws.calculator.currentWeights
@@ -273,11 +438,25 @@ func (dws *DynamicWeightingService) updateWeights() {
 		log.Printf("📈 %s performance score: %.3f", modelName, score)
 	}
 
-	// Convert scores to weights
+	// Convert scores to weights. Models with performance data split *only
+	// the combined base-weight share those models represent* between
+	// themselves, proportional to relative score; models without data keep
+	// their base weight untouched. Previously this divided by totalScore
+	// alone (score / totalScore), which normalizes as if the models with
+	// data represented the *entire* weight budget -- e.g. two models with
+	// scores 0.875 and 0.100 would get raw weights of 0.897 and 0.103, wildly
+	// inflated above any real base weight (0.06-0.30) regardless of how
+	// different the two scores actually were, so both ended up clamped to
+	// the same MaxShiftPerUpdate ceiling/floor below and came out with
+	// identical final weights no matter how large the real performance gap.
 	if totalScore > 0 {
+		dataModelsBaseShare := 0.0
+		for modelName := range performanceScores {
+			dataModelsBaseShare += dws.calculator.baseWeights[modelName]
+		}
 		for modelName := range dws.calculator.baseWeights {
 			if score, exists := performanceScores[modelName]; exists {
-				newWeights[modelName] = score / totalScore
+				newWeights[modelName] = dataModelsBaseShare * (score / totalScore)
 			} else {
 				// Model has no performance data, use base weight
 				newWeights[modelName] = dws.calculator.baseWeights[modelName]
@@ -741,21 +920,29 @@ func (dws *DynamicWeightingService) hasSignificantWeightChange(newWeights map[st
 
 // GetPerformanceMetrics returns detailed performance metrics for analysis
 func (dws *DynamicWeightingService) GetPerformanceMetrics() map[string]*ModelPerformanceTracker {
+	dws.mutex.RLock()
+	defer dws.mutex.RUnlock()
 	return dws.performanceTrackers
 }
 
 // GetWeightHistory returns the history of weight changes
 func (dws *DynamicWeightingService) GetWeightHistory() []WeightSnapshot {
+	dws.mutex.RLock()
+	defer dws.mutex.RUnlock()
 	return dws.calculator.weightHistory
 }
 
 // IsEnabled returns whether dynamic weighting is currently enabled
 func (dws *DynamicWeightingService) IsEnabled() bool {
+	dws.mutex.RLock()
+	defer dws.mutex.RUnlock()
 	return dws.isEnabled
 }
 
 // SetEnabled enables or disables dynamic weighting
 func (dws *DynamicWeightingService) SetEnabled(enabled bool) {
+	dws.mutex.Lock()
+	defer dws.mutex.Unlock()
 	dws.isEnabled = enabled
 	if !enabled {
 		// Reset to base weights

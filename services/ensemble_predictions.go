@@ -40,7 +40,7 @@ func NewEnsemblePredictionService(teamCode string) *EnsemblePredictionService {
 		useMetaLearner:  metaLearner.trained, // Use if trained, otherwise fall back to weighted average
 		accuracyTracker: NewAccuracyTrackingService(),
 		dataQuality:     NewDataQualityService(teamCode),
-		dynamicWeights:  NewDynamicWeightingService(),
+		dynamicWeights:  GetDynamicWeightingService(),
 		crossValidation: NewCrossValidationService(),
 		models: []PredictionModel{
 			NewStatisticalModel(),       // 30% (if meta-learner not used)
@@ -50,18 +50,8 @@ func NewEnsemblePredictionService(teamCode string) *EnsemblePredictionService {
 			NewPoissonRegressionModel(), // 12%
 			NewNeuralNetworkModel(),     // 6%
 			NewGradientBoostingModel(),  // 7%
-			// LSTM DISABLED: intentionally excluded from the active model
-			// list. Its trainSequence never applies gradient updates (so it
-			// predicts on random Xavier-initialized weights) and its
-			// extractSequence feeds one repeated feature snapshot into all 10
-			// "timesteps" instead of a real historical sequence -- it
-			// currently contributes noise, not signal. See the DISABLED
-			// header comment in lstm_model.go for details and what's needed
-			// before re-enabling it. Removing it from this list (rather than
-			// relying solely on weight=0) ensures it cannot influence either
-			// the weighted-average path or the meta-learner stacking path.
-			// NewLSTMModel(),
-			NewRandomForestModel(), // 7%
+			NewLSTMModel(),              // 7% -- re-enabled, see lstm_model.go header comment
+			NewRandomForestModel(),      // 7%
 		},
 	}
 }
@@ -929,8 +919,24 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 	var modelResults []models.ModelResult
 	var totalWeight float64
 
-	// 🚀 Get current dynamic weights
+	// 🚀 Get current model weights. dynamicWeights is the primary, more
+	// sophisticated source (recency-weighted accuracy, contextual
+	// performance, streak/window tracking) -- it used to be recreated from
+	// scratch on every single prediction request with no persistence, so it
+	// could never actually learn anything across requests; it's now a
+	// persisted singleton fed by real per-game outcomes (see
+	// GameResultsService.feedToModels). The recalibration service is a
+	// simpler fallback, fed the same real outcomes. Both start from the same
+	// base weights, so this only changes behavior once real accuracy data
+	// has accumulated.
 	currentWeights := eps.dynamicWeights.GetCurrentWeights()
+	if !eps.dynamicWeights.IsEnabled() || len(currentWeights) == 0 {
+		if recalService := GetRecalibrationService(); recalService != nil {
+			if calibrated := recalService.GetCalibratedWeights(); len(calibrated) > 0 {
+				currentWeights = calibrated
+			}
+		}
+	}
 
 	// Note: Context-aware model selection moved to Phase 3 (see above)
 

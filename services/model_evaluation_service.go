@@ -315,6 +315,48 @@ func (mes *ModelEvaluationService) AddGameToBatch(game models.CompletedGame) err
 	return nil
 }
 
+// maxTreeModelTrainingWindow bounds how many of the most recent completed
+// games GradientBoosting/RandomForest retrain on each cycle. These models
+// rebuild their entire tree ensemble from scratch on every call (unlike the
+// Neural Network's incremental per-game updates), so retraining on only the
+// newest 10-20 game batch would discard all previously learned signal every
+// time and make the trees swing wildly on tiny, noisy samples. Retraining on
+// a large rolling window instead lets tree quality improve as the season
+// progresses. The cap keeps retraining cost bounded as history grows across
+// seasons.
+const maxTreeModelTrainingWindow = 500
+
+// getTrainingWindow returns up to the most recent maxGames completed games,
+// sorted chronologically (oldest first). Used by tree-ensemble models that
+// need to retrain on accumulated history rather than just the latest batch.
+func (mes *ModelEvaluationService) getTrainingWindow(maxGames int) []models.CompletedGame {
+	mes.mutex.RLock()
+	defer mes.mutex.RUnlock()
+
+	games := make([]models.CompletedGame, len(mes.completedGames))
+	copy(games, mes.completedGames)
+	sort.Slice(games, func(i, j int) bool {
+		return games[i].GameDate.Before(games[j].GameDate)
+	})
+
+	if len(games) > maxGames {
+		games = games[len(games)-maxGames:]
+	}
+	return games
+}
+
+// buildFactorsForGames builds pre-game home/away PredictionFactors for each
+// game, in the same order. See buildFactors for what "pre-game" means.
+func (mes *ModelEvaluationService) buildFactorsForGames(games []models.CompletedGame) (home, away []*models.PredictionFactors) {
+	home = make([]*models.PredictionFactors, len(games))
+	away = make([]*models.PredictionFactors, len(games))
+	for i, game := range games {
+		home[i] = mes.buildFactors(game, true)
+		away[i] = mes.buildFactors(game, false)
+	}
+	return home, away
+}
+
 // trainModelBatch trains a specific model on its batch
 // PHASE 2: Model-specific training
 func (mes *ModelEvaluationService) trainModelBatch(modelName string, batch []models.CompletedGame) error {
@@ -344,10 +386,14 @@ func (mes *ModelEvaluationService) trainModelBatch(modelName string, batch []mod
 		}
 
 	case "GradientBoosting":
-		// GB rebuilds its whole forest from the batch in one call, not per-game
+		// GB rebuilds its whole forest from scratch each cycle, so retrain on
+		// a large rolling window of history (not just the newest batch) --
+		// see maxTreeModelTrainingWindow for why.
 		gbModel := GetGradientBoostingModel()
 		if gbModel != nil {
-			if err := gbModel.Train(batch); err != nil {
+			trainingGames := mes.getTrainingWindow(maxTreeModelTrainingWindow)
+			homeFactors, awayFactors := mes.buildFactorsForGames(trainingGames)
+			if err := gbModel.Train(trainingGames, homeFactors, awayFactors); err != nil {
 				log.Printf("⚠️ Gradient Boosting batch training failed: %v", err)
 			} else {
 				successCount = batchSize
@@ -355,20 +401,31 @@ func (mes *ModelEvaluationService) trainModelBatch(modelName string, batch []mod
 		}
 
 	case "LSTM":
+		// LSTM.Train needs sequenceLen+1 consecutive games *per team* to
+		// build even one training sequence (see prepareSequences), which the
+		// small trigger batch essentially never has -- so, like GB/RF, it
+		// retrains on a rolling window of history. Unlike GB/RF it doesn't
+		// rebuild from scratch each time; Train() keeps refining the same
+		// persistent weights.
 		lstmModel := GetLSTMModel()
 		if lstmModel != nil {
-			for _, game := range batch {
-				if err := lstmModel.TrainOnGameResult(game); err == nil {
-					successCount++
-				}
+			trainingGames := mes.getTrainingWindow(maxTreeModelTrainingWindow)
+			if err := lstmModel.Train(trainingGames); err != nil {
+				log.Printf("⚠️ LSTM batch training failed: %v", err)
+			} else {
+				successCount = batchSize
 			}
 		}
 
 	case "RandomForest":
-		// RF rebuilds its whole forest from the batch in one call, not per-game
+		// RF rebuilds its whole forest from scratch each cycle, so retrain on
+		// a large rolling window of history (not just the newest batch) --
+		// see maxTreeModelTrainingWindow for why.
 		rfModel := GetRandomForestModel()
 		if rfModel != nil {
-			if err := rfModel.Train(batch); err != nil {
+			trainingGames := mes.getTrainingWindow(maxTreeModelTrainingWindow)
+			homeFactors, awayFactors := mes.buildFactorsForGames(trainingGames)
+			if err := rfModel.Train(trainingGames, homeFactors, awayFactors); err != nil {
 				log.Printf("⚠️ Random Forest batch training failed: %v", err)
 			} else {
 				successCount = batchSize
@@ -791,20 +848,26 @@ func (mes *ModelEvaluationService) loadCompletedGames() error {
 			return err
 		}
 
-		// Process JSON files
+		// Process JSON files. Each monthly file (see GameResultsService.saveGame)
+		// holds a JSON array of games, not a single game -- unmarshaling
+		// straight into models.CompletedGame silently failed on every file
+		// (array-into-struct type mismatch) and left completedGames
+		// permanently empty, which in turn made buildFactors's historical
+		// stats reconstruction fall back to neutral defaults for every team
+		// on every training example.
 		if !info.IsDir() && filepath.Ext(path) == ".json" && filepath.Base(path) != "processed_games.json" {
 			jsonData, err := ioutil.ReadFile(path)
 			if err != nil {
 				return err
 			}
 
-			var game models.CompletedGame
-			if err := json.Unmarshal(jsonData, &game); err != nil {
+			var games []models.CompletedGame
+			if err := json.Unmarshal(jsonData, &games); err != nil {
 				// Skip files that don't match structure
 				return nil
 			}
 
-			mes.completedGames = append(mes.completedGames, game)
+			mes.completedGames = append(mes.completedGames, games...)
 		}
 
 		return nil

@@ -15,36 +15,29 @@ import (
 )
 
 // ============================================================================
-// DISABLED: this LSTM model is currently EXCLUDED from live ensemble
-// predictions (see NewEnsemblePredictionService in ensemble_predictions.go).
+// RE-ENABLED. This model was previously excluded from live ensemble
+// predictions because of two bugs, both now fixed:
+//  1. trainSequence computed gradients for the LSTM gates but never applied
+//     them -- every "trained" prediction still ran on the original random
+//     Xavier-initialized weights. Fixed via forwardWithCache/backwardAndUpdate,
+//     which cache per-timestep gate activations during the forward pass and
+//     run real backpropagation-through-time, applying a gradient-descent
+//     update (with clipping) to every gate's weights/biases and the output
+//     layer after every sequence.
+//  2. extractSequence fed the SAME current-game feature snapshot into all
+//     `sequenceLen` (10) timesteps instead of that team's actual last 10
+//     games, so the model never saw genuine temporal structure even after
+//     bug 1 was fixed. Fixed via extractSequenceForTeam, which pulls the
+//     team's real Last10Games history from RollingStatsService (oldest to
+//     newest) and buildLSTMFeatures, which is now shared between training
+//     (extractGameFeatures, from historical CompletedGame data) and inference
+//     (extractSequenceForTeam, from live GameSummary data) so both sides
+//     build the same feature vector out of the same underlying fields.
 //
-// Why: two independent bugs mean it contributes noise, not signal:
-//  1. trainSequence (below) computes gradients for the LSTM gates but never
-//     applies a weight update from them -- so every "trained" prediction is
-//     still running on the original random Xavier-initialized weights,
-//     regardless of how many games it has "trained" on.
-//  2. extractSequence (below) feeds the SAME current-game feature snapshot
-//     into all `sequenceLen` (10) timesteps instead of that team's actual
-//     last 10 games' features, so even if weights did update, the model
-//     would never see genuine temporal/sequential structure to learn from.
-//
-// Net effect: Predict() output is close to random noise dressed up as a
-// confident-looking probability, which is worse than not having a prediction
-// at all when averaged into an ensemble. Rather than attempt a full rewrite
-// here, the model's ensemble weight has been zeroed out (see `weight: 0` in
-// NewLSTMModel below) and it has been removed from the active model list in
-// ensemble_predictions.go, so it no longer influences combined predictions.
-//
-// The code is intentionally left in place (not deleted) so it can keep
-// running/logging for future debugging, and so a future rewrite has a
-// starting point. Before re-enabling it in the ensemble:
-//   - Implement real backpropagation-through-time in trainSequence: compute
-//     gradients for every gate at every timestep and actually apply them
-//     (with an optimizer step) to lstm.weights* / lstm.biases*.
-//   - Rework extractSequence (and the training-side equivalent) to build a
-//     true per-timestep sequence of that team's actual last N games' features,
-//     consistently between training and inference -- not the same snapshot
-//     repeated 10 times.
+// A third bug was found alongside these: TrainOnGameResult (like GB/RF's
+// before their own fix) never called the real Train() -- see
+// ModelEvaluationService.trainModelBatch's "LSTM" case, which now calls
+// lstm.Train() on a rolling window of history instead.
 // ============================================================================
 
 // LSTMModel implements a Long Short-Term Memory network for sequential game prediction
@@ -118,11 +111,7 @@ func NewLSTMModel() *LSTMModel {
 			outputSize:    outputSize,
 			sequenceLen:   sequenceLen,
 			learningRate:  0.001,
-			// DISABLED (see file header comment): weight forced to 0 so this
-			// model cannot influence the ensemble even if something calls
-			// GetWeight() directly. It is also removed from the active model
-			// list in NewEnsemblePredictionService as the primary safeguard.
-			weight:        0,
+			weight:        0.07, // 7% weight in ensemble, matching its documented base weight
 			trained:       false,
 			dataDir:       "data/models",
 			lastUpdated:   time.Now(),
@@ -240,8 +229,8 @@ func (lstm *LSTMModel) Predict(homeFactors, awayFactors *models.PredictionFactor
 	}
 
 	// Get game sequences for both teams
-	homeSequence := lstm.extractSequence(homeFactors)
-	awaySequence := lstm.extractSequence(awayFactors)
+	homeSequence := lstm.extractSequenceForTeam(homeFactors.TeamCode)
+	awaySequence := lstm.extractSequenceForTeam(awayFactors.TeamCode)
 
 	// Run LSTM forward pass for both teams
 	homeOutput := lstm.forward(homeSequence)
@@ -377,73 +366,81 @@ func (lstm *LSTMModel) gate(W [][]float64, x, h []float64, b []float64, activati
 	return result
 }
 
-// extractSequence extracts a game sequence from prediction factors
-func (lstm *LSTMModel) extractSequence(factors *models.PredictionFactors) [][]float64 {
-	// For now, create a simple sequence from rolling stats
-	// In production, this would use actual game history
-	sequence := make([][]float64, lstm.sequenceLen)
+// buildLSTMFeatures converts one game's box-score stats (from a specific
+// team's perspective) into a fixed-length feature vector for one LSTM
+// timestep. Shared by extractGameFeatures (training, from historical
+// CompletedGame data) and extractSequenceForTeam (inference, from live
+// RollingStatsService GameSummary data) so both sides build features out of
+// the same fields the same way.
+func (lstm *LSTMModel) buildLSTMFeatures(goalsFor, goalsAgainst, shotsFor, shotsAgainst, ppGoals, ppOpps int, isHome, won bool, points int) []float64 {
+	features := make([]float64, lstm.inputSize)
+	idx := 0
 
-	for t := 0; t < lstm.sequenceLen; t++ {
-		features := make([]float64, lstm.inputSize)
-		idx := 0
+	features[idx] = float64(goalsFor) / 8.0
+	idx++
+	features[idx] = float64(goalsAgainst) / 8.0
+	idx++
+	features[idx] = float64(goalsFor-goalsAgainst) / 8.0
+	idx++
+	features[idx] = float64(shotsFor) / 45.0
+	idx++
+	features[idx] = float64(shotsAgainst) / 45.0
+	idx++
+	ppPct := 0.0
+	if ppOpps > 0 {
+		ppPct = float64(ppGoals) / float64(ppOpps)
+	}
+	features[idx] = ppPct
+	idx++
+	features[idx] = float64(ppOpps) / 6.0
+	idx++
+	if isHome {
+		features[idx] = 1.0
+	}
+	idx++
+	if won {
+		features[idx] = 1.0
+	}
+	idx++
+	features[idx] = float64(points) / 2.0
+	idx++
 
-		// Add rolling stats
-		features[idx] = factors.MomentumScore
+	// Remaining features reserved for future signals (rest days, opponent
+	// strength, etc.) once those are reliably tracked per historical game.
+	for idx < lstm.inputSize {
+		features[idx] = 0.0
 		idx++
-		features[idx] = factors.WeightedWinPct
-		idx++
-		features[idx] = factors.WeightedGoalsFor
-		idx++
-		features[idx] = factors.WeightedGoalsAgainst
-		idx++
-		if factors.IsHot {
-			features[idx] = 1.0
-		}
-		idx++
-		if factors.IsCold {
-			features[idx] = 1.0
-		}
-		idx++
-		features[idx] = float64(factors.Last5GamesPoints)
-		idx++
-		features[idx] = float64(factors.GoalDifferential5)
-		idx++
-
-		// Add basic stats
-		features[idx] = factors.WinPercentage
-		idx++
-		features[idx] = factors.GoalsFor
-		idx++
-		features[idx] = factors.GoalsAgainst
-		idx++
-		features[idx] = factors.PowerPlayPct
-		idx++
-		features[idx] = factors.PenaltyKillPct
-		idx++
-
-		// Add player impact
-		features[idx] = factors.StarPowerRating
-		idx++
-		features[idx] = factors.Top3CombinedPPG
-		idx++
-		features[idx] = factors.DepthScoring
-		idx++
-		features[idx] = factors.ScoringBalance
-		idx++
-
-		// Add goalie advantage
-		features[idx] = factors.GoalieAdvantage
-		idx++
-
-		// Pad remaining features with zeros
-		for idx < lstm.inputSize {
-			features[idx] = 0.0
-			idx++
-		}
-
-		sequence[t] = features
 	}
 
+	return features
+}
+
+// extractSequenceForTeam builds a real chronological (oldest-to-newest)
+// sequence of teamCode's last games from RollingStatsService, replacing the
+// old extractSequence which fed the same current-game snapshot into every
+// timestep. Teams with fewer than sequenceLen games return a shorter
+// sequence -- forward() handles any sequence length.
+func (lstm *LSTMModel) extractSequenceForTeam(teamCode string) [][]float64 {
+	rollingStats := GetRollingStatsService()
+	if rollingStats == nil {
+		return [][]float64{}
+	}
+	stats, err := rollingStats.GetTeamStats(teamCode)
+	if err != nil || stats == nil || len(stats.Last10Games) == 0 {
+		return [][]float64{}
+	}
+
+	// Last10Games is stored newest-first; reverse to oldest-first so the
+	// final timestep (and thus the final hidden state driving the output)
+	// reflects the most recent game.
+	games := stats.Last10Games
+	sequence := make([][]float64, len(games))
+	for i, g := range games {
+		sequence[len(games)-1-i] = lstm.buildLSTMFeatures(
+			g.GoalsFor, g.GoalsAgainst, g.Shots, g.ShotsAgainst,
+			g.PowerPlayGoals, g.PowerPlayOpps, g.IsHome, g.Result == "W", g.Points,
+		)
+	}
 	return sequence
 }
 
@@ -569,33 +566,29 @@ func (lstm *LSTMModel) prepareSequences(games []models.CompletedGame) []GameSequ
 	return sequences
 }
 
-// extractGameFeatures extracts features from a completed game
+// extractGameFeatures extracts features from a completed game for teamCode's
+// perspective, using the same buildLSTMFeatures extractor as inference.
 func (lstm *LSTMModel) extractGameFeatures(game *models.CompletedGame, teamCode string) []float64 {
-	features := make([]float64, lstm.inputSize)
-
+	var team, opponent models.TeamGameResult
 	isHome := game.HomeTeam.TeamCode == teamCode
-
-	idx := 0
 	if isHome {
-		features[idx] = float64(game.HomeTeam.Score)
-		idx++
-		features[idx] = float64(game.AwayTeam.Score)
-		idx++
+		team, opponent = game.HomeTeam, game.AwayTeam
 	} else {
-		features[idx] = float64(game.AwayTeam.Score)
-		idx++
-		features[idx] = float64(game.HomeTeam.Score)
-		idx++
+		team, opponent = game.AwayTeam, game.HomeTeam
 	}
 
-	// Add more features as available
-	// For now, pad with normalized values
-	for idx < lstm.inputSize {
-		features[idx] = 0.0
-		idx++
+	won := team.Score > opponent.Score
+	points := 0
+	if won {
+		points = 2
+	} else if game.WinType == "OT" || game.WinType == "SO" {
+		points = 1
 	}
 
-	return features
+	return lstm.buildLSTMFeatures(
+		team.Score, opponent.Score, team.Shots, opponent.Shots,
+		team.PowerPlayGoals, team.PowerPlayOpps, isHome, won, points,
+	)
 }
 
 // getGameLabel returns the label for a game (1.0 = win, 0.0 = loss, 0.5 = OT loss)
@@ -615,10 +608,211 @@ func (lstm *LSTMModel) getGameLabel(game *models.CompletedGame, teamCode string)
 	return 0.0
 }
 
+// lstmTimestepCache holds the intermediate values from one forward-pass
+// timestep that backwardAndUpdate needs to compute gradients.
+type lstmTimestepCache struct {
+	x, hPrev, cPrev []float64
+	f, i, o, cTilde []float64
+	c, h            []float64
+}
+
+// forwardWithCache is forward's twin for training: same computation, but it
+// also stashes every timestep's gate activations and cell/hidden states so
+// backwardAndUpdate can run backpropagation-through-time afterward. forward
+// itself stays cache-free since Predict() runs far more often than training.
+func (lstm *LSTMModel) forwardWithCache(sequence [][]float64) ([]float64, []lstmTimestepCache) {
+	h := make([]float64, lstm.hiddenSize)
+	c := make([]float64, lstm.hiddenSize)
+	caches := make([]lstmTimestepCache, len(sequence))
+
+	for t := 0; t < len(sequence); t++ {
+		x := sequence[t]
+		hPrev := append([]float64(nil), h...)
+		cPrev := append([]float64(nil), c...)
+
+		ft := lstm.gate(lstm.Wf, x, h, lstm.bf, sigmoid)
+		it := lstm.gate(lstm.Wi, x, h, lstm.bi, sigmoid)
+		cTilde := lstm.gate(lstm.Wc, x, h, lstm.bc, tanhActivation)
+
+		newC := make([]float64, lstm.hiddenSize)
+		for k := 0; k < lstm.hiddenSize; k++ {
+			newC[k] = ft[k]*cPrev[k] + it[k]*cTilde[k]
+		}
+
+		ot := lstm.gate(lstm.Wo, x, h, lstm.bo, sigmoid)
+
+		newH := make([]float64, lstm.hiddenSize)
+		for k := 0; k < lstm.hiddenSize; k++ {
+			newH[k] = ot[k] * tanhActivation(newC[k])
+		}
+
+		caches[t] = lstmTimestepCache{x: x, hPrev: hPrev, cPrev: cPrev, f: ft, i: it, o: ot, cTilde: cTilde, c: newC, h: newH}
+		h, c = newH, newC
+	}
+
+	output := make([]float64, lstm.outputSize)
+	for i := 0; i < lstm.outputSize; i++ {
+		sum := lstm.by[i]
+		for j := 0; j < lstm.hiddenSize; j++ {
+			sum += lstm.Wy[i][j] * h[j]
+		}
+		output[i] = sum
+	}
+
+	return softmax(output), caches
+}
+
+// clipGrad bounds a single gradient component to avoid exploding gradients
+// destabilizing this hand-rolled (no optimizer momentum/normalization) SGD.
+func clipGrad(v float64) float64 {
+	const bound = 5.0
+	if v > bound {
+		return bound
+	}
+	if v < -bound {
+		return -bound
+	}
+	return v
+}
+
+// backwardAndUpdate runs backpropagation-through-time over the cached
+// forward pass and applies a plain SGD update to every gate's weights/biases
+// and the output layer. This is the piece that was previously missing
+// entirely: trainSequence computed a loss but never adjusted any weight.
+func (lstm *LSTMModel) backwardAndUpdate(caches []lstmTimestepCache, predicted, target []float64) {
+	T := len(caches)
+	if T == 0 {
+		return
+	}
+	hiddenSize, inputSize := lstm.hiddenSize, lstm.inputSize
+	finalH := caches[T-1].h
+
+	// Output layer gradients (standard softmax + cross-entropy gradient)
+	dy := make([]float64, lstm.outputSize)
+	for i := range dy {
+		dy[i] = predicted[i] - target[i]
+	}
+	dWy := make([][]float64, lstm.outputSize)
+	dby := make([]float64, lstm.outputSize)
+	for i := 0; i < lstm.outputSize; i++ {
+		dWy[i] = make([]float64, hiddenSize)
+		for j := 0; j < hiddenSize; j++ {
+			dWy[i][j] = dy[i] * finalH[j]
+		}
+		dby[i] = dy[i]
+	}
+
+	dhNext := make([]float64, hiddenSize)
+	for j := 0; j < hiddenSize; j++ {
+		sum := 0.0
+		for i := 0; i < lstm.outputSize; i++ {
+			sum += lstm.Wy[i][j] * dy[i]
+		}
+		dhNext[j] = sum
+	}
+	dcNext := make([]float64, hiddenSize)
+
+	// Gradient accumulators, flattened with the same [ih | hh] layout gate() uses.
+	dWfIH, dWfHH, dbf := make([]float64, hiddenSize*inputSize), make([]float64, hiddenSize*hiddenSize), make([]float64, hiddenSize)
+	dWiIH, dWiHH, dbi := make([]float64, hiddenSize*inputSize), make([]float64, hiddenSize*hiddenSize), make([]float64, hiddenSize)
+	dWoIH, dWoHH, dbo := make([]float64, hiddenSize*inputSize), make([]float64, hiddenSize*hiddenSize), make([]float64, hiddenSize)
+	dWcIH, dWcHH, dbc := make([]float64, hiddenSize*inputSize), make([]float64, hiddenSize*hiddenSize), make([]float64, hiddenSize)
+
+	accumulateGateGrads := func(dgate, x, hPrev, dWih, dWhh, db []float64) {
+		for i := 0; i < hiddenSize; i++ {
+			for j := 0; j < inputSize; j++ {
+				dWih[i*inputSize+j] += dgate[i] * x[j]
+			}
+			for j := 0; j < hiddenSize; j++ {
+				dWhh[i*hiddenSize+j] += dgate[i] * hPrev[j]
+			}
+			db[i] += dgate[i]
+		}
+	}
+
+	for t := T - 1; t >= 0; t-- {
+		ck := caches[t]
+
+		do := make([]float64, hiddenSize)
+		dcTotal := make([]float64, hiddenSize)
+		for k := 0; k < hiddenSize; k++ {
+			tanhC := tanhActivation(ck.c[k])
+			do[k] = dhNext[k] * tanhC * ck.o[k] * (1 - ck.o[k])
+			dcTotal[k] = dcNext[k] + dhNext[k]*ck.o[k]*(1-tanhC*tanhC)
+		}
+
+		df := make([]float64, hiddenSize)
+		di := make([]float64, hiddenSize)
+		dcTilde := make([]float64, hiddenSize)
+		dcPrev := make([]float64, hiddenSize)
+		for k := 0; k < hiddenSize; k++ {
+			df[k] = dcTotal[k] * ck.cPrev[k] * ck.f[k] * (1 - ck.f[k])
+			di[k] = dcTotal[k] * ck.cTilde[k] * ck.i[k] * (1 - ck.i[k])
+			dcTilde[k] = dcTotal[k] * ck.i[k] * (1 - ck.cTilde[k]*ck.cTilde[k])
+			dcPrev[k] = dcTotal[k] * ck.f[k]
+		}
+
+		accumulateGateGrads(df, ck.x, ck.hPrev, dWfIH, dWfHH, dbf)
+		accumulateGateGrads(di, ck.x, ck.hPrev, dWiIH, dWiHH, dbi)
+		accumulateGateGrads(do, ck.x, ck.hPrev, dWoIH, dWoHH, dbo)
+		accumulateGateGrads(dcTilde, ck.x, ck.hPrev, dWcIH, dWcHH, dbc)
+
+		dhPrev := make([]float64, hiddenSize)
+		for j := 0; j < hiddenSize; j++ {
+			sum := 0.0
+			for i := 0; i < hiddenSize; i++ {
+				sum += lstm.Wf[1][i*hiddenSize+j] * df[i]
+				sum += lstm.Wi[1][i*hiddenSize+j] * di[i]
+				sum += lstm.Wo[1][i*hiddenSize+j] * do[i]
+				sum += lstm.Wc[1][i*hiddenSize+j] * dcTilde[i]
+			}
+			dhPrev[j] = sum
+		}
+
+		dhNext = dhPrev
+		dcNext = dcPrev
+	}
+
+	applyUpdate := func(W, dW []float64) {
+		for i := range W {
+			W[i] -= lstm.learningRate * clipGrad(dW[i])
+		}
+	}
+	applyUpdate(lstm.Wf[0], dWfIH)
+	applyUpdate(lstm.Wf[1], dWfHH)
+	applyUpdate(lstm.Wi[0], dWiIH)
+	applyUpdate(lstm.Wi[1], dWiHH)
+	applyUpdate(lstm.Wo[0], dWoIH)
+	applyUpdate(lstm.Wo[1], dWoHH)
+	applyUpdate(lstm.Wc[0], dWcIH)
+	applyUpdate(lstm.Wc[1], dWcHH)
+	for i := range lstm.bf {
+		lstm.bf[i] -= lstm.learningRate * clipGrad(dbf[i])
+	}
+	for i := range lstm.bi {
+		lstm.bi[i] -= lstm.learningRate * clipGrad(dbi[i])
+	}
+	for i := range lstm.bo {
+		lstm.bo[i] -= lstm.learningRate * clipGrad(dbo[i])
+	}
+	for i := range lstm.bc {
+		lstm.bc[i] -= lstm.learningRate * clipGrad(dbc[i])
+	}
+	for i := range lstm.Wy {
+		for j := range lstm.Wy[i] {
+			lstm.Wy[i][j] -= lstm.learningRate * clipGrad(dWy[i][j])
+		}
+		lstm.by[i] -= lstm.learningRate * clipGrad(dby[i])
+	}
+}
+
 // trainSequence trains on a single sequence using backpropagation through time
 func (lstm *LSTMModel) trainSequence(seq GameSequence) float64 {
-	// Forward pass
-	output := lstm.forward(seq.Features)
+	if len(seq.Features) == 0 {
+		return 0.0
+	}
+
+	output, caches := lstm.forwardWithCache(seq.Features)
 
 	// Compute loss (cross-entropy)
 	target := make([]float64, lstm.outputSize)
@@ -637,15 +831,7 @@ func (lstm *LSTMModel) trainSequence(seq GameSequence) float64 {
 		}
 	}
 
-	// Simplified gradient update (full BPTT would be more complex)
-	// For now, just update output layer
-	outputGrad := make([]float64, lstm.outputSize)
-	for i := 0; i < lstm.outputSize; i++ {
-		outputGrad[i] = output[i] - target[i]
-	}
-
-	// Update output weights (simplified)
-	// In full implementation, would backpropagate through time
+	lstm.backwardAndUpdate(caches, output, target)
 
 	return loss
 }
@@ -691,21 +877,6 @@ func (lstm *LSTMModel) GetWeight() float64 {
 	lstm.mutex.RLock()
 	defer lstm.mutex.RUnlock()
 	return lstm.weight
-}
-
-// TrainOnGameResult trains the model on a completed game
-func (lstm *LSTMModel) TrainOnGameResult(game models.CompletedGame) error {
-	// LSTM needs sequences, so we'll collect games and train in batches
-	lstm.mutex.Lock()
-	lstm.gameSequences = append(lstm.gameSequences, GameSequence{
-		Features: [][]float64{}, // Will be populated during batch training
-		Label:    0.0,
-		TeamCode: game.HomeTeam.TeamCode,
-	})
-	lstm.mutex.Unlock()
-
-	log.Printf("🔄 LSTM: Received game result (batch training needed, %d games collected)", len(lstm.gameSequences))
-	return nil
 }
 
 // LSTMModelData represents serializable LSTM model data
@@ -833,11 +1004,14 @@ func (lstm *LSTMModel) loadModel() {
 		lstm.hiddenSize, lstm.inputSize, len(lstm.gameSequences), lstm.trained)
 }
 
-// saveModel saves the complete LSTM model to disk
+// saveModel saves the complete LSTM model to disk. Does not lock mutex --
+// matches the convention GB/RF/Meta-Learner's saveModel already use, since
+// Train() calls this while still holding lstm.mutex.Lock() itself; locking
+// again here would deadlock (sync.Mutex is not reentrant). This was latent
+// and harmless before because nothing ever called Train() in production;
+// now that ModelEvaluationService.trainModelBatch does, it would otherwise
+// hang the whole app the first time LSTM's batch threshold is hit.
 func (lstm *LSTMModel) saveModel() error {
-	lstm.mutex.Lock()
-	defer lstm.mutex.Unlock()
-
 	// Save weights
 	if err := lstm.saveWeights(); err != nil {
 		return fmt.Errorf("failed to save LSTM weights: %w", err)

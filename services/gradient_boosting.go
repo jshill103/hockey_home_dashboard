@@ -151,19 +151,27 @@ func (gbm *GradientBoostingModel) Predict(homeFactors, awayFactors *models.Predi
 }
 
 // Train trains the gradient boosting model on game results
-func (gbm *GradientBoostingModel) Train(games []models.CompletedGame) error {
+// Train builds the tree ensemble from games and their pre-game prediction
+// factors. homeFactors[i]/awayFactors[i] must be the factors as they existed
+// BEFORE games[i] was played (see ModelEvaluationService.buildFactors) --
+// passing live/current factors here would leak the outcome into training and
+// mismatch what extractFeatures sees at inference time.
+func (gbm *GradientBoostingModel) Train(games []models.CompletedGame, homeFactors, awayFactors []*models.PredictionFactors) error {
 	gbm.mutex.Lock()
 	defer gbm.mutex.Unlock()
 
 	if len(games) < 10 {
 		return fmt.Errorf("insufficient training data: need at least 10 games, have %d", len(games))
 	}
+	if len(homeFactors) != len(games) || len(awayFactors) != len(games) {
+		return fmt.Errorf("factors/games length mismatch: %d games, %d homeFactors, %d awayFactors", len(games), len(homeFactors), len(awayFactors))
+	}
 
 	log.Printf("🌳 Training Gradient Boosting model on %d games...", len(games))
 	start := time.Now()
 
 	// Prepare training data
-	features, labels := gbm.prepareTrainingData(games)
+	features, labels := gbm.prepareTrainingData(games, homeFactors, awayFactors)
 
 	// Initialize predictions with 0 (neutral)
 	predictions := make([]float64, len(labels))
@@ -438,16 +446,12 @@ func (gbm *GradientBoostingModel) calculateAccuracy(predictions, labels []float6
 }
 
 // prepareTrainingData converts games to feature matrix and labels
-func (gbm *GradientBoostingModel) prepareTrainingData(games []models.CompletedGame) ([][]float64, []float64) {
+func (gbm *GradientBoostingModel) prepareTrainingData(games []models.CompletedGame, homeFactors, awayFactors []*models.PredictionFactors) ([][]float64, []float64) {
 	features := make([][]float64, len(games))
 	labels := make([]float64, len(games))
 
 	for i, game := range games {
-		// Extract features (same as Neural Network)
-		homeFactors := &models.PredictionFactors{TeamCode: game.HomeTeam.TeamCode}
-		awayFactors := &models.PredictionFactors{TeamCode: game.AwayTeam.TeamCode}
-
-		features[i] = gbm.extractFeatures(homeFactors, awayFactors)
+		features[i] = gbm.extractFeatures(homeFactors[i], awayFactors[i])
 
 		// Label: 1.0 if home won, 0.0 if away won
 		if game.HomeTeam.Score > game.AwayTeam.Score {

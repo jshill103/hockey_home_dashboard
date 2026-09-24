@@ -179,19 +179,27 @@ func (rfm *RandomForestModel) traverseTree(node *RFTreeNode, features []float64)
 }
 
 // Train trains the random forest model on game results
-func (rfm *RandomForestModel) Train(games []models.CompletedGame) error {
+// Train builds the forest from games and their pre-game prediction factors.
+// homeFactors[i]/awayFactors[i] must be the factors as they existed BEFORE
+// games[i] was played (see ModelEvaluationService.buildFactors) -- passing
+// live/current factors here would leak the outcome into training and
+// mismatch what extractFeatures sees at inference time.
+func (rfm *RandomForestModel) Train(games []models.CompletedGame, homeFactors, awayFactors []*models.PredictionFactors) error {
 	rfm.mutex.Lock()
 	defer rfm.mutex.Unlock()
 
 	if len(games) < 20 {
 		return fmt.Errorf("insufficient training data: need at least 20 games, have %d", len(games))
 	}
+	if len(homeFactors) != len(games) || len(awayFactors) != len(games) {
+		return fmt.Errorf("factors/games length mismatch: %d games, %d homeFactors, %d awayFactors", len(games), len(homeFactors), len(awayFactors))
+	}
 
 	log.Printf("🌲 Training Random Forest model on %d games...", len(games))
 	start := time.Now()
 
 	// Prepare training data
-	features, labels := rfm.prepareTrainingData(games)
+	features, labels := rfm.prepareTrainingData(games, homeFactors, awayFactors)
 	numSamples := len(labels)
 
 	// Train trees in parallel (key difference from GB!)
@@ -468,73 +476,32 @@ func (rfm *RandomForestModel) getMajorityClass(classCounts map[int]int) float64 
 	return 0.0 // Loss
 }
 
-// prepareTrainingData prepares features and labels from games
-func (rfm *RandomForestModel) prepareTrainingData(games []models.CompletedGame) ([][]float64, []float64) {
-	features := make([][]float64, 0, len(games)*2)
-	labels := make([]float64, 0, len(games)*2)
+// prepareTrainingData prepares features and labels from games. Uses the same
+// extractFeatures(home, away) extractor as Predict() -- the model previously
+// trained on a separate, differently-shaped extractGameFeatures (65 mostly
+// hardcoded-neutral features) while predicting on this 156-feature extractor,
+// so trained split thresholds were being applied to feature indices that
+// meant something entirely different at inference time.
+func (rfm *RandomForestModel) prepareTrainingData(games []models.CompletedGame, homeFactors, awayFactors []*models.PredictionFactors) ([][]float64, []float64) {
+	features := make([][]float64, len(games))
+	labels := make([]float64, len(games))
 
-	for _, game := range games {
-		// Extract features for home team perspective
-		homeFeatures := rfm.extractGameFeatures(&game, true)
-		features = append(features, homeFeatures)
+	for i, game := range games {
+		features[i] = rfm.extractFeatures(homeFactors[i], awayFactors[i])
 
-		// Label: 1 = win, 0 = loss, 2 = OT loss
+		// Label from the home team's perspective (matches Predict()'s
+		// home-vs-away framing): 1 = home win, 0 = home regulation loss,
+		// 2 = home OT/SO loss
 		if game.HomeTeam.Score > game.AwayTeam.Score {
-			labels = append(labels, 1.0)
+			labels[i] = 1.0
 		} else if game.WinType == "OT" || game.WinType == "SO" {
-			labels = append(labels, 2.0) // OT loss
+			labels[i] = 2.0
 		} else {
-			labels = append(labels, 0.0)
-		}
-
-		// Extract features for away team perspective
-		awayFeatures := rfm.extractGameFeatures(&game, false)
-		features = append(features, awayFeatures)
-
-		if game.AwayTeam.Score > game.HomeTeam.Score {
-			labels = append(labels, 1.0)
-		} else if game.WinType == "OT" || game.WinType == "SO" {
-			labels = append(labels, 2.0)
-		} else {
-			labels = append(labels, 0.0)
+			labels[i] = 0.0
 		}
 	}
 
 	return features, labels
-}
-
-// extractGameFeatures extracts features from a completed game
-func (rfm *RandomForestModel) extractGameFeatures(game *models.CompletedGame, isHome bool) []float64 {
-	features := make([]float64, 65)
-
-	// Basic features
-	if isHome {
-		features[0] = float64(game.HomeTeam.Score) / 10.0
-		features[1] = float64(game.AwayTeam.Score) / 10.0
-		features[2] = float64(game.HomeTeam.Shots) / 40.0
-		features[3] = float64(game.AwayTeam.Shots) / 40.0
-	} else {
-		features[0] = float64(game.AwayTeam.Score) / 10.0
-		features[1] = float64(game.HomeTeam.Score) / 10.0
-		features[2] = float64(game.AwayTeam.Shots) / 40.0
-		features[3] = float64(game.HomeTeam.Shots) / 40.0
-	}
-
-	// Win type
-	if game.WinType == "OT" {
-		features[4] = 0.5
-	} else if game.WinType == "SO" {
-		features[4] = 0.7
-	} else {
-		features[4] = 1.0
-	}
-
-	// Pad remaining features
-	for i := 5; i < 65; i++ {
-		features[i] = 0.5 // Neutral value
-	}
-
-	return features
 }
 
 // extractFeatures extracts 156 features for prediction (same as Neural Network)

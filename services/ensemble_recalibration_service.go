@@ -83,11 +83,12 @@ func GetRecalibrationService() *EnsembleRecalibrationService {
 
 // RecordPredictionOutcome records the outcome of a prediction for all models
 func (ers *EnsembleRecalibrationService) RecordPredictionOutcome(
-	modelResults []models.ModelResult, 
-	actualWinner string, 
-	predictedWinner string,
+	modelResults []models.ModelResult,
+	actualWinner string,
+	homeTeam string,
+	awayTeam string,
 	contextType string) error {
-	
+
 	ers.mu.Lock()
 	defer ers.mu.Unlock()
 
@@ -96,11 +97,16 @@ func (ers *EnsembleRecalibrationService) RecordPredictionOutcome(
 	// Update each model's performance
 	for _, result := range modelResults {
 		perf := ers.getOrCreatePerformanceMetrics(result.ModelName)
-		
-		// Determine if this model was correct
-		modelPredictedWinner := ""
+
+		// Every model's WinProbability is the home team's win probability
+		// (see models.ModelResult) -- so >0.5 means it picked the home team,
+		// otherwise the away team. This used to unconditionally set
+		// modelPredictedWinner = actualWinner whenever WinProbability > 0.5,
+		// which meant modelCorrect was true for every single confident
+		// prediction regardless of whether it was actually right.
+		modelPredictedWinner := awayTeam
 		if result.WinProbability > 0.5 {
-			modelPredictedWinner = actualWinner // Simplified - would need home/away team
+			modelPredictedWinner = homeTeam
 		}
 		modelCorrect := modelPredictedWinner == actualWinner
 		
