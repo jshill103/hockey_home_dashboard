@@ -2,11 +2,6 @@ package models
 
 import "time"
 
-// PlayerStatsResponse represents the response from NHL player stats API
-type PlayerStatsResponse struct {
-	Data []PlayerStats `json:"data"`
-}
-
 // PlayerStats represents individual player statistics
 type PlayerStats struct {
 	PlayerID         int        `json:"playerId"`
@@ -28,11 +23,6 @@ type PlayerStats struct {
 	ShotPct          float64    `json:"shootingPct"`
 	FaceoffWinPct    float64    `json:"faceoffWinPct"`
 	AvgTimeOnIce     string     `json:"avgToi"`
-}
-
-// GoalieStatsResponse represents the response from NHL goalie stats API
-type GoalieStatsResponse struct {
-	Data []GoalieStats `json:"data"`
 }
 
 // ClubStatsResponse represents the response from NHL club stats API

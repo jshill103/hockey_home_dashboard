@@ -71,7 +71,7 @@ func GetGoalieStatsLeaders() (models.GoalieStatsLeaders, error) {
 		return models.GoalieStatsLeaders{}, fmt.Errorf("error fetching goalie wins leaders: %v", err)
 	}
 
-	savePct, err := getGoalieStatsLeadersByCategory("savePct")
+	savePct, err := getGoalieStatsLeadersByCategory("savePctg")
 	if err != nil {
 		return models.GoalieStatsLeaders{}, fmt.Errorf("error fetching goalie save%% leaders: %v", err)
 	}
@@ -100,12 +100,12 @@ func getStatsLeadersByCategory(category string) ([]models.PlayerStats, error) {
 		return nil, err
 	}
 
-	var response models.PlayerStatsResponse
+	var response map[string][]models.PlayerStats
 	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, fmt.Errorf("error unmarshaling %s stats JSON: %v", category, err)
 	}
 
-	return response.Data, nil
+	return response[category], nil
 }
 
 // getGoalieStatsLeadersByCategory fetches goalie stats leaders for a specific category
@@ -116,12 +116,12 @@ func getGoalieStatsLeadersByCategory(category string) ([]models.GoalieStats, err
 		return nil, err
 	}
 
-	var response models.GoalieStatsResponse
+	var response map[string][]models.GoalieStats
 	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, fmt.Errorf("error unmarshaling goalie %s stats JSON: %v", category, err)
 	}
 
-	return response.Data, nil
+	return response[category], nil
 }
 
 // GetTeamPlayerStats filters stats leaders to show only players from a specific team
