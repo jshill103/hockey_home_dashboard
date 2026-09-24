@@ -433,6 +433,13 @@ type MetaLearnerModelData struct {
 	ValAccuracy     float64   `json:"valAccuracy"`
 	LastUpdated     time.Time `json:"lastUpdated"`
 	Version         string    `json:"version"`
+
+	// Auto-training progress -- must be persisted, otherwise every pod
+	// restart resets GamesProcessed to 0 and the model can never reach the
+	// game-count threshold needed to trigger its first training run.
+	GamesProcessed int       `json:"gamesProcessed"`
+	TrainingCount  int       `json:"trainingCount"`
+	LastAutoTrain  time.Time `json:"lastAutoTrain"`
 }
 
 func (mlm *MetaLearnerModel) saveModel() error {
@@ -450,6 +457,9 @@ func (mlm *MetaLearnerModel) saveModel() error {
 		ValAccuracy:     mlm.valAccuracy,
 		LastUpdated:     time.Now(),
 		Version:         "1.0",
+		GamesProcessed:  mlm.gamesProcessed,
+		TrainingCount:   mlm.trainingCount,
+		LastAutoTrain:   mlm.lastAutoTrain,
 	}
 
 	data, err := json.MarshalIndent(modelData, "", "  ")
@@ -494,6 +504,9 @@ func (mlm *MetaLearnerModel) loadModel() error {
 	mlm.trainAccuracy = modelData.TrainAccuracy
 	mlm.valAccuracy = modelData.ValAccuracy
 	mlm.lastUpdated = modelData.LastUpdated
+	mlm.gamesProcessed = modelData.GamesProcessed
+	mlm.trainingCount = modelData.TrainingCount
+	mlm.lastAutoTrain = modelData.LastAutoTrain
 
 	return nil
 }
@@ -522,6 +535,13 @@ func (mlm *MetaLearnerModel) RecordGameProcessed() {
 	mlm.mutex.Lock()
 	defer mlm.mutex.Unlock()
 	mlm.gamesProcessed++
+
+	// Persist immediately -- this counter drives ShouldAutoTrain, and if it
+	// isn't saved until the first successful Train() call, a pod restart
+	// before that point silently resets progress back to 0 every time.
+	if err := mlm.saveModel(); err != nil {
+		log.Printf("⚠️ Failed to save Meta-Learner progress: %v", err)
+	}
 }
 
 // AutoTrain automatically trains the Meta-Learner if conditions are met

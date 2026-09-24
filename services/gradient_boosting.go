@@ -898,11 +898,3 @@ func (gbm *GradientBoostingModel) GetWeight() float64 {
 	defer gbm.mutex.RUnlock()
 	return gbm.weight
 }
-
-// TrainOnGameResult trains the model on a completed game
-func (gbm *GradientBoostingModel) TrainOnGameResult(game models.CompletedGame) error {
-	// Gradient Boosting needs batch training, so we'll collect games and train periodically
-	// For now, just log that we received a game
-	log.Printf("🌳 Gradient Boosting: Received game result (batch training needed)")
-	return nil
-}

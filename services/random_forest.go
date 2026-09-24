@@ -868,13 +868,6 @@ func (rfm *RandomForestModel) GetWeight() float64 {
 	return rfm.weight
 }
 
-// TrainOnGameResult trains the model on a completed game
-func (rfm *RandomForestModel) TrainOnGameResult(game models.CompletedGame) error {
-	// Random Forest needs batch training
-	log.Printf("🌲 Random Forest: Received game result (batch training needed)")
-	return nil
-}
-
 // RandomForestModelData represents serializable model data
 type RandomForestModelData struct {
 	Trees             []SerializedRFTree `json:"trees"`

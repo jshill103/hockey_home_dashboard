@@ -204,10 +204,18 @@ func (mes *ModelEvaluationService) getModelBatchSize(modelName string) int {
 	}
 
 	// Model-specific batch sizes
+	// NOTE: GradientBoosting.Train() and RandomForest.Train() rebuild their
+	// entire forest from the batch and hard-require a minimum game count
+	// (10 and 20 respectively) — the multiplier must never push a batch
+	// below that floor, or every batch training attempt fails.
 	switch modelName {
 	case "GradientBoosting":
 		// GB benefits from larger batches (better tree splits)
-		return int(20 * baseMultiplier)
+		size := int(20 * baseMultiplier)
+		if size < 10 {
+			size = 10
+		}
+		return size
 	case "LSTM":
 		// LSTM needs frequent updates for sequence learning
 		return int(5 * baseMultiplier)
@@ -215,8 +223,12 @@ func (mes *ModelEvaluationService) getModelBatchSize(modelName string) int {
 		// NN standard batch size
 		return int(10 * baseMultiplier)
 	case "RandomForest":
-		// RF similar to NN
-		return int(10 * baseMultiplier)
+		// RF needs at least 20 games per batch to build meaningful bootstrap trees
+		size := int(20 * baseMultiplier)
+		if size < 20 {
+			size = 20
+		}
+		return size
 	default:
 		return int(10 * baseMultiplier)
 	}
@@ -332,12 +344,13 @@ func (mes *ModelEvaluationService) trainModelBatch(modelName string, batch []mod
 		}
 
 	case "GradientBoosting":
+		// GB rebuilds its whole forest from the batch in one call, not per-game
 		gbModel := GetGradientBoostingModel()
 		if gbModel != nil {
-			for _, game := range batch {
-				if err := gbModel.TrainOnGameResult(game); err == nil {
-					successCount++
-				}
+			if err := gbModel.Train(batch); err != nil {
+				log.Printf("⚠️ Gradient Boosting batch training failed: %v", err)
+			} else {
+				successCount = batchSize
 			}
 		}
 
@@ -352,12 +365,13 @@ func (mes *ModelEvaluationService) trainModelBatch(modelName string, batch []mod
 		}
 
 	case "RandomForest":
+		// RF rebuilds its whole forest from the batch in one call, not per-game
 		rfModel := GetRandomForestModel()
 		if rfModel != nil {
-			for _, game := range batch {
-				if err := rfModel.TrainOnGameResult(game); err == nil {
-					successCount++
-				}
+			if err := rfModel.Train(batch); err != nil {
+				log.Printf("⚠️ Random Forest batch training failed: %v", err)
+			} else {
+				successCount = batchSize
 			}
 		}
 	}
