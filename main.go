@@ -330,6 +330,11 @@ func main() {
 		if ensembleService != nil {
 			services.InitPlayoffSimulationService(ensembleService)
 			fmt.Println("✅ Playoff Simulation Service initialized with ML models")
+			// Keep the playoff odds cache perpetually warm so the playoffs
+			// section never has to block a page load on a full recompute.
+			if playoffService := services.GetPlayoffSimulationService(); playoffService != nil {
+				playoffService.StartPeriodicRefresh(teamConfig.Code, 45*time.Minute)
+			}
 		} else {
 			fmt.Println("⚠️ Warning: Could not initialize Playoff Simulation Service")
 		}

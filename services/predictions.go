@@ -41,6 +41,32 @@ func (ps *PredictionService) PredictNextGame() (*models.GamePrediction, error) {
 	homeTeam := nextGame.HomeTeam.Abbrev
 	awayTeam := nextGame.AwayTeam.Abbrev
 
+	// ============================================================================
+	// FAST PATH: reuse an already-computed ensemble prediction for this game
+	// ============================================================================
+	// Everything below this point (pre-game lineup fetch, player-impact and
+	// goalie-stats freshness checks with their NHL API refetches, and the
+	// full AnalyzeSituationalFactors pass -- which itself pulls in travel
+	// fatigue, altitude, schedule strength, injury impact, momentum, and a
+	// second advanced-analytics computation) exists purely to produce the
+	// homeFactors/awayFactors fed into the 9-model ensemble. If we already
+	// have a fresh cached ensemble result for this exact game (the cache
+	// check used to happen only after all of that work ran), none of it is
+	// needed -- this is what made the AI Insights section slow to load on
+	// every request instead of just on the rare actual cache miss.
+	cache := GetPredictionCache()
+	if cachedPred := cache.GetCachedPrediction(nextGame.ID); cachedPred != nil {
+		analyzer := NewSituationalAnalyzer(ps.teamCode)
+		homeFactors, errH := analyzer.getBasePredictionFactors(homeTeam, awayTeam, true)
+		awayFactors, errA := analyzer.getBasePredictionFactors(awayTeam, homeTeam, false)
+		if errH == nil && errA == nil {
+			return ps.buildGamePrediction(&nextGame, homeFactors, awayFactors, &cachedPred.Prediction.Prediction), nil
+		}
+		// Fall through to the full path if even the cheap base factors
+		// couldn't be computed (e.g. team missing from standings) -- better
+		// to pay the full cost than serve an incomplete prediction.
+	}
+
 	fmt.Printf("🏒 Analyzing matchup: %s @ %s on %s\n",
 		nextGame.AwayTeam.CommonName.Default,
 		nextGame.HomeTeam.CommonName.Default,
@@ -158,7 +184,6 @@ func (ps *PredictionService) PredictNextGame() (*models.GamePrediction, error) {
 	// ============================================================================
 	// GRACEFUL DEGRADATION: Try cache first, then generate new prediction
 	// ============================================================================
-	cache := GetPredictionCache()
 	var prediction *models.PredictionResult
 	var dataQuality float64 = 1.0 // Assume full quality by default
 	var isDegraded bool
@@ -193,7 +218,16 @@ func (ps *PredictionService) PredictNextGame() (*models.GamePrediction, error) {
 		fmt.Printf("⚠️ Prediction has degraded data quality (%.1f%%)\n", dataQuality*100)
 	}
 
-	// Create full prediction object
+	return ps.buildGamePrediction(&nextGame, homeFactors, awayFactors, prediction), nil
+}
+
+// buildGamePrediction assembles the final GamePrediction returned to callers
+// from a game, both teams' prediction factors, and an ensemble result.
+// Shared by the fast (cached-ensemble-result) and full computation paths in
+// PredictNextGame so the two can't drift apart on how display fields (win
+// probability orientation, expected goals, recent form/streak, key factors)
+// are derived from the underlying data.
+func (ps *PredictionService) buildGamePrediction(nextGame *models.Game, homeFactors, awayFactors *models.PredictionFactors, prediction *models.PredictionResult) *models.GamePrediction {
 	homeWinProb := prediction.WinProbability
 	awayWinProb := 1.0 - prediction.WinProbability
 	if prediction.Winner == nextGame.AwayTeam.Abbrev {
@@ -201,13 +235,10 @@ func (ps *PredictionService) PredictNextGame() (*models.GamePrediction, error) {
 		awayWinProb = prediction.WinProbability
 	}
 
-	// Get real recent form and streak from Rolling Stats service
-	fmt.Printf("🔍🔍🔍 ABOUT TO FETCH REAL DATA FOR BOTH TEAMS 🔍🔍🔍\n")
 	homeRecentForm, homeStreak := ps.getRealRecentFormAndStreak(homeFactors.TeamCode)
 	awayRecentForm, awayStreak := ps.getRealRecentFormAndStreak(awayFactors.TeamCode)
-	fmt.Printf("🎉 GOT DATA - Home: %s/%s, Away: %s/%s\n", homeRecentForm, homeStreak, awayRecentForm, awayStreak)
 
-	gamePrediction := &models.GamePrediction{
+	return &models.GamePrediction{
 		GameID: 0, // Schedule games don't have IDs
 		GameDate: func() time.Time {
 			if t, err := time.Parse("2006-01-02", nextGame.GameDate); err == nil {
@@ -236,8 +267,6 @@ func (ps *PredictionService) PredictNextGame() (*models.GamePrediction, error) {
 		KeyFactors:  ps.generateAdvancedKeyFactors(homeFactors, awayFactors, prediction),
 		GeneratedAt: time.Now(),
 	}
-
-	return gamePrediction, nil
 }
 
 // getEnhancedPredictionFactors fetches comprehensive prediction factors

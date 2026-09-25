@@ -1027,3 +1027,26 @@ func (ps *PlayoffSimulationService) RecalculatePlayoffOdds(teamCode string) erro
 	fmt.Printf("✅ Playoff odds recalculated and cached for %s\n", teamCode)
 	return nil
 }
+
+// StartPeriodicRefresh proactively recalculates and re-caches playoff odds
+// for teamCode on a fixed interval, so the cache never actually expires from
+// the perspective of an incoming request. Without this, the cache's 1-hour
+// TTL means whichever request happens to land first after expiry pays the
+// full synchronous cost of simulateSeason (which, on a cold schedule-data
+// cache too, includes ~8s of rate-limited sequential NHL API calls in
+// getRemainingGames before simulations even start) -- that's exactly what
+// made the playoffs section slow to load. Call once at startup; runs until
+// the process exits.
+func (ps *PlayoffSimulationService) StartPeriodicRefresh(teamCode string, interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			fmt.Printf("🔄 Periodic playoff odds refresh for %s...\n", teamCode)
+			if err := ps.RecalculatePlayoffOdds(teamCode); err != nil {
+				fmt.Printf("⚠️ Periodic playoff odds refresh failed: %v\n", err)
+			}
+		}
+	}()
+	fmt.Printf("✅ Playoff odds periodic refresh scheduled for %s every %v\n", teamCode, interval)
+}
