@@ -1039,6 +1039,18 @@ func (ps *PlayoffSimulationService) RecalculatePlayoffOdds(teamCode string) erro
 // the process exits.
 func (ps *PlayoffSimulationService) StartPeriodicRefresh(teamCode string, interval time.Duration) {
 	go func() {
+		// A fresh pod's cache is always cold, and the ticker's first tick is
+		// a full `interval` away -- without an initial warm-up, the first
+		// real request after any deploy/restart would still hit the slow
+		// path. Wait a bit first so this doesn't pile onto the heavier
+		// startup work (league-wide game backfill, etc.) also running right
+		// after boot and competing for the same CPU-limited pod.
+		time.Sleep(60 * time.Second)
+		fmt.Printf("🔄 Initial playoff odds warm-up for %s...\n", teamCode)
+		if err := ps.RecalculatePlayoffOdds(teamCode); err != nil {
+			fmt.Printf("⚠️ Initial playoff odds warm-up failed: %v\n", err)
+		}
+
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for range ticker.C {
@@ -1048,5 +1060,5 @@ func (ps *PlayoffSimulationService) StartPeriodicRefresh(teamCode string, interv
 			}
 		}
 	}()
-	fmt.Printf("✅ Playoff odds periodic refresh scheduled for %s every %v\n", teamCode, interval)
+	fmt.Printf("✅ Playoff odds periodic refresh scheduled for %s every %v (plus an initial warm-up)\n", teamCode, interval)
 }
