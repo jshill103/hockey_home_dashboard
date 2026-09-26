@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jaredshillingburg/go_uhc/models"
 	"github.com/jaredshillingburg/go_uhc/services"
@@ -906,15 +907,31 @@ func HandlePredictionsStatsPopup(w http.ResponseWriter, r *http.Request) {
 
 // generatePredictionsPopupHTML generates the HTML for the predictions stats popup
 func generatePredictionsPopupHTML(allPredictions []*services.StoredPrediction, accuracyStats interface{}) string {
+	// A prediction with no ActualResult is only genuinely "upcoming" if its
+	// game date hasn't passed yet. Predictions for games from months ago
+	// (e.g. last season's playoffs) that never got a result recorded --
+	// because the completion-tracking pipeline never picked them up --
+	// still have ActualResult == nil, so without this check they show up
+	// forever as if the game hasn't happened yet. staleCutoff gives a day of
+	// grace so a game still in progress today isn't misclassified.
+	staleCutoff := time.Now().AddDate(0, 0, -1)
+	isStale := func(pred *services.StoredPrediction) bool {
+		return pred.ActualResult == nil && pred.GameDate.Before(staleCutoff)
+	}
+
 	// Count upcoming and completed games
 	upcomingCount := 0
 	completedCount := 0
 	correctCount := 0
+	staleCount := 0
 
 	for _, pred := range allPredictions {
-		if pred.ActualResult == nil {
+		switch {
+		case pred.ActualResult == nil && isStale(pred):
+			staleCount++
+		case pred.ActualResult == nil:
 			upcomingCount++
-		} else {
+		default:
 			completedCount++
 			if pred.Accuracy != nil && pred.Accuracy.WinnerCorrect {
 				correctCount++
@@ -959,7 +976,16 @@ func generatePredictionsPopupHTML(allPredictions []*services.StoredPrediction, a
 			<div class="stat-item">
 				<span class="stat-label">Upcoming Games:</span>
 				<span class="stat-value">` + fmt.Sprintf("%d", upcomingCount) + `</span>
-			</div>
+			</div>` + func() string {
+		if staleCount == 0 {
+			return ""
+		}
+		return `
+			<div class="stat-item">
+				<span class="stat-label">Unresolved (no result recorded):</span>
+				<span class="stat-value">` + fmt.Sprintf("%d", staleCount) + `</span>
+			</div>`
+	}() + `
 		</div>
 	</div>
 
@@ -970,7 +996,7 @@ func generatePredictionsPopupHTML(allPredictions []*services.StoredPrediction, a
 	// Add upcoming predictions
 	upcomingAdded := 0
 	for _, pred := range allPredictions {
-		if pred.ActualResult == nil && upcomingAdded < 10 {
+		if pred.ActualResult == nil && !isStale(pred) && upcomingAdded < 10 {
 			winningTeam := pred.HomeTeam
 			winProb := pred.Prediction.HomeTeam.WinProbability
 			if pred.Prediction.AwayTeam.WinProbability > pred.Prediction.HomeTeam.WinProbability {

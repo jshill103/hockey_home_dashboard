@@ -37,6 +37,15 @@ type PredictionAccuracy struct {
 type PredictionStorageService struct {
 	dataDir string
 	mutex   sync.RWMutex
+
+	// allCache memoizes GetAllPredictions -- it's called at least twice per
+	// stats-popup request (once directly, once again inside
+	// GetAccuracyStats), each re-reading and unmarshaling every prediction
+	// file in dataDir (500+ files in a full season) from disk. Invalidated
+	// immediately on any write; the TTL is just a safety net.
+	allCache    []*StoredPrediction
+	allCacheAt  time.Time
+	allCacheTTL time.Duration
 }
 
 var (
@@ -51,7 +60,8 @@ func InitPredictionStorageService() *PredictionStorageService {
 		os.MkdirAll(dataDir, 0755)
 
 		predictionStorageService = &PredictionStorageService{
-			dataDir: dataDir,
+			dataDir:     dataDir,
+			allCacheTTL: 60 * time.Second,
 		}
 
 		log.Printf("📝 Prediction Storage Service initialized (dir: %s)", dataDir)
@@ -88,6 +98,8 @@ func (pss *PredictionStorageService) StorePrediction(gameID int, gameDate time.T
 	if err != nil {
 		return fmt.Errorf("failed to write prediction file: %w", err)
 	}
+
+	pss.allCacheAt = time.Time{} // invalidate
 
 	log.Printf("📝 Stored prediction for game %d (%s @ %s)", gameID, awayTeam, homeTeam)
 	return nil
@@ -161,6 +173,8 @@ func (pss *PredictionStorageService) UpdateWithResult(gameID int, result *models
 		return fmt.Errorf("failed to write updated prediction: %w", err)
 	}
 
+	pss.allCacheAt = time.Time{} // invalidate
+
 	log.Printf("✅ Updated prediction for game %d with actual result (Winner Correct: %v)",
 		gameID, accuracy.WinnerCorrect)
 
@@ -196,8 +210,12 @@ func (pss *PredictionStorageService) calculateAccuracy(prediction *models.GamePr
 
 // GetAllPredictions returns all stored predictions
 func (pss *PredictionStorageService) GetAllPredictions() ([]*StoredPrediction, error) {
-	pss.mutex.RLock()
-	defer pss.mutex.RUnlock()
+	pss.mutex.Lock() // not RLock: may populate allCache below
+	defer pss.mutex.Unlock()
+
+	if pss.allCache != nil && time.Since(pss.allCacheAt) < pss.allCacheTTL {
+		return pss.allCache, nil
+	}
 
 	files, err := ioutil.ReadDir(pss.dataDir)
 	if err != nil {
@@ -223,6 +241,9 @@ func (pss *PredictionStorageService) GetAllPredictions() ([]*StoredPrediction, e
 
 		predictions = append(predictions, &stored)
 	}
+
+	pss.allCache = predictions
+	pss.allCacheAt = time.Now()
 
 	return predictions, nil
 }
@@ -254,6 +275,9 @@ func (pss *PredictionStorageService) ClearAllPredictions() error {
 		}
 		deletedCount++
 	}
+
+	pss.allCache = nil
+	pss.allCacheAt = time.Time{}
 
 	log.Printf("🗑️ Cleared %d predictions (%d errors)", deletedCount, errorCount)
 	return nil
