@@ -32,7 +32,7 @@ func CalculateAdaptiveSimulationCount(team *models.TeamStanding, conferenceTeams
 	simCount := config.DefaultSimulations
 	
 	// Factor 1: Games Remaining (fewer games = need more precision)
-	gamesRemaining := 82 - team.GamesPlayed
+	gamesRemaining := GamesRemaining(GetCurrentGamesPerSeason(), team.GamesPlayed)
 	if gamesRemaining <= 5 {
 		simCount += 2000 // Critical endgame: need high precision
 	} else if gamesRemaining <= 10 {
@@ -162,7 +162,7 @@ func isInDivisionRace(team *models.TeamStanding, conferenceTeams []models.TeamSt
 // GetSimulationRecommendation returns a human-readable explanation of simulation count (Phase 5.2)
 func GetSimulationRecommendation(team *models.TeamStanding, conferenceTeams []models.TeamStanding, simCount int) string {
 	rank := getTeamRank(team, conferenceTeams)
-	gamesRemaining := 82 - team.GamesPlayed
+	gamesRemaining := GamesRemaining(GetCurrentGamesPerSeason(), team.GamesPlayed)
 	pointsGap := calculatePointsGap(team, conferenceTeams, rank)
 	
 	if simCount >= 8000 {

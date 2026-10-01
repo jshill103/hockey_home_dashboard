@@ -63,8 +63,11 @@ func CalculatePlayoffOdds() (*models.PlayoffOdds, error) {
 	playoffSpotType, inPlayoffSpot := determinePlayoffSpot(westernTeams, utahTeam, conferenceRank)
 
 	// Calculate points needed and projections
-	gamesRemaining := 82 - utahTeam.GamesPlayed
-	currentPace := float64(utahTeam.Points) / float64(utahTeam.GamesPlayed)
+	gamesRemaining := services.GamesRemainingForTeam(utahTeam)
+	currentPace := 0.0
+	if utahTeam.GamesPlayed > 0 {
+		currentPace = float64(utahTeam.Points) / float64(utahTeam.GamesPlayed)
+	}
 	projectedPoints := utahTeam.Points + int(math.Round(currentPace*float64(gamesRemaining)))
 
 	// Historical playoff threshold (typically 90-100 points)

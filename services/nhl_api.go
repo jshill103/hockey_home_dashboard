@@ -214,7 +214,7 @@ func GetUpcomingGames() ([]models.Game, error) {
 	return GetTeamUpcomingGames("UTA")
 }
 
-// GetTeamSeasonSchedule fetches the full season schedule (all 82+ games) for a team
+// GetTeamSeasonSchedule fetches the full season schedule (preseason + all regular-season games) for a team
 func GetTeamSeasonSchedule(teamCode string, season int) ([]models.Game, error) {
 	fmt.Printf("Fetching full season schedule for %s (season %d)...\n", teamCode, season)
 

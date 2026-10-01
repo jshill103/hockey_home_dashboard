@@ -341,7 +341,7 @@ func (sa *ScheduleAnalyzer) calculateGameImportance(
 	
 	// Factor 4: Late in season (+0.15 max)
 	// Games get more important as season progresses
-	gamesRemaining := 82 - team.GamesPlayed
+	gamesRemaining := GamesRemaining(GetCurrentGamesPerSeason(), team.GamesPlayed)
 	if gamesRemaining < 20 {
 		lateSeasonBonus := (20.0 - float64(gamesRemaining)) / 20.0 * 0.15
 		importance += lateSeasonBonus

@@ -265,7 +265,7 @@ func (mus *ModelUncertaintyService) calculateFeatureUncertainty(homeFactors, awa
 	featureUncertainty := make(map[string]float64)
 
 	// Win percentage uncertainty (based on sample size - games played)
-	featureUncertainty["WinPercentage"] = mus.calculateSampleSizeUncertainty(82) // NHL season games
+	featureUncertainty["WinPercentage"] = mus.calculateSampleSizeUncertainty(GetCurrentGamesPerSeason()) // NHL season games
 
 	// Recent form uncertainty (smaller sample)
 	featureUncertainty["RecentForm"] = mus.calculateSampleSizeUncertainty(10) // Last 10 games

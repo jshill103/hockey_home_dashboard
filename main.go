@@ -268,6 +268,12 @@ func main() {
 	services.InitRequestDeduplicator()
 	fmt.Println("✅ Request Deduplicator initialized")
 
+	// Pre-warm regular-season length (games per team) for the current season
+	services.SetSeasonGamesTeamCode(teamConfig.Code)
+	go func() {
+		fmt.Printf("📅 Current season length: %d games\n", services.GetCurrentGamesPerSeason())
+	}()
+
 	// Initialize Health Check Service
 	fmt.Println("🏥 Initializing Health Check Service...")
 	services.InitHealthCheckService("v1.0.0")

@@ -139,7 +139,7 @@ func (ps *PlayoffSimulationService) SimulateWhatIf(teamCode string, scenario Wha
 
 	// Create a modified team record based on scenario
 	modifiedTeam := *targetTeam
-	gamesRemaining := 82 - modifiedTeam.GamesPlayed
+	gamesRemaining := GamesRemaining(GetCurrentGamesPerSeason(), modifiedTeam.GamesPlayed)
 
 	// Apply scenario wins/losses
 	gamesInScenario := scenario.WinNext + scenario.LoseNext
@@ -257,7 +257,7 @@ func (ps *PlayoffSimulationService) SimulateWhatIf(teamCode string, scenario Wha
 
 // GetCommonWhatIfScenarios returns a list of common what-if scenarios
 func GetCommonWhatIfScenarios(team *models.TeamStanding) []WhatIfScenario {
-	gamesRemaining := 82 - team.GamesPlayed
+	gamesRemaining := GamesRemaining(GetCurrentGamesPerSeason(), team.GamesPlayed)
 	
 	scenarios := []WhatIfScenario{
 		{

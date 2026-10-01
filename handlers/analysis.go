@@ -54,6 +54,7 @@ func HandleSeasonStatus(w http.ResponseWriter, r *http.Request) {
 
 func formatAnalysisHTML(performance models.TeamPerformance) string {
 	var html strings.Builder
+	seasonGames := services.GetCurrentGamesPerSeason()
 
 	// Container for rotating sections
 	html.WriteString("<div class='analysis-container'>")
@@ -110,7 +111,7 @@ func formatAnalysisHTML(performance models.TeamPerformance) string {
 	html.WriteString(fmt.Sprintf("<div class='streak-info'><strong>Current:</strong> %s %d</div>", streakType, performance.StreakCount))
 	html.WriteString(fmt.Sprintf("<div class='last10-info'><strong>Last 10:</strong> %d-%d-%d (%d pts)</div>",
 		performance.L10Wins, performance.L10Losses, performance.L10OtLosses, performance.L10Points))
-	html.WriteString(fmt.Sprintf("<div class='games-progress'><strong>Progress:</strong> %d / 82 games</div>", performance.GamesPlayed))
+	html.WriteString(fmt.Sprintf("<div class='games-progress'><strong>Progress:</strong> %d / %d games</div>", performance.GamesPlayed, seasonGames))
 	html.WriteString("</div>")
 	html.WriteString("</div>")
 	html.WriteString("</div>")
@@ -148,11 +149,11 @@ func formatAnalysisHTML(performance models.TeamPerformance) string {
 	if performance.GamesPlayed > 0 {
 		avgGF := float64(performance.GoalFor) / float64(performance.GamesPlayed)
 		avgGA := float64(performance.GoalAgainst) / float64(performance.GamesPlayed)
-		pointsPace := float64(performance.Points) / float64(performance.GamesPlayed) * 82
+		pointsPace := float64(performance.Points) / float64(performance.GamesPlayed) * float64(seasonGames)
 
 		html.WriteString(fmt.Sprintf("<div class='analytics-item'><strong>Goals/Game:</strong> %.2f for, %.2f against</div>", avgGF, avgGA))
 		html.WriteString(fmt.Sprintf("<div class='analytics-item'><strong>Win Rate:</strong> %.1f%% (%.1f%% points)</div>", performance.WinPctg*100, performance.PointPctg*100))
-		html.WriteString(fmt.Sprintf("<div class='analytics-item'><strong>82-Game Pace:</strong> %.0f points</div>", pointsPace))
+		html.WriteString(fmt.Sprintf("<div class='analytics-item'><strong>%d-Game Pace:</strong> %.0f points</div>", seasonGames, pointsPace))
 	}
 	html.WriteString("</div>")
 	html.WriteString("</div>")
@@ -240,7 +241,7 @@ func formatAnalysisHTML(performance models.TeamPerformance) string {
 
 	html.WriteString("<div class='projection-simplified'>")
 	if performance.GamesPlayed > 0 {
-		remainingGames := 82 - performance.GamesPlayed
+		remainingGames := services.GamesRemaining(seasonGames, performance.GamesPlayed)
 		currentPace := float64(performance.Points) / float64(performance.GamesPlayed)
 		projectedPoints := float64(performance.Points) + (currentPace * float64(remainingGames))
 		playoffThreshold := 96.0

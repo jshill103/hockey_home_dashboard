@@ -47,7 +47,7 @@ func CalculateMagicNumbers(
 	}
 	
 	// Calculate max and min possible points
-	gamesRemaining := 82 - team.GamesPlayed
+	gamesRemaining := GamesRemaining(GetCurrentGamesPerSeason(), team.GamesPlayed)
 	mn.MaxPossiblePoints = team.Points + (gamesRemaining * 2) // 2 points per win
 	mn.MinPossiblePoints = team.Points // If lose all remaining (0 points)
 	
@@ -180,7 +180,7 @@ func calculateClinchNumber(team *models.TeamStanding, sortedTeams []models.TeamS
 	}
 	
 	ninthPlace := sortedTeams[8]
-	ninthGamesRemaining := 82 - ninthPlace.GamesPlayed
+	ninthGamesRemaining := GamesRemaining(GetCurrentGamesPerSeason(), ninthPlace.GamesPlayed)
 	ninthMaxPoints := ninthPlace.Points + (ninthGamesRemaining * 2)
 	
 	// Magic number = points needed to guarantee ahead of 9th place max
@@ -190,7 +190,7 @@ func calculateClinchNumber(team *models.TeamStanding, sortedTeams []models.TeamS
 		return 0 // Already clinched
 	}
 	
-	gamesRemaining := 82 - team.GamesPlayed
+	gamesRemaining := GamesRemaining(GetCurrentGamesPerSeason(), team.GamesPlayed)
 	if magicNumber > gamesRemaining*2 {
 		return gamesRemaining * 2 // Can't clinch yet
 	}
@@ -205,7 +205,7 @@ func calculatePointsToReach8th(team *models.TeamStanding, eighthPlace *models.Te
 	}
 	
 	// Need to match 8th place max possible points, plus 1 for tiebreaker safety
-	eighthGamesRemaining := 82 - eighthPlace.GamesPlayed
+	eighthGamesRemaining := GamesRemaining(GetCurrentGamesPerSeason(), eighthPlace.GamesPlayed)
 	eighthMaxPoints := eighthPlace.Points + (eighthGamesRemaining * 2)
 	
 	pointsNeeded := eighthMaxPoints - team.Points + 1

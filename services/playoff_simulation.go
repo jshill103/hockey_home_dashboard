@@ -577,7 +577,7 @@ func (ps *PlayoffSimulationService) buildPredictionContext(
 	context.IsRivalryGame = (pointsDiff <= 10 && context.IsDivisionGame)
 	
 	// Playoffs detection (late season games)
-	gamesRemaining := 82 - homeTeam.GamesPlayed
+	gamesRemaining := GamesRemaining(GetCurrentGamesPerSeason(), homeTeam.GamesPlayed)
 	context.IsPlayoffs = (gamesRemaining <= 10)
 	
 	return context
@@ -890,7 +890,7 @@ func (ps *PlayoffSimulationService) getEstimatedRemainingGames(conferenceTeams [
 	
 	// For each team, calculate remaining games
 	for _, team := range conferenceTeams {
-		gamesRemaining := 82 - team.GamesPlayed
+		gamesRemaining := GamesRemaining(GetCurrentGamesPerSeason(), team.GamesPlayed)
 		
 		// Estimate games (simplified - better than random, uses round-robin style)
 		gamesPerOpponent := gamesRemaining / (len(conferenceTeams) - 1)

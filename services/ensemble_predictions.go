@@ -1686,7 +1686,7 @@ func getTacticalAdvantageTeam(tacticalImpact float64, homeTeam, awayTeam string)
 
 // convertPredictionFactorsToTeamStats creates a TeamStats object from PredictionFactors
 func convertPredictionFactorsToTeamStats(factors *models.PredictionFactors) models.TeamStats {
-	// Estimate games played from win percentage (assume 82 game season)
+	// Estimate games played from win percentage (assume roughly mid-season)
 	gamesPlayed := 41 // Rough midseason estimate
 	wins := int(factors.WinPercentage * float64(gamesPlayed))
 	losses := gamesPlayed - wins
