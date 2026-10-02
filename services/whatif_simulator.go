@@ -167,8 +167,10 @@ func (ps *PlayoffSimulationService) SimulateWhatIf(teamCode string, scenario Wha
 
 	// Get all conference teams (Phase 5.4: Pre-allocate with estimated capacity)
 	conferenceTeams := make([]*models.TeamStanding, 0, 16) // Typical conference size
+	allTeams := make([]*models.TeamStanding, 0, len(standings.Standings))
 	for i := range standings.Standings {
 		team := &standings.Standings[i]
+		allTeams = append(allTeams, team)
 		if team.ConferenceName == conferenceName {
 			if team.TeamAbbrev.Default == teamCode {
 				conferenceTeams = append(conferenceTeams, &modifiedTeam)
@@ -177,6 +179,9 @@ func (ps *PlayoffSimulationService) SimulateWhatIf(teamCode string, scenario Wha
 			}
 		}
 	}
+
+	// Seed team strengths from actual standings (the scenario shouldn't change true strength)
+	ps.prepareSimulationPredictor(allTeams)
 
 	// Get remaining schedule
 	remainingGames, err := ps.getRemainingGames(conferenceTeams)
@@ -204,7 +209,7 @@ func (ps *PlayoffSimulationService) SimulateWhatIf(teamCode string, scenario Wha
 	pointsDistribution := make(map[int]int)
 
 	for i := 0; i < simulations; i++ {
-		result := ps.simulateSeason(&modifiedTeam, conferenceTeams, filteredGames)
+		result := ps.simulateSeason(&modifiedTeam, conferenceTeams, allTeams, filteredGames)
 		results[i] = result
 		pointsDistribution[result.FinalPoints]++
 	}

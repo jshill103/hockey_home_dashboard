@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -244,7 +245,7 @@ func formatAnalysisHTML(performance models.TeamPerformance) string {
 		remainingGames := services.GamesRemaining(seasonGames, performance.GamesPlayed)
 		currentPace := float64(performance.Points) / float64(performance.GamesPlayed)
 		projectedPoints := float64(performance.Points) + (currentPace * float64(remainingGames))
-		playoffThreshold := 96.0
+		playoffThreshold := math.Round(96.0 * float64(seasonGames) / 82.0)
 		pointsNeeded := playoffThreshold - float64(performance.Points)
 
 		// Compact projection display

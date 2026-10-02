@@ -39,7 +39,7 @@ func CalculatePlayoffOdds() (*models.PlayoffOdds, error) {
 	// Separate teams by conference
 	westernTeams := make([]models.TeamStanding, 0)
 	for _, team := range standings.Standings {
-		if team.ConferenceName == "Western" {
+		if team.ConferenceName == utahTeam.ConferenceName {
 			westernTeams = append(westernTeams, team)
 		}
 	}
@@ -50,7 +50,7 @@ func CalculatePlayoffOdds() (*models.PlayoffOdds, error) {
 	// Get division teams
 	centralTeams := make([]models.TeamStanding, 0)
 	for _, team := range westernTeams {
-		if team.DivisionName == "Central" {
+		if team.DivisionName == utahTeam.DivisionName {
 			centralTeams = append(centralTeams, team)
 		}
 	}
@@ -70,8 +70,8 @@ func CalculatePlayoffOdds() (*models.PlayoffOdds, error) {
 	}
 	projectedPoints := utahTeam.Points + int(math.Round(currentPace*float64(gamesRemaining)))
 
-	// Historical playoff threshold (typically 90-100 points)
-	historicalThreshold := 96
+	// Historical playoff threshold (~96 points in an 82-game season), scaled to season length
+	historicalThreshold := int(math.Round(96.0 * float64(services.GetCurrentGamesPerSeason()) / 82.0))
 
 	// Calculate playoff odds using ML simulation (Phase 5.2: Adaptive simulation count)
 	playoffOdds, divisionOdds, wildCardOdds, mlSimulation := calculateMLPlayoffOddsAdaptive(utahTeam.TeamAbbrev.Default, utahTeam, westernTeams)
@@ -196,26 +196,13 @@ func findTeamRank(teams []models.TeamStanding, targetTeam *models.TeamStanding) 
 	return len(teams)
 }
 
-func determinePlayoffSpot(westernTeams []models.TeamStanding, utahTeam *models.TeamStanding, conferenceRank int) (string, bool) {
-	if conferenceRank <= 8 {
-		// Check if in top 3 of division or wild card
-		centralRank := 0
-		centralCount := 0
-		for _, team := range westernTeams {
-			if team.DivisionName == "Central" {
-				centralCount++
-				if team.TeamName.Default == utahTeam.TeamName.Default {
-					centralRank = centralCount
-					break
-				}
-			}
-		}
-
-		if centralRank <= 3 {
-			return "division", true
-		} else if conferenceRank <= 8 {
-			return "wildcard", true
-		}
+func determinePlayoffSpot(conferenceTeams []models.TeamStanding, utahTeam *models.TeamStanding, conferenceRank int) (string, bool) {
+	sorted := make([]*models.TeamStanding, len(conferenceTeams))
+	for i := range conferenceTeams {
+		sorted[i] = &conferenceTeams[i]
+	}
+	if spot, ok := services.PlayoffQualifiers(sorted)[utahTeam.TeamAbbrev.Default]; ok {
+		return spot, true
 	}
 	return "none", false
 }

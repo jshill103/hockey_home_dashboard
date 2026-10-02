@@ -154,24 +154,29 @@ func (ps *PlayoffSimulationService) SimulatePlayoffOddsWithOptions(teamCode stri
 
 	// Get all teams in the same conference
 	conferenceTeams := make([]*models.TeamStanding, 0)
+	allTeams := make([]*models.TeamStanding, 0, len(standings.Standings))
 	for i := range standings.Standings {
 		team := &standings.Standings[i]
+		allTeams = append(allTeams, team)
 		if team.ConferenceName == conferenceName {
 			conferenceTeams = append(conferenceTeams, team)
 		}
 	}
 
-	// Get remaining schedule for all teams
+	// Refresh predictor team strengths from current standings (cleared cache, early-season shrinkage)
+	ps.prepareSimulationPredictor(allTeams)
+
+	// Get remaining schedule for all conference teams (including games vs the other conference)
 	remainingGames, err := ps.getRemainingGames(conferenceTeams)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get remaining games: %v", err)
 	}
 
-	fmt.Printf("📅 Found %d remaining games in %s conference\n", len(remainingGames), conferenceName)
+	fmt.Printf("📅 Found %d remaining games involving %s conference teams\n", len(remainingGames), conferenceName)
 
 	// Analyze schedule strength (Phase 2)
 	fmt.Println("📊 Analyzing schedule strength...")
-	analyzer := NewScheduleAnalyzer(conferenceTeams)
+	analyzer := NewScheduleAnalyzer(allTeams)
 	scheduleStrength := analyzer.AnalyzeTeamSchedule(teamCode, remainingGames)
 	
 	fmt.Printf("  Schedule Difficulty: %.1f/10 (%s)\n", scheduleStrength.ScheduleDifficulty, scheduleStrength.DifficultyTier)
@@ -202,11 +207,11 @@ func (ps *PlayoffSimulationService) SimulatePlayoffOddsWithOptions(teamCode stri
 	// Use parallel execution for large simulation counts
 	if simulations >= 1000 {
 		fmt.Printf("🚀 Running %d simulations in parallel...\n", simulations)
-		results = ps.runParallelSimulations(targetTeam, conferenceTeams, remainingGames, simulations)
+		results = ps.runParallelSimulations(targetTeam, conferenceTeams, allTeams, remainingGames, simulations)
 	} else {
 		// Sequential execution for small counts
 		for i := 0; i < simulations; i++ {
-			results[i] = ps.simulateSeason(targetTeam, conferenceTeams, remainingGames)
+			results[i] = ps.simulateSeason(targetTeam, conferenceTeams, allTeams, remainingGames)
 		}
 	}
 	
@@ -246,6 +251,7 @@ func (ps *PlayoffSimulationService) SimulatePlayoffOddsWithOptions(teamCode stri
 func (ps *PlayoffSimulationService) runParallelSimulations(
 	targetTeam *models.TeamStanding,
 	conferenceTeams []*models.TeamStanding,
+	allTeams []*models.TeamStanding,
 	remainingGames []RemainingGame,
 	simulations int,
 ) []SimulationResult {
@@ -294,7 +300,7 @@ func (ps *PlayoffSimulationService) runParallelSimulations(
 			defer wg.Done()
 			for i := range jobs {
 				// Each worker runs one simulation
-				result := ps.simulateSeason(targetTeam, conferenceTeams, remainingGames)
+				result := ps.simulateSeason(targetTeam, conferenceTeams, allTeams, remainingGames)
 				results[i] = result
 				atomic.AddInt32(&completed, 1)
 			}
@@ -315,18 +321,27 @@ func (ps *PlayoffSimulationService) runParallelSimulations(
 	return results
 }
 
-// simulateSeason simulates one possible season outcome
+// simulateSeason simulates one possible season outcome.
+// allTeams supplies opponent records for cross-conference games; conferenceTeams
+// (which may contain a modified copy of the target, e.g. for what-if scenarios)
+// take precedence and are the only teams ranked for playoff qualification.
 func (ps *PlayoffSimulationService) simulateSeason(
 	targetTeam *models.TeamStanding,
 	conferenceTeams []*models.TeamStanding,
+	allTeams []*models.TeamStanding,
 	remainingGames []RemainingGame,
 ) SimulationResult {
 	// Create a copy of current standings (Phase 5.4: Optimized with pre-sized map)
-	teamRecords := make(map[string]*models.TeamStanding, len(conferenceTeams))
-	for _, team := range conferenceTeams {
-		// Create a copy
+	teamRecords := make(map[string]*models.TeamStanding, len(allTeams)+len(conferenceTeams))
+	for _, team := range allTeams {
 		teamCopy := *team
 		teamRecords[team.TeamAbbrev.Default] = &teamCopy
+	}
+	inConference := make(map[string]bool, len(conferenceTeams))
+	for _, team := range conferenceTeams {
+		teamCopy := *team
+		teamRecords[team.TeamAbbrev.Default] = &teamCopy
+		inConference[team.TeamAbbrev.Default] = true
 	}
 
 	// Track previous game dates for rest day calculation (Phase 3)
@@ -361,9 +376,11 @@ func (ps *PlayoffSimulationService) simulateSeason(
 	}
 
 	// Sort conference by NHL tiebreaker rules
-	sortedTeams := make([]*models.TeamStanding, 0, len(teamRecords))
-	for _, team := range teamRecords {
-		sortedTeams = append(sortedTeams, team)
+	sortedTeams := make([]*models.TeamStanding, 0, len(inConference))
+	for code, team := range teamRecords {
+		if inConference[code] {
+			sortedTeams = append(sortedTeams, team)
+		}
 	}
 	ps.sortByNHLRules(sortedTeams)
 
@@ -382,19 +399,12 @@ func (ps *PlayoffSimulationService) simulateSeason(
 		conferenceRank = 16 // Worst possible rank
 	}
 
-	// Determine if made playoffs (top 8 in conference)
-	madePlayoffs := conferenceRank <= 8
-	playoffSpotType := "none"
-
-	if madePlayoffs {
-		// Determine if division spot or wild card
-		divisionRank := ps.getDivisionRank(targetFinal, sortedTeams)
-		if divisionRank <= 3 {
-			playoffSpotType = "division"
-		} else {
-			playoffSpotType = "wildcard"
-		}
+	// NHL format: top 3 in each division + 2 conference wild cards
+	playoffSpotType := PlayoffQualifiers(sortedTeams)[targetTeam.TeamAbbrev.Default]
+	if playoffSpotType == "" {
+		playoffSpotType = "none"
 	}
+	madePlayoffs := playoffSpotType != "none"
 
 	return SimulationResult{
 		MadePlayoffs:    madePlayoffs,
@@ -684,6 +694,48 @@ func (ps *PlayoffSimulationService) getDivisionRank(team *models.TeamStanding, s
 	return divisionRank
 }
 
+// PlayoffQualifiers applies the NHL playoff format to one conference's teams, already
+// sorted by NHL tiebreaker rules: the top 3 teams in each division get "division"
+// spots and the next 2 best teams in the conference get "wildcard" spots.
+// Teams that miss the playoffs are absent from the returned map.
+func PlayoffQualifiers(sortedConference []*models.TeamStanding) map[string]string {
+	spots := make(map[string]string, 8)
+	divisionCounts := make(map[string]int)
+	for _, t := range sortedConference {
+		if divisionCounts[t.DivisionName] < 3 {
+			divisionCounts[t.DivisionName]++
+			spots[t.TeamAbbrev.Default] = "division"
+		}
+	}
+	wildCards := 0
+	for _, t := range sortedConference {
+		if wildCards == 2 {
+			break
+		}
+		if _, ok := spots[t.TeamAbbrev.Default]; !ok {
+			spots[t.TeamAbbrev.Default] = "wildcard"
+			wildCards++
+		}
+	}
+	return spots
+}
+
+// prepareSimulationPredictor seeds predictors that support it with current team
+// strengths, using the live system's carried-over Elo ratings as the prior.
+func (ps *PlayoffSimulationService) prepareSimulationPredictor(allTeams []*models.TeamStanding) {
+	seeder, ok := ps.gamePredictor.(SimulationSeeder)
+	if !ok {
+		return
+	}
+	var priors map[string]float64
+	if lps := GetLivePredictionSystem(); lps != nil {
+		if eloModel := lps.GetEloModel(); eloModel != nil {
+			priors = eloModel.GetAllRatings()
+		}
+	}
+	seeder.PrepareForSimulation(allTeams, priors)
+}
+
 // aggregateResults combines simulation results into final statistics
 func (ps *PlayoffSimulationService) aggregateResults(
 	teamCode string,
@@ -822,8 +874,9 @@ func (ps *PlayoffSimulationService) getRemainingGames(conferenceTeams []*models.
 			homeCode := game.HomeTeam.Abbrev
 			awayCode := game.AwayTeam.Abbrev
 			
-			// Only include games where BOTH teams are in this conference
-			if !ps.isTeamInList(homeCode, conferenceTeams) || !ps.isTeamInList(awayCode, conferenceTeams) {
+			// Include any game involving at least one conference team; cross-conference
+			// games still earn (or cost) points toward conference standings.
+			if !ps.isTeamInList(homeCode, conferenceTeams) && !ps.isTeamInList(awayCode, conferenceTeams) {
 				continue
 			}
 			

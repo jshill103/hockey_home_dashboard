@@ -175,6 +175,50 @@ func (ep *EloPredictor) calculateEloFromRecord(team *models.TeamStanding) float6
 	return baseElo + winPctDiff
 }
 
+// recordWeightGames controls how quickly a team's current-season record overrides
+// its prior rating: after recordWeightGames games, record and prior count equally.
+const recordWeightGames = 30.0
+
+// SimulationRatingFromRecord blends a prior rating (e.g. carried-over Elo, or 1500 if
+// unknown) with the team's current record. Early in the season the prior dominates, so a
+// 1-0 start doesn't make a team look like a .1000 juggernaut for the rest of the season.
+func SimulationRatingFromRecord(team *models.TeamStanding, prior float64) float64 {
+	if prior <= 0 {
+		prior = 1500
+	}
+	if team == nil || team.GamesPlayed <= 0 {
+		return prior
+	}
+	pointPct := float64(team.Points) / float64(2*team.GamesPlayed)
+	recordElo := 1500 + (pointPct-0.5)*400
+	weight := float64(team.GamesPlayed) / (float64(team.GamesPlayed) + recordWeightGames)
+	return prior*(1-weight) + recordElo*weight
+}
+
+// SimulationSeeder is implemented by predictors that need fresh team strengths before
+// each Monte Carlo run (strengths stay fixed within a run).
+type SimulationSeeder interface {
+	PrepareForSimulation(teams []*models.TeamStanding, priors map[string]float64)
+}
+
+// PrepareForSimulation sets each team's rating from its prior and current record and
+// clears cached probabilities so they reflect the latest standings.
+func (ep *EloPredictor) PrepareForSimulation(teams []*models.TeamStanding, priors map[string]float64) {
+	ep.mu.Lock()
+	for _, t := range teams {
+		if t == nil {
+			continue
+		}
+		code := t.TeamAbbrev.Default
+		ep.eloRatings[code] = SimulationRatingFromRecord(t, priors[code])
+	}
+	ep.mu.Unlock()
+
+	ep.cacheMu.Lock()
+	ep.predictionCache = make(map[string]float64)
+	ep.cacheMu.Unlock()
+}
+
 func (ep *EloPredictor) UpdateElo(winner, loser string, margin int) {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
@@ -436,6 +480,13 @@ func NewHybridPredictor(ml *MLPredictor, elo *EloPredictor) *HybridPredictor {
 
 func (hp *HybridPredictor) Name() string {
 	return "Hybrid"
+}
+
+// PrepareForSimulation refreshes the ELO component used for lower-importance games.
+func (hp *HybridPredictor) PrepareForSimulation(teams []*models.TeamStanding, priors map[string]float64) {
+	if hp.eloPredictor != nil {
+		hp.eloPredictor.PrepareForSimulation(teams, priors)
+	}
 }
 
 func (hp *HybridPredictor) PredictWinProbability(homeTeam, awayTeam string, context *PredictionContext) (float64, error) {
