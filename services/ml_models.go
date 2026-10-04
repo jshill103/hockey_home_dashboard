@@ -619,17 +619,22 @@ func (nn *NeuralNetworkModel) reluDerivative(x float64) float64 {
 	return 0
 }
 
+// calculateConfidence reports how far from undecided the win/loss output is.
+//
+// This used to take the largest of all three outputs, two of which are goal
+// counts rather than probabilities, and map it onto 0.6-0.95. A goal head
+// reading 0.565 therefore published 0.798 confidence no matter what the
+// win probability was, and the floor of 0.6 meant the model could never
+// admit to being unsure. A live prediction of 0.4440, which is a coin flip,
+// went out at 0.798.
+//
+// For a binary output the information is the distance from 0.5: 0 when the
+// model has no opinion, 1 when it is certain.
 func (nn *NeuralNetworkModel) calculateConfidence(output []float64) float64 {
-	// Calculate confidence based on output certainty
-	maxVal := 0.0
-	for _, val := range output {
-		if val > maxVal {
-			maxVal = val
-		}
+	if len(output) == 0 {
+		return 0
 	}
-
-	// Higher max value = higher confidence
-	return 0.6 + (maxVal * 0.35) // Scale to 0.6-0.95 range
+	return math.Min(1.0, 2.0*math.Abs(output[0]-0.5))
 }
 
 // outputToScore reads the score off the network's two goal outputs.

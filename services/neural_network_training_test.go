@@ -227,3 +227,43 @@ func TestStaleWeightsAreRejected(t *testing.T) {
 		t.Fatal("weights from the old training regime were accepted; they should be discarded")
 	}
 }
+
+// Confidence must describe the win/loss output and nothing else. It
+// previously read the largest of all three outputs, including the two goal
+// heads, so a coin-flip probability shipped with 0.798 confidence.
+func TestConfidenceTracksTheWinProbability(t *testing.T) {
+	nn := newTrainableNetwork(t)
+
+	cases := []struct {
+		name   string
+		output []float64
+		want   float64
+	}{
+		// Goal heads deliberately set high to show they no longer leak in.
+		{"undecided", []float64{0.50, 0.95, 0.95}, 0.0},
+		{"slight home lean", []float64{0.60, 0.95, 0.95}, 0.2},
+		{"coin flip seen in production", []float64{0.4440, 0.565, 0.565}, 0.112},
+		{"confident home", []float64{0.95, 0.10, 0.10}, 0.9},
+		{"confident away", []float64{0.05, 0.10, 0.10}, 0.9},
+	}
+
+	for _, tc := range cases {
+		got := nn.calculateConfidence(tc.output)
+		if math.Abs(got-tc.want) > 1e-9 {
+			t.Errorf("%s: confidence = %.4f, want %.4f", tc.name, got, tc.want)
+		}
+	}
+}
+
+// Symmetry matters: an away pick held as strongly as a home pick has to
+// carry the same confidence, or the ensemble silently discounts away picks.
+func TestConfidenceIsSymmetric(t *testing.T) {
+	nn := newTrainableNetwork(t)
+	for _, p := range []float64{0.55, 0.70, 0.88, 0.99} {
+		home := nn.calculateConfidence([]float64{p, 0.5, 0.5})
+		away := nn.calculateConfidence([]float64{1 - p, 0.5, 0.5})
+		if math.Abs(home-away) > 1e-9 {
+			t.Errorf("p=%.2f: home confidence %.4f != away confidence %.4f", p, home, away)
+		}
+	}
+}
