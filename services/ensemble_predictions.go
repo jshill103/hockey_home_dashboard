@@ -1616,6 +1616,18 @@ func (eps *EnsemblePredictionService) combineWithMetaLearner(results []models.Mo
 	// Get meta-learner prediction
 	winProb := eps.metaLearner.PredictFromModels(predictions, context)
 
+	// Calibrate before anything derives from it, so the winner and the model
+	// agreement spread are computed against the probability actually reported.
+	// Stacking is no more inherently calibrated than a weighted average, so
+	// this path needs the same treatment as combineWeightedPredictions.
+	if calibrator := GetProbabilityCalibrationService(); calibrator != nil {
+		if calibrated := calibrator.Calibrate(winProb); calibrated != winProb {
+			fmt.Printf("📏 Probability calibration: %.1f%% → %.1f%% (home, meta-learner)\n",
+				winProb*100, calibrated*100)
+			winProb = calibrated
+		}
+	}
+
 	// Calculate confidence (based on model agreement)
 	var sumSquaredDiff float64
 	modelCount := 0
