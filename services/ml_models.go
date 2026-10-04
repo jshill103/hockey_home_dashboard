@@ -94,8 +94,14 @@ func (nn *NeuralNetworkModel) Predict(homeFactors, awayFactors *models.Predictio
 	// Forward pass through network
 	output := nn.forwardPass(features)
 
-	// Convert output to win probability and score
-	winProb := nn.sigmoid(output[0])
+	// forwardPass already applies a sigmoid to the output layer, and
+	// backpropagate trains against that activation, so output[0] is already
+	// the learned probability. Passing it through sigmoid a second time
+	// folded the whole range into (0.5, 0.731): the model never once
+	// predicted an away win across 569 stored predictions, and its reported
+	// values spanned exactly 0.5141 to 0.7303. Undoing the second sigmoid
+	// restores the range the network actually learned, roughly 0.06 to 0.99.
+	winProb := output[0]
 	confidence := nn.calculateConfidence(output)
 	predictedScore := nn.outputToScore(output, homeFactors, awayFactors)
 
@@ -125,8 +131,13 @@ func (nn *NeuralNetworkModel) extractFeatures(home, away *models.PredictionFacto
 	// Advanced analytics
 	features[6] = home.AdvancedStats.XGDifferential
 	features[7] = away.AdvancedStats.XGDifferential
-	features[8] = home.AdvancedStats.CorsiForPct / 100.0
-	features[9] = away.AdvancedStats.CorsiForPct / 100.0
+	// CorsiForPct arrives as a possession share in 0-1 on the live path
+	// (PlayByPlayService divides shot attempts by their total), so dividing
+	// by 100 again drove these two inputs to around 0.005 and left them
+	// unable to influence anything. A few older callers still populate the
+	// field on a 0-100 scale, so normalise rather than trusting either.
+	features[8] = possessionShare(home.AdvancedStats.CorsiForPct)
+	features[9] = possessionShare(away.AdvancedStats.CorsiForPct)
 
 	// Situational factors
 	features[10] = home.TravelFatigue.FatigueScore
@@ -583,33 +594,20 @@ func (nn *NeuralNetworkModel) calculateConfidence(output []float64) float64 {
 	return 0.6 + (maxVal * 0.35) // Scale to 0.6-0.95 range
 }
 
+// outputToScore reads the score off the network's two goal outputs.
+//
+// Those outputs are trained against real scorelines, so in principle this is
+// the right source. In practice they have saturated: across 569 stored
+// predictions the model returned just four distinct scores, 7-3 in 74% of
+// games, which is a rout rather than a forecast. Until the goal heads are
+// retrained to something useful the score is built from the two teams'
+// scoring rates instead, the same way the other models now do it.
 func (nn *NeuralNetworkModel) outputToScore(output []float64, home, away *models.PredictionFactors) string {
-	// Convert neural network output to realistic hockey score
-	// output[0] = home win prob, output[1] = home goals, output[2] = away goals
-
-	homeGoals := int(math.Round(output[1] * 8)) // Scale to 0-8 goals
-	awayGoals := int(math.Round(output[2] * 8))
-
-	// Ensure realistic bounds
-	if homeGoals < 0 {
-		homeGoals = 0
+	winProb := 0.5
+	if len(output) > 0 {
+		winProb = output[0]
 	}
-	if awayGoals < 0 {
-		awayGoals = 0
-	}
-	if homeGoals > 8 {
-		homeGoals = 8
-	}
-	if awayGoals > 8 {
-		awayGoals = 8
-	}
-
-	// Ensure at least one goal total
-	if homeGoals == 0 && awayGoals == 0 {
-		homeGoals = 1
-	}
-
-	return fmt.Sprintf("%d-%d", homeGoals, awayGoals)
+	return scorelineFromExpectedGoals(winProb, home, away)
 }
 
 func (nn *NeuralNetworkModel) GetName() string {
