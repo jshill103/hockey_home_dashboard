@@ -1097,9 +1097,19 @@ func (eps *EnsemblePredictionService) combineWeightedPredictions(results []model
 	for _, result := range results {
 		normalizedWeight := result.Weight / totalWeight
 
-		// Weight probabilities by model confidence as well
-		confidenceBoost := 1.0 + (result.Confidence-0.5)*0.4 // Boost high-confidence models
-		adjustedWeight := normalizedWeight * confidenceBoost
+		// Models used to have their weight swung by up to ±20% according to
+		// their own reported confidence. That assumed the confidence figures
+		// were comparable between models and that a confident model is more
+		// often right. Measured over 487 settled games, neither holds: mean
+		// confidence ranged from 0.31 for Gradient Boosting to 0.99 for Monte
+		// Carlo, Monte Carlo and three others reported values so flat they
+		// could not distinguish a sure thing from a toss-up, and the Neural
+		// Network was *less* accurate when confident (49.6% against 59.4%).
+		// So the adjustment handed the largest bonus to the models whose
+		// confidence meant the least, pulling weight away from measured
+		// skill. Dynamic weighting already tracks accuracy and is the
+		// principled place for this.
+		adjustedWeight := normalizedWeight
 
 		// Accumulate a straight weight-normalized average of the home-win
 		// probability (see function comment for why this replaced the old
