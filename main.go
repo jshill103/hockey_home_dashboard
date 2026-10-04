@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"strings"
@@ -883,6 +884,8 @@ func main() {
 		os.Exit(0)
 	}()
 
+	startDebugServer()
+
 	fmt.Println("Server starting on http://localhost:8080")
 	fmt.Println("Schedule will be automatically updated every night at midnight")
 	fmt.Println("🤖 Live prediction models will update automatically every hour")
@@ -892,6 +895,32 @@ func main() {
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatalf("❌ Server failed to start: %v", err)
 	}
+}
+
+// startDebugServer exposes net/http/pprof on loopback only.
+//
+// The main server runs on DefaultServeMux, so importing net/http/pprof for its
+// side effects would publish /debug/pprof through the public ingress. Binding a
+// separate mux to 127.0.0.1 keeps the profiler reachable from inside the
+// container (kubectl exec) without exposing it to the network.
+//
+// This exists because /api/prediction was observed running for minutes while
+// consuming almost no CPU, which is the signature of a blocked goroutine rather
+// than slow work, and there was no way to see where it was parked.
+func startDebugServer() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
+	go func() {
+		if err := http.ListenAndServe("127.0.0.1:6060", mux); err != nil {
+			log.Printf("⚠️ Debug server not available: %v", err)
+		}
+	}()
+	fmt.Println("🔎 pprof listening on 127.0.0.1:6060 (loopback only)")
 }
 
 func scheduleFetcher() {
