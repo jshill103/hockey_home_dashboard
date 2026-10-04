@@ -53,16 +53,27 @@ func TestScorelineIsNeverATie(t *testing.T) {
 	}
 }
 
-// The scoreline must name the same winner the model picked.
+// The scoreline must name the same winner the model picked, including when
+// the two teams' scoring rates point the other way. Random Forest shipped a
+// 78% home win next to a 2-3 scoreline because only exact ties were broken.
 func TestScorelineAgreesWithThePick(t *testing.T) {
-	home := teamRates("HOM", 3.2, 3.0)
-	away := teamRates("AWY", 3.1, 3.1)
+	matchups := []struct {
+		name       string
+		home, away *models.PredictionFactors
+	}{
+		{"evenly matched", teamRates("HOM", 3.2, 3.0), teamRates("AWY", 3.1, 3.1)},
+		{"rates favour away", teamRates("HOM", 1.9, 4.1), teamRates("AWY", 4.3, 1.8)},
+		{"rates favour home", teamRates("HOM", 4.4, 1.9), teamRates("AWY", 1.8, 4.2)},
+		{"low scoring", teamRates("HOM", 1.5, 1.4), teamRates("AWY", 1.4, 1.5)},
+	}
 
-	for _, prob := range []float64{0.05, 0.3, 0.49, 0.5, 0.51, 0.7, 0.95} {
-		score := scorelineFromExpectedGoals(prob, home, away)
-		h, a := parseScore(t, score)
-		if (prob >= 0.5) != (h > a) {
-			t.Errorf("prob %v gave %q, which names the other side", prob, score)
+	for _, m := range matchups {
+		for _, prob := range []float64{0.05, 0.3, 0.49, 0.5, 0.51, 0.7, 0.95} {
+			score := scorelineFromExpectedGoals(prob, m.home, m.away)
+			h, a := parseScore(t, score)
+			if (prob >= 0.5) != (h > a) {
+				t.Errorf("%s at prob %v gave %q, which names the other side", m.name, prob, score)
+			}
 		}
 	}
 }

@@ -48,8 +48,10 @@ func scorelineFromExpectedGoals(homeWinProb float64, home, away *models.Predicti
 	homeGoals := clampGoals(int(math.Round(homeExpected)))
 	awayGoals := clampGoals(int(math.Round(awayExpected)))
 
+	homeFavoured := homeWinProb >= 0.5
+
 	if homeGoals == awayGoals {
-		if homeWinProb >= 0.5 {
+		if homeFavoured {
 			homeGoals = clampGoals(homeGoals + 1)
 			// If the cap blocked the increment, take one off the other side.
 			if homeGoals == awayGoals {
@@ -61,6 +63,14 @@ func scorelineFromExpectedGoals(homeWinProb float64, home, away *models.Predicti
 				homeGoals = clampGoals(homeGoals - 1)
 			}
 		}
+	}
+
+	// The scoring rates can still point the other way from the pick, which
+	// would publish a model as predicting a 78% home win alongside a 2-3
+	// scoreline. Swapping keeps the total goals the rates implied while
+	// letting the pick decide who takes the extra one.
+	if homeFavoured != (homeGoals > awayGoals) {
+		homeGoals, awayGoals = awayGoals, homeGoals
 	}
 
 	return fmt.Sprintf("%d-%d", homeGoals, awayGoals)
