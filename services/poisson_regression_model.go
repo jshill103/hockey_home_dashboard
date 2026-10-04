@@ -215,8 +215,27 @@ func (pr *PoissonRegressionModel) calculateExpectedGoals(teamFactors, opponentFa
 	return finalExpectedGoals
 }
 
-// getOffensiveRate calculates or retrieves team's offensive rate parameter
+// Rate access and locking.
+//
+// These lookups insert on a miss, so every "read" of a team's rate is
+// potentially a map write. Predictions are served on HTTP goroutines while the
+// results poller updates rates and the periodic Dixon-Coles refit rewrites them
+// wholesale, so the maps need real mutual exclusion -- a concurrent map write
+// is a hard panic, not a stale number.
+//
+// The exported entry points take the write lock; the Locked variants exist for
+// callers that already hold it. sync.RWMutex is not reentrant, so mixing the
+// two up deadlocks rather than merely racing.
+
+// getOffensiveRate returns a team's offensive rate, initialising it if unseen.
 func (pr *PoissonRegressionModel) getOffensiveRate(teamCode string) float64 {
+	pr.mutex.Lock()
+	defer pr.mutex.Unlock()
+	return pr.getOffensiveRateLocked(teamCode)
+}
+
+// getOffensiveRateLocked requires pr.mutex to be held for writing.
+func (pr *PoissonRegressionModel) getOffensiveRateLocked(teamCode string) float64 {
 	if rate, exists := pr.teamOffensiveRates[teamCode]; exists {
 		return rate
 	}
@@ -229,8 +248,15 @@ func (pr *PoissonRegressionModel) getOffensiveRate(teamCode string) float64 {
 	return rate
 }
 
-// getDefensiveRate calculates or retrieves team's defensive rate parameter
+// getDefensiveRate returns a team's defensive rate, initialising it if unseen.
 func (pr *PoissonRegressionModel) getDefensiveRate(teamCode string) float64 {
+	pr.mutex.Lock()
+	defer pr.mutex.Unlock()
+	return pr.getDefensiveRateLocked(teamCode)
+}
+
+// getDefensiveRateLocked requires pr.mutex to be held for writing.
+func (pr *PoissonRegressionModel) getDefensiveRateLocked(teamCode string) float64 {
 	if rate, exists := pr.teamDefensiveRates[teamCode]; exists {
 		return rate
 	}
@@ -684,11 +710,16 @@ func (pr *PoissonRegressionModel) poissonNormal(lambda float64) int {
 
 // UpdateRates updates offensive and defensive rates based on actual game results (for future implementation)
 func (pr *PoissonRegressionModel) UpdateRates(homeTeam, awayTeam string, homeScore, awayScore int) {
+	// Held across the whole update so the read-modify-write of each rate is
+	// atomic with respect to the periodic Dixon-Coles refit.
+	pr.mutex.Lock()
+	defer pr.mutex.Unlock()
+
 	// Get current rates
-	homeOffensive := pr.getOffensiveRate(homeTeam)
-	homeDefensive := pr.getDefensiveRate(homeTeam)
-	awayOffensive := pr.getOffensiveRate(awayTeam)
-	awayDefensive := pr.getDefensiveRate(awayTeam)
+	homeOffensive := pr.getOffensiveRateLocked(homeTeam)
+	homeDefensive := pr.getDefensiveRateLocked(homeTeam)
+	awayOffensive := pr.getOffensiveRateLocked(awayTeam)
+	awayDefensive := pr.getDefensiveRateLocked(awayTeam)
 
 	// Calculate expected goals with current rates
 	homeExpected := homeOffensive * awayDefensive * pr.leagueAvgGoalsPerGame * pr.homeAdvantage
@@ -724,7 +755,8 @@ func (pr *PoissonRegressionModel) UpdateRates(homeTeam, awayTeam string, homeSco
 		awayTeam, pr.teamOffensiveRates[awayTeam], pr.teamDefensiveRates[awayTeam])
 }
 
-// boundRate ensures rates stay within reasonable bounds
+// boundRate ensures rates stay within reasonable bounds.
+// Requires pr.mutex to be held for writing.
 func (pr *PoissonRegressionModel) boundRate(teamCode string, isOffensive bool) {
 	if isOffensive {
 		if rate := pr.teamOffensiveRates[teamCode]; rate < 0.5 {
@@ -743,9 +775,10 @@ func (pr *PoissonRegressionModel) boundRate(teamCode string, isOffensive bool) {
 
 // GetTeamRates returns current offensive and defensive rates for a team
 func (pr *PoissonRegressionModel) GetTeamRates(teamCode string) (offensive, defensive float64) {
-	pr.mutex.RLock()
-	defer pr.mutex.RUnlock()
-	return pr.getOffensiveRate(teamCode), pr.getDefensiveRate(teamCode)
+	// Write lock, not read: both lookups insert when the team is unseen.
+	pr.mutex.Lock()
+	defer pr.mutex.Unlock()
+	return pr.getOffensiveRateLocked(teamCode), pr.getDefensiveRateLocked(teamCode)
 }
 
 // ========== UpdatableModel Interface Implementation ==========
@@ -933,10 +966,12 @@ func (pr *PoissonRegressionModel) processGameResult(gameResult *models.GameResul
 	newAwayDefensive := awayDefensive + awayDefensiveChange
 
 	// Apply bounds and update rates
+	pr.mutex.Lock()
 	pr.teamOffensiveRates[homeTeam] = pr.boundOffensiveRate(newHomeOffensive)
 	pr.teamDefensiveRates[homeTeam] = pr.boundDefensiveRate(newHomeDefensive)
 	pr.teamOffensiveRates[awayTeam] = pr.boundOffensiveRate(newAwayOffensive)
 	pr.teamDefensiveRates[awayTeam] = pr.boundDefensiveRate(newAwayDefensive)
+	pr.mutex.Unlock()
 
 	// Update confidence tracking
 	pr.updateConfidenceTracking(homeTeam, homeOffensiveError, homeDefensiveError)
@@ -1074,8 +1109,10 @@ func (pr *PoissonRegressionModel) updateFromStandings(standings *models.Standing
 		newOffensive := pr.boundOffensiveRate(currentOffensive + offensiveAdjustment)
 		newDefensive := pr.boundDefensiveRate(currentDefensive + defensiveAdjustment)
 
+		pr.mutex.Lock()
 		pr.teamOffensiveRates[teamCode] = newOffensive
 		pr.teamDefensiveRates[teamCode] = newDefensive
+		pr.mutex.Unlock()
 
 		if math.Abs(offensiveAdjustment) > 0.02 || math.Abs(defensiveAdjustment) > 0.02 {
 			log.Printf("📊 Standings adjustment: %s Off: %.3f→%.3f (%+.3f), Def: %.3f→%.3f (%+.3f)",
@@ -1104,6 +1141,9 @@ func (pr *PoissonRegressionModel) applySeasonalDecay() {
 	if determineSeasonPhase(time.Now()) != "offseason" {
 		return // Only decay rates toward league average between seasons
 	}
+
+	pr.mutex.Lock()
+	defer pr.mutex.Unlock()
 
 	if !pr.lastDecayAppliedAt.IsZero() && time.Since(pr.lastDecayAppliedAt) < 7*24*time.Hour {
 		return // Already decayed recently; don't re-decay on every offseason tick
@@ -1152,6 +1192,9 @@ func (pr *PoissonRegressionModel) updateAdaptiveLearningRate() {
 
 // updateConfidenceTracking updates confidence in team rate estimates
 func (pr *PoissonRegressionModel) updateConfidenceTracking(teamCode string, offensiveError, defensiveError float64) {
+	pr.mutex.Lock()
+	defer pr.mutex.Unlock()
+
 	currentConfidence := pr.confidenceTracking[teamCode]
 	if currentConfidence == 0 {
 		currentConfidence = 0.5 // Start with medium confidence
@@ -1203,6 +1246,9 @@ func (pr *PoissonRegressionModel) boundDefensiveRate(rate float64) float64 {
 func (pr *PoissonRegressionModel) recordRateChange(teamCode string, oldOffensive, newOffensive, oldDefensive, newDefensive,
 	offensiveChange, defensiveChange float64, opponent, score string, learningRate float64, wasHome bool,
 	expectedGoals float64, actualGoals int, gameDate time.Time) {
+
+	pr.mutex.Lock()
+	defer pr.mutex.Unlock()
 
 	record := RateRecord{
 		Date:            gameDate,
