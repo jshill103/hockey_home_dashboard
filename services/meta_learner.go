@@ -142,6 +142,19 @@ func (mlm *MetaLearnerModel) PredictFromModels(predictions *ModelPredictions, co
 	mlm.mutex.RLock()
 	defer mlm.mutex.RUnlock()
 
+	return mlm.predictFromModelsLocked(predictions, context)
+}
+
+// predictFromModelsLocked is PredictFromModels without the locking. Callers
+// must already hold mlm.mutex, for reading or for writing.
+//
+// This split exists because Train holds the write lock for its whole body and
+// calls evaluateAccuracy, which needs to score examples. Going through the
+// public PredictFromModels there meant taking RLock while already holding
+// Lock, and sync.RWMutex is not reentrant, so Train deadlocked against itself
+// on its first validation epoch. Every later reader then blocked behind the
+// write lock that Train would never release.
+func (mlm *MetaLearnerModel) predictFromModelsLocked(predictions *ModelPredictions, context *MetaGameContext) float64 {
 	if !mlm.trained {
 		// If not trained, return weighted average of base models
 		return mlm.weightedAverage(predictions)
@@ -354,13 +367,16 @@ func (mlm *MetaLearnerModel) trainOnExample(example *MetaTrainingExample) float6
 	return loss
 }
 
-// evaluateAccuracy calculates accuracy on a dataset
+// evaluateAccuracy calculates accuracy on a dataset.
+//
+// Callers must hold mlm.mutex; it is only reached from Train, which holds the
+// write lock for its entire body.
 func (mlm *MetaLearnerModel) evaluateAccuracy(data []MetaTrainingExample) float64 {
 	correct := 0
 	total := len(data)
 
 	for _, example := range data {
-		prediction := mlm.PredictFromModels(&example.Predictions, &example.Context)
+		prediction := mlm.predictFromModelsLocked(&example.Predictions, &example.Context)
 
 		predictedWin := prediction > 0.5
 		actualWin := example.ActualOutcome > 0.5
