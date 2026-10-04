@@ -826,15 +826,55 @@ func (m *MonteCarloModel) simulateGame(homeFactors, awayFactors *models.Predicti
 	homeExpected *= homeWeatherEffect
 	awayExpected *= awayWeatherEffect
 
-	// Convert to discrete goals (using Poisson-like distribution)
-	homeGoals := int(math.Max(0, homeExpected+rand.NormFloat64()*0.8))
-	awayGoals := int(math.Max(0, awayExpected+rand.NormFloat64()*0.8))
-
-	// Cap at reasonable maximums
-	homeGoals = int(math.Min(float64(homeGoals), 8))
-	awayGoals = int(math.Min(float64(awayGoals), 8))
+	// Convert to discrete goals
+	homeGoals := drawGoals(homeExpected)
+	awayGoals := drawGoals(awayExpected)
 
 	return homeGoals, awayGoals
+}
+
+// maxSimulatedGoals caps a single side's simulated score. Eight is already
+// past anything but a rout and keeps the sampler's tail bounded.
+const maxSimulatedGoals = 8
+
+// drawGoals samples one team's goal total for a single simulated game.
+//
+// This used to be int(max(0, expected + NormFloat64()*0.8)), which was wrong
+// twice. A standard deviation of 0.8 badly understates hockey: goals are
+// close to Poisson, so the spread around an expectation of roughly 3.2 should
+// be about sqrt(3.2), near 1.8, more than double what was used. Too little
+// noise makes the simulator separate teams far more cleanly than the sport
+// does, and that is the root of the absurd probabilities it published -- a
+// 0.25% chance for one side in a game between two NHL teams. Truncating with
+// int() rather than rounding also shaved most of a goal off every simulated
+// score, since it always rounds toward zero.
+//
+// Sampling from an actual Poisson distribution fixes both: the variance comes
+// out right by construction and the draw is already a non-negative integer.
+func drawGoals(expected float64) int {
+	goals := samplePoisson(expected)
+	if goals > maxSimulatedGoals {
+		return maxSimulatedGoals
+	}
+	return goals
+}
+
+// samplePoisson draws from a Poisson distribution by Knuth's method, which is
+// simple and fast at the small means hockey produces.
+func samplePoisson(lambda float64) int {
+	if lambda <= 0 {
+		return 0
+	}
+
+	limit := math.Exp(-lambda)
+	product := 1.0
+	for k := 0; k <= maxSimulatedGoals; k++ {
+		product *= rand.Float64()
+		if product <= limit {
+			return k
+		}
+	}
+	return maxSimulatedGoals
 }
 
 // simulateWeatherImpact simulates weather effects with random variations

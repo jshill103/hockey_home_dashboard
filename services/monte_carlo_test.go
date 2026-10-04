@@ -168,6 +168,93 @@ func TestConfidenceDoesNotDependOnSimulationCount(t *testing.T) {
 	}
 }
 
+// Goals are close to Poisson in hockey, so the sampler's spread should be
+// about sqrt(mean). The old truncated-normal draw used a fixed 0.8, less than
+// half of that, which is what let the simulator separate teams unrealistically.
+func TestGoalSamplerHasHockeyLikeSpread(t *testing.T) {
+	const lambda = 3.2
+	const draws = 200000
+
+	sum, sumSq := 0.0, 0.0
+	for i := 0; i < draws; i++ {
+		g := float64(samplePoisson(lambda))
+		sum += g
+		sumSq += g * g
+	}
+	mean := sum / draws
+	variance := sumSq/draws - mean*mean
+	stdDev := math.Sqrt(variance)
+
+	if math.Abs(mean-lambda) > 0.05 {
+		t.Errorf("mean = %.3f, want ~%.1f", mean, lambda)
+	}
+	// Poisson variance equals its mean, so the standard deviation is sqrt(λ).
+	if want := math.Sqrt(lambda); math.Abs(stdDev-want) > 0.1 {
+		t.Errorf("stdDev = %.3f, want ~%.3f (old sampler used 0.8)", stdDev, want)
+	}
+	if stdDev < 1.5 {
+		t.Errorf("spread %.3f is too tight to be hockey", stdDev)
+	}
+}
+
+func TestGoalSamplerStaysInRange(t *testing.T) {
+	for _, lambda := range []float64{0, -1, 0.5, 3.2, 50} {
+		for i := 0; i < 2000; i++ {
+			g := drawGoals(lambda)
+			if g < 0 || g > maxSimulatedGoals {
+				t.Fatalf("drawGoals(%v) = %d, outside 0-%d", lambda, g, maxSimulatedGoals)
+			}
+		}
+	}
+	if got := samplePoisson(0); got != 0 {
+		t.Errorf("samplePoisson(0) = %d, want 0", got)
+	}
+}
+
+// A mismatch should favour the better side without claiming near-certainty.
+// The model published a 0.25% chance for one team in a real game, which no
+// NHL matchup justifies.
+func TestLopsidedMatchupIsNotNearCertain(t *testing.T) {
+	model := NewMonteCarloModel()
+	strong := &models.PredictionFactors{TeamCode: "STR", WinPercentage: 0.75, GoalsFor: 4.2, GoalsAgainst: 2.3, RecentForm: 0.3}
+	weak := &models.PredictionFactors{TeamCode: "WEK", WinPercentage: 0.25, GoalsFor: 2.3, GoalsAgainst: 4.2, RecentForm: -0.3}
+
+	result, err := model.Predict(strong, weak)
+	if err != nil {
+		t.Fatalf("Predict: %v", err)
+	}
+
+	if result.WinProbability <= 0.5 {
+		t.Errorf("the stronger home side should be favoured, got %.4f", result.WinProbability)
+	}
+	// Even a thorough mismatch is not a lock in a sport this high-variance.
+	if result.WinProbability > 0.95 {
+		t.Errorf("WinProbability = %.4f, too close to certain for one hockey game", result.WinProbability)
+	}
+	t.Logf("lopsided matchup -> %.4f", result.WinProbability)
+}
+
+func TestBreakTiedScoreline(t *testing.T) {
+	cases := []struct {
+		in          string
+		homeWinProb float64
+		want        string
+	}{
+		{"3-3", 0.60, "4-3"},
+		{"3-3", 0.40, "3-4"},
+		{"2-2", 0.50, "3-2"},
+		{"4-2", 0.70, "4-2"}, // already decided, untouched
+		{"2-4", 0.30, "2-4"},
+		{"", 0.50, ""},            // unparseable, left alone
+		{"not-a-score", 0.5, "not-a-score"},
+	}
+	for _, c := range cases {
+		if got := breakTiedScoreline(c.in, c.homeWinProb); got != c.want {
+			t.Errorf("breakTiedScoreline(%q, %v) = %q, want %q", c.in, c.homeWinProb, got, c.want)
+		}
+	}
+}
+
 func TestPredictProducesUsableOutput(t *testing.T) {
 	model := NewMonteCarloModel()
 	home, away := symmetricFactors()
