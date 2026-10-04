@@ -501,6 +501,44 @@ func (nn *NeuralNetworkModel) extractFeatures(home, away *models.PredictionFacto
 	// Lineup Stability (181)
 	features[181] = home.LineupStabilityFactor               // Already 0-1 scale
 
+	return conditionFeatures(features)
+}
+
+// featureBound is the magnitude every input is held within. Nearly all of the
+// features above are written as ratios or already-normalised differentials,
+// so this changes nothing for a correctly scaled input and only catches the
+// ones that are not.
+const featureBound = 1.0
+
+// conditionFeatures keeps the input vector in a range the network can learn
+// from.
+//
+// Eighty-seven of the assignments above store a value without dividing it to
+// a known range, and they are the reason the model saturated. Running the
+// trained weights over a unit-scaled input produces an output around 0.6,
+// but production reported 0.9927, which takes a final pre-activation near 5
+// and therefore inputs several times larger than intended. Once the output
+// sigmoid saturates its derivative collapses to about 0.007, and since the
+// loss was mean squared error every gradient in the network was multiplied
+// by that. The effect is visible in the saved weights: layers 0, 1 and 2 sit
+// at exactly their Xavier initialisation, having never moved, while only the
+// output layer shifted by a few percent.
+//
+// Clamping is deliberately crude. The honest fix is to normalise each feature
+// at the point it is written, but there are 87 of them with no documented
+// scale, and a bound is enough to keep the network out of saturation so it
+// can train at all.
+func conditionFeatures(features []float64) []float64 {
+	for i, v := range features {
+		switch {
+		case math.IsNaN(v):
+			features[i] = 0
+		case v > featureBound:
+			features[i] = featureBound
+		case v < -featureBound:
+			features[i] = -featureBound
+		}
+	}
 	return features
 }
 
@@ -618,12 +656,64 @@ func (nn *NeuralNetworkModel) GetWeight() float64 {
 	return nn.weight
 }
 
-// TrainOnGameResult updates the neural network with actual game results
+// TrainOnGameResult updates the neural network with one game result and
+// persists the new weights.
+//
+// Prefer TrainOnGameResults when feeding more than one game: this saves the
+// whole 11.8MB weight file on every call, so training a 500 game batch one
+// result at a time wrote close to six gigabytes.
 func (nn *NeuralNetworkModel) TrainOnGameResult(gameResult *models.GameResult, homeFactors, awayFactors *models.PredictionFactors) error {
 	nn.mutex.Lock()
-	defer nn.mutex.Unlock()
+	nn.trainOnGameLocked(gameResult, homeFactors, awayFactors)
+	nn.mutex.Unlock()
 
-	// Extract features
+	if err := nn.saveWeights(); err != nil {
+		log.Printf("⚠️ Failed to save Neural Network weights: %v", err)
+	}
+	return nil
+}
+
+// neuralNetworkEpochs is how many passes a batch gets. One pass per game was
+// never going to move a 287k parameter network; the gradient from a single
+// example is tiny even now that it is no longer being attenuated by a
+// saturated sigmoid.
+const neuralNetworkEpochs = 12
+
+// TrainOnGameResults trains on a batch of games, shuffling between epochs,
+// and saves the weights once at the end.
+func (nn *NeuralNetworkModel) TrainOnGameResults(games []NeuralTrainingSample) error {
+	if len(games) == 0 {
+		return nil
+	}
+
+	nn.mutex.Lock()
+	order := make([]int, len(games))
+	for i := range order {
+		order[i] = i
+	}
+	for epoch := 0; epoch < neuralNetworkEpochs; epoch++ {
+		// Shuffle so the network does not simply learn the batch order.
+		rand.Shuffle(len(order), func(i, j int) { order[i], order[j] = order[j], order[i] })
+		for _, idx := range order {
+			sample := games[idx]
+			nn.trainOnGameLocked(sample.Result, sample.HomeFactors, sample.AwayFactors)
+		}
+	}
+	nn.mutex.Unlock()
+
+	return nn.saveWeights()
+}
+
+// NeuralTrainingSample is one finished game paired with the factors as they
+// stood before it was played.
+type NeuralTrainingSample struct {
+	Result      *models.GameResult
+	HomeFactors *models.PredictionFactors
+	AwayFactors *models.PredictionFactors
+}
+
+// trainOnGameLocked runs a single gradient step. Callers must hold nn.mutex.
+func (nn *NeuralNetworkModel) trainOnGameLocked(gameResult *models.GameResult, homeFactors, awayFactors *models.PredictionFactors) {
 	features := nn.extractFeatures(homeFactors, awayFactors)
 
 	// Create target output
@@ -636,20 +726,8 @@ func (nn *NeuralNetworkModel) TrainOnGameResult(gameResult *models.GameResult, h
 	target[1] = float64(gameResult.HomeScore) / 8.0 // Normalized home goals
 	target[2] = float64(gameResult.AwayScore) / 8.0 // Normalized away goals
 
-	// Perform backpropagation (simplified)
 	nn.backpropagate(features, target)
-
 	nn.lastUpdated = time.Now()
-
-	// Auto-save weights after training
-	// Release lock before saving to avoid deadlock
-	nn.mutex.Unlock()
-	if err := nn.saveWeights(); err != nil {
-		log.Printf("⚠️ Failed to save Neural Network weights: %v", err)
-	}
-	nn.mutex.Lock() // Re-acquire for defer unlock
-
-	return nil
 }
 
 // forwardPassWithActivations performs forward pass and stores all activations
@@ -705,16 +783,30 @@ func (nn *NeuralNetworkModel) backpropagate(input, target []float64) {
 		errors[i] = make([]float64, nn.layers[i])
 	}
 
-	// Calculate output layer error (δ = (a - y) * σ'(z))
+	// Output layer error.
+	//
+	// Output 0 is a win/loss classification and uses cross-entropy, for which
+	// the delta is simply (a - y): the sigmoid derivative cancels against the
+	// loss derivative. It used to use mean squared error like the other two,
+	// giving (a - y) * sigma'(z), and that extra factor is what stopped this
+	// network from ever learning. A saturated sigmoid has a derivative near
+	// 0.007, so every gradient in the network arrived roughly 145 times too
+	// small, and with a learning rate of 0.0005 and one step per game nothing
+	// moved. The saved weights confirm it: layers 0, 1 and 2 are still at
+	// their exact Xavier initialisation.
+	//
+	// Outputs 1 and 2 are goal counts, a genuine regression, so they keep the
+	// squared-error delta.
 	outputLayer := numLayers - 1
 	for j := 0; j < nn.layers[outputLayer]; j++ {
-		// Mean Squared Error derivative: (predicted - actual)
 		outputError := activations[outputLayer][j] - target[j]
 
-		// Multiply by activation derivative
-		activationDeriv := nn.sigmoidDerivative(preActivations[outputLayer][j])
+		if j == 0 {
+			errors[outputLayer][j] = outputError
+			continue
+		}
 
-		errors[outputLayer][j] = outputError * activationDeriv
+		errors[outputLayer][j] = outputError * nn.sigmoidDerivative(preActivations[outputLayer][j])
 	}
 
 	// Backpropagate errors through hidden layers
@@ -764,6 +856,11 @@ func (nn *NeuralNetworkModel) backpropagate(input, target []float64) {
 // NEURAL NETWORK PERSISTENCE
 // ============================================================================
 
+// neuralNetworkWeightsVersion identifies the training regime the saved
+// weights belong to. Bump it whenever a change makes older weights invalid,
+// so they are discarded instead of silently carried forward.
+const neuralNetworkWeightsVersion = "2.0"
+
 // NeuralNetworkData represents the serializable state of the neural network
 type NeuralNetworkData struct {
 	Weights      [][][]float64 `json:"weights"` // 3D array for all layer weights
@@ -804,7 +901,7 @@ func (nn *NeuralNetworkModel) saveWeights() error {
 		LearningRate: nn.learningRate,
 		Weight:       nn.weight,
 		LastUpdated:  nn.lastUpdated,
-		Version:      "1.0",
+		Version:      neuralNetworkWeightsVersion,
 	}
 	data.TrainingInfo.Notes = "Neural Network for NHL game prediction"
 
@@ -841,6 +938,15 @@ func (nn *NeuralNetworkModel) loadWeights() error {
 	err = json.Unmarshal(jsonData, &data)
 	if err != nil {
 		return fmt.Errorf("error unmarshaling neural network data: %v", err)
+	}
+
+	// Weights saved before the input clamp and the cross-entropy output were
+	// trained under a regime that could not learn, so they are discarded
+	// rather than carried forward. Nothing of value is lost: the saved
+	// network's hidden layers never moved off their random initialisation.
+	if data.Version != neuralNetworkWeightsVersion {
+		return fmt.Errorf("weights are version %q, want %q; starting from a fresh initialisation",
+			data.Version, neuralNetworkWeightsVersion)
 	}
 
 	// Validate architecture matches

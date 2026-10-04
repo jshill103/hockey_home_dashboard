@@ -539,17 +539,28 @@ func (mes *ModelEvaluationService) trainBatch() error {
 	// Train Neural Network on batch
 	if mes.neuralNet != nil {
 		start := time.Now()
-		for _, game := range mes.pendingBatch {
-			homeFactors := mes.buildFactors(game, true)
-			awayFactors := mes.buildFactors(game, false)
-			gameResult := mes.convertToGameResult(&game)
 
-			if err := mes.neuralNet.TrainOnGameResult(gameResult, homeFactors, awayFactors); err != nil {
-				errorCount++
-			} else {
-				successCount++
-			}
+		// One gradient step per game, saving the whole weight file after each
+		// one, was both too little training to move a 287k parameter network
+		// and close to six gigabytes of writes per batch. The batch is handed
+		// over whole so it can be run for several shuffled epochs and saved
+		// once.
+		samples := make([]NeuralTrainingSample, 0, len(mes.pendingBatch))
+		for _, game := range mes.pendingBatch {
+			samples = append(samples, NeuralTrainingSample{
+				Result:      mes.convertToGameResult(&game),
+				HomeFactors: mes.buildFactors(game, true),
+				AwayFactors: mes.buildFactors(game, false),
+			})
 		}
+
+		if err := mes.neuralNet.TrainOnGameResults(samples); err != nil {
+			errorCount += len(samples)
+			log.Printf("⚠️ Neural Network batch training failed: %v", err)
+		} else {
+			successCount += len(samples)
+		}
+
 		duration := time.Since(start).Seconds()
 		log.Printf("🧠 Neural Network trained on %d games (batch)", successCount)
 
