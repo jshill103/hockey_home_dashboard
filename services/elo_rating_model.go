@@ -63,6 +63,14 @@ type RatingRecord struct {
 	Confidence float64   `json:"confidence"`
 }
 
+// nhlHomeIceEloAdvantage is the rating bonus applied to the home team.
+//
+// The Elo expected score for a rating edge of d is 1/(1+10^(-d/400)). NHL home
+// teams win roughly 55% of games, which solves to d ~= 35. The previous value
+// of 100 implied a 64% home win rate -- about three times the real edge -- and
+// biased every Elo prediction toward the home side.
+const nhlHomeIceEloAdvantage = 35.0
+
 var (
 	eloModelInstance *EloRatingModel
 	eloModelOnce     sync.Once
@@ -88,7 +96,7 @@ func NewEloRatingModel() *EloRatingModel {
 		confidenceFactors: make(map[string]float64),
 		initialRating:     1500.0, // Standard Elo starting rating
 		kFactor:           32.0,   // Standard K-factor (higher = more volatile)
-		homeAdvantage:     100.0,  // Home team gets +100 Elo equivalent
+		homeAdvantage:     nhlHomeIceEloAdvantage,
 		weight:            0.20,   // 20% weight in ensemble
 		seasonDecayRate:   0.95,   // 5% decay per season
 		lastUpdated:       time.Now(),

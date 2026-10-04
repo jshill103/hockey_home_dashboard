@@ -40,6 +40,11 @@ type ModelEvaluationService struct {
 	lstmBatch  []models.CompletedGame // LSTM: batch size 5
 	rfBatch    []models.CompletedGame // Random Forest: batch size 10
 	batchMutex sync.Mutex
+
+	// gamesSincePoissonFit paces full Dixon-Coles refits, which run on a game
+	// count rather than a batch queue because the fit always reads the whole
+	// rolling window rather than a pending batch. Guarded by batchMutex.
+	gamesSincePoissonFit int
 }
 
 // NewModelEvaluationService creates a new evaluation service
@@ -304,6 +309,22 @@ func (mes *ModelEvaluationService) AddGameToBatch(game models.CompletedGame) err
 		}
 	}
 
+	// Refit the Dixon-Coles attack/defence rates periodically. Between fits the
+	// Poisson model only gets the per-game online nudge in processGameResult,
+	// which cannot separate a team's own strength from that of the opponents it
+	// happened to draw; the joint fit can.
+	mes.gamesSincePoissonFit++
+	if mes.gamesSincePoissonFit >= gamesBetweenPoissonFits {
+		mes.gamesSincePoissonFit = 0
+		if poisson := GetPoissonRegressionModel(); poisson != nil {
+			if err := poisson.FitFromHistory(mes.getTrainingWindow(maxPoissonFitWindow)); err != nil {
+				log.Printf("📐 Dixon-Coles refit skipped: %v", err)
+			} else {
+				trained = append(trained, "Poisson")
+			}
+		}
+	}
+
 	// Log batch status
 	if len(trained) > 0 {
 		log.Printf("✅ Batch training complete for: %v (total games: %d)", trained, len(mes.completedGames))
@@ -336,6 +357,16 @@ func (mes *ModelEvaluationService) AddGameToBatch(game models.CompletedGame) err
 // progresses. The cap keeps retraining cost bounded as history grows across
 // seasons.
 const maxTreeModelTrainingWindow = 500
+
+// gamesBetweenPoissonFits is how many completed games pass between full
+// Dixon-Coles refits. The fit is cheap (a few hundred iterative-scaling passes
+// over at most maxPoissonFitWindow games) but the rates move slowly, so there
+// is nothing to gain from refitting on every result.
+const gamesBetweenPoissonFits = 25
+
+// maxPoissonFitWindow bounds the history each fit sees. The fit already decays
+// game weights by recency, so this only caps cost as seasons accumulate.
+const maxPoissonFitWindow = 2000
 
 // getTrainingWindow returns up to the most recent maxGames completed games,
 // sorted chronologically (oldest first). Used by tree-ensemble models that

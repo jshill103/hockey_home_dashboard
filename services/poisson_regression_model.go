@@ -46,6 +46,11 @@ type PoissonRegressionModel struct {
 	// the first time it's needed (see ensureRhoFitted), then cached.
 	rho       float64
 	rhoFitted bool
+
+	// lastFittedAt records when FitFromHistory last recovered the attack and
+	// defence rates by maximum likelihood, as opposed to the per-game online
+	// nudges applied by processGameResult between fits.
+	lastFittedAt time.Time
 }
 
 // PoissonModelData represents the serializable state of the Poisson model
@@ -57,6 +62,16 @@ type PoissonModelData struct {
 	LastUpdated        time.Time               `json:"lastUpdated"`
 	LastDecayAppliedAt time.Time               `json:"lastDecayAppliedAt,omitempty"`
 	Version            string                  `json:"version"`
+
+	// Scale parameters recovered by FitFromHistory. The team rates are only
+	// meaningful relative to these, so persisting the rates without them would
+	// reset the scale to its defaults on restart while the rates stayed fitted.
+	// Zero means "never fitted"; the constructor defaults are kept in that case.
+	LeagueAvgGoalsPerGame float64   `json:"leagueAvgGoalsPerGame,omitempty"`
+	HomeAdvantage         float64   `json:"homeAdvantage,omitempty"`
+	Rho                   float64   `json:"rho,omitempty"`
+	RhoFitted             bool      `json:"rhoFitted,omitempty"`
+	LastFittedAt          time.Time `json:"lastFittedAt,omitempty"`
 }
 
 // RateRecord tracks historical rate changes
@@ -420,10 +435,6 @@ const dixonColesMaxGoals = 10
 // magnitude for goal-based team sports.
 const defaultDixonColesRho = -0.1
 
-// minGamesForDixonColesRhoFit is the minimum number of historical completed
-// games required before we trust a fitted rho over the default.
-const minGamesForDixonColesRhoFit = 30
-
 // calculateWinProbabilityDixonColes builds a truncated joint Poisson
 // probability matrix for (homeGoals, awayGoals), applies the Dixon-Coles tau
 // correction to the four low-scoring cells, renormalizes so the matrix sums
@@ -542,13 +553,17 @@ func poissonProbOverLine(line float64, lambda float64) float64 {
 	return p
 }
 
-// ensureRhoFitted fits the global Dixon-Coles rho from historical completed
-// games the first time it's needed, then caches it -- refitting on every
-// prediction would be wasteful and unnecessary since rho is a slow-moving,
-// league-wide constant. If insufficient historical data is available yet
-// (e.g. right after a fresh deploy with no data/results history loaded), it
-// leaves the default in place and tries again on the next call instead of
-// permanently locking in an unfit value.
+// ensureRhoFitted recovers rho from historical completed games the first time
+// it is needed, then caches it -- refitting on every prediction would be
+// wasteful since rho is a slow-moving, league-wide constant. If there is not
+// enough history yet it leaves the default in place and tries again next call
+// rather than permanently locking in an unfit value.
+//
+// rho is fitted as part of the full Dixon-Coles fit rather than on its own.
+// Estimating it against league-average lambdas, as this used to, leaves team
+// strength in the residuals, and doing it without regularisation lands on the
+// edge of the search range at the sample sizes available here. See
+// fitDixonColesRhoWithRates.
 func (pr *PoissonRegressionModel) ensureRhoFitted() {
 	pr.mutex.RLock()
 	fitted := pr.rhoFitted
@@ -561,70 +576,10 @@ func (pr *PoissonRegressionModel) ensureRhoFitted() {
 	if mes == nil {
 		return
 	}
-	games := mes.GetCompletedGames()
-	if len(games) < minGamesForDixonColesRhoFit {
-		return
+
+	if err := pr.FitFromHistory(mes.GetCompletedGames()); err != nil {
+		log.Printf("📐 Dixon-Coles fit deferred: %v", err)
 	}
-
-	rho := fitDixonColesRho(games)
-
-	pr.mutex.Lock()
-	pr.rho = rho
-	pr.rhoFitted = true
-	pr.mutex.Unlock()
-
-	log.Printf("📐 Fitted Dixon-Coles rho = %.4f from %d historical games", rho, len(games))
-}
-
-// fitDixonColesRho fits the single global Dixon-Coles correlation parameter
-// via grid search over rho in [-0.3, 0.3], minimizing the negative
-// log-likelihood of the Dixon-Coles-adjusted joint Poisson probability
-// against each historical game's actual (homeGoals, awayGoals). As is
-// standard practice for a global rho fit, the league-average home/away
-// goals-per-game (rather than each historical team's contemporaneous rate)
-// is used as the lambda input for every game.
-func fitDixonColesRho(games []models.CompletedGame) float64 {
-	if len(games) == 0 {
-		return defaultDixonColesRho
-	}
-
-	var sumHome, sumAway float64
-	for _, g := range games {
-		sumHome += float64(g.HomeTeam.Score)
-		sumAway += float64(g.AwayTeam.Score)
-	}
-	n := float64(len(games))
-	lambdaHome := sumHome / n
-	lambdaAway := sumAway / n
-
-	bestRho := defaultDixonColesRho
-	bestNLL := math.Inf(1)
-
-	const rhoMin = -0.30
-	const rhoMax = 0.30
-	const rhoStep = 0.005
-
-	for rho := rhoMin; rho <= rhoMax+1e-9; rho += rhoStep {
-		nll := 0.0
-		valid := true
-
-		for _, g := range games {
-			tau := dixonColesTau(g.HomeTeam.Score, g.AwayTeam.Score, lambdaHome, lambdaAway, rho)
-			joint := tau * poissonPMF(g.HomeTeam.Score, lambdaHome) * poissonPMF(g.AwayTeam.Score, lambdaAway)
-			if joint <= 0 {
-				valid = false
-				break
-			}
-			nll -= math.Log(joint)
-		}
-
-		if valid && nll < bestNLL {
-			bestNLL = nll
-			bestRho = rho
-		}
-	}
-
-	return bestRho
 }
 
 // predictMostLikelyScore predicts the most probable score outcome
@@ -1335,6 +1290,12 @@ func (pr *PoissonRegressionModel) saveRates() error {
 		LastUpdated:        time.Now(),
 		LastDecayAppliedAt: pr.lastDecayAppliedAt,
 		Version:            "1.0",
+
+		LeagueAvgGoalsPerGame: pr.leagueAvgGoalsPerGame,
+		HomeAdvantage:         pr.homeAdvantage,
+		Rho:                   pr.rho,
+		RhoFitted:             pr.rhoFitted,
+		LastFittedAt:          pr.lastFittedAt,
 	}
 
 	return pr.saveRatesWithData(data)
@@ -1387,6 +1348,21 @@ func (pr *PoissonRegressionModel) loadRates() error {
 	pr.confidenceTracking = data.ConfidenceTracking
 	pr.lastUpdated = data.LastUpdated
 	pr.lastDecayAppliedAt = data.LastDecayAppliedAt
+
+	// Only adopt persisted scale parameters that were actually fitted; a file
+	// written before these fields existed leaves them zero, and a zero league
+	// average or home multiplier would collapse every expected-goals figure.
+	if data.LeagueAvgGoalsPerGame > 0 {
+		pr.leagueAvgGoalsPerGame = data.LeagueAvgGoalsPerGame
+	}
+	if data.HomeAdvantage > 0 {
+		pr.homeAdvantage = data.HomeAdvantage
+	}
+	if data.RhoFitted {
+		pr.rho = data.Rho
+		pr.rhoFitted = true
+	}
+	pr.lastFittedAt = data.LastFittedAt
 
 	log.Printf("📊 Loaded Poisson rates: %d teams tracked (last updated: %s)",
 		len(pr.teamOffensiveRates), data.LastUpdated.Format("2006-01-02 15:04:05"))
