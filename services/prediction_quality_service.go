@@ -225,29 +225,41 @@ func (pqs *PredictionQualityService) calculateDataQuality(homeFactors, awayFacto
 	return float64(populatedFeatures) / float64(totalFeatures)
 }
 
+// baselineHistoricalAccuracy is the fallback used when nothing has been
+// measured yet. NHL home teams win roughly 55% of games, so that is what a
+// system with no evidence can claim: picking the home side every time would
+// achieve it. This used to be 0.70, a figure no measurement supported, which
+// fed straight into the quality score and made every prediction look better
+// than the data justified. It was also returned unconditionally in practice,
+// because the calibration curve it defers to had no writer until
+// ConfidenceCalibrationService.RecordPredictionOutcome was wired up.
+const baselineHistoricalAccuracy = 0.55
+
 func (pqs *PredictionQualityService) getHistoricalAccuracy(prediction *models.PredictionResult) float64 {
-	// Check if we have calibration service
-	calibService := GetConfidenceCalibrationService()
-	if calibService == nil {
-		return 0.70 // Default baseline
-	}
-
-	// Get the calibration curve
-	curve := calibService.GetCalibrationCurve()
-	if curve.TotalSamples < 20 {
-		return 0.70 // Not enough data
-	}
-
-	// Find the bin for this confidence level
-	for _, bin := range curve.Bins {
-		if prediction.Confidence >= bin.MinConfidence && prediction.Confidence < bin.MaxConfidence {
-			if bin.SampleSize >= 5 {
-				return bin.ActualAccuracy
+	// Best evidence: how often predictions at this confidence level have
+	// actually been right.
+	if calibService := GetConfidenceCalibrationService(); calibService != nil {
+		curve := calibService.GetCalibrationCurve()
+		if curve.TotalSamples >= 20 {
+			for _, bin := range curve.Bins {
+				if prediction.Confidence >= bin.MinConfidence && prediction.Confidence < bin.MaxConfidence {
+					if bin.SampleSize >= 5 {
+						return bin.ActualAccuracy
+					}
+				}
 			}
 		}
 	}
 
-	return 0.70 // Default if no matching bin
+	// Next best: measured accuracy across all predictions, even if this
+	// particular confidence band is still thin.
+	if cvs := GetCrossValidationService(); cvs != nil {
+		if overall := cvs.GetOverallAccuracy(); overall > 0 {
+			return overall
+		}
+	}
+
+	return baselineHistoricalAccuracy
 }
 
 func (pqs *PredictionQualityService) assessSampleSize(homeFactors, awayFactors *models.PredictionFactors) float64 {

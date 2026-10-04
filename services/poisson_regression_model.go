@@ -269,41 +269,10 @@ func (pr *PoissonRegressionModel) getDefensiveRateLocked(teamCode string) float6
 	return rate
 }
 
-// calculateInitialOffensiveRate determines initial offensive rate based on team performance
-// TODO(data): the offensiveAdjustments table below is a hardcoded, stale,
-// point-in-time snapshot of subjective judgments about ~10 of 32 teams, not
-// derived from any actual data. It should eventually be replaced with a value
-// computed from each team's prior-season offensive output (goals for per
-// game, relative to league average). A proper implementation would need a
-// historical-standings/stats-by-season lookup, which does not currently exist
-// in this codebase (standings_cache.go / nhl_api.go's GetStandings only
-// expose the CURRENT season's live standings, not a specific past season's
-// final numbers). Until that data source exists, this table is technical
-// debt: it silently goes stale as rosters change and does not cover the
-// other ~22 teams at all.
+// calculateInitialOffensiveRate returns the starting offensive rate for a team
+// with no history. See initialRateForUnseenTeam.
 func (pr *PoissonRegressionModel) calculateInitialOffensiveRate(teamCode string) float64 {
-	// Base rate of 1.0 represents league average offensive capability
-	baseRate := 1.0
-
-	// Adjust based on team's known offensive capabilities
-	offensiveAdjustments := map[string]float64{
-		"EDM": 1.25, // McDavid, Draisaitl - elite offense
-		"COL": 1.18, // MacKinnon, Rantanen - strong offense
-		"TOR": 1.15, // Matthews, Marner - high-powered offense
-		"FLA": 1.12, // Balanced, Cup-winning offense
-		"VGK": 1.08, // Solid offensive team
-		"NYR": 1.05, // Good offensive depth
-		"BOS": 1.03, // Consistent offense
-		"CAR": 1.00, // League average
-		"UTA": 0.95, // New franchise, unknown but likely average
-		"SJS": 0.85, // Rebuilding, weaker offense
-	}
-
-	if adjustment, exists := offensiveAdjustments[teamCode]; exists {
-		return adjustment
-	}
-
-	return baseRate
+	return initialRateForUnseenTeam()
 }
 
 // calculateInitialDefensiveRate determines initial defensive rate based on team performance
@@ -318,29 +287,24 @@ func (pr *PoissonRegressionModel) calculateInitialOffensiveRate(teamCode string)
 // Until then, this table is technical debt: it silently goes stale and does
 // not cover the other ~22 teams at all.
 func (pr *PoissonRegressionModel) calculateInitialDefensiveRate(teamCode string) float64 {
-	// Base rate of 1.0 represents league average defensive capability
-	// Lower values = better defense (allow fewer goals)
-	baseRate := 1.0
+	return initialRateForUnseenTeam()
+}
 
-	// Adjust based on team's known defensive capabilities
-	defensiveAdjustments := map[string]float64{
-		"BOS": 0.88, // Elite defensive system
-		"FLA": 0.90, // Strong defensive team
-		"CAR": 0.92, // Good defensive structure
-		"VGK": 0.95, // Solid defensive team
-		"COL": 0.98, // Decent defense
-		"NYR": 1.00, // Average defense
-		"TOR": 1.05, // Weaker defensive team
-		"EDM": 1.08, // Offense-first, weaker defense
-		"UTA": 1.00, // Unknown, assume average
-		"SJS": 1.12, // Rebuilding, weaker defense
-	}
-
-	if adjustment, exists := defensiveAdjustments[teamCode]; exists {
-		return adjustment
-	}
-
-	return baseRate
+// initialRateForUnseenTeam is the rate given to a team with no history yet.
+//
+// 1.0 is league average, which is the honest prior for a team we know nothing
+// about. These two functions previously returned values from a hand-written
+// table covering 10 of 32 teams, seeded from subjective judgments about rosters
+// ("McDavid, Draisaitl - elite offense") that went stale as those rosters
+// changed and said nothing at all about the other 22 teams.
+//
+// The table is no longer worth keeping even as a warm start. FitFromHistory
+// recovers every team's rate by maximum likelihood from actual results, so any
+// team with games played gets a fitted rate and never consults this path; the
+// only teams that reach it are ones with no evidence, which is precisely when
+// guessing is least defensible.
+func initialRateForUnseenTeam() float64 {
+	return 1.0
 }
 
 // calculateSituationalMultiplier applies situational factors to expected goals

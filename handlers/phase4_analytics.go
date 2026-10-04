@@ -66,13 +66,16 @@ func GetPhase4Dashboard(w http.ResponseWriter, r *http.Request) {
 		dashboardData["clutchPerformanceStatus"] = "unavailable"
 	}
 
-	dashboardData["expectedImpact"] = "+6-10% accuracy improvement"
-	dashboardData["combinedPhases"] = map[string]string{
-		"phase1": "+7-11% (Error Analysis & Time-Weighted Performance)",
-		"phase2": "+8-12% (Enhanced Data Quality)",
-		"phase3": "+5-8% (Confidence & Model Selection)",
-		"phase4": "+6-10% (Advanced Pattern Recognition)",
-		"total":  "+26-41% combined improvement",
+	// See phase3_analytics: the "+X-Y% accuracy improvement" figures this used
+	// to serve were never measured against a baseline. Report what is measured.
+	if calibrator := services.GetProbabilityCalibrationService(); calibrator != nil {
+		report := calibrator.Report()
+		dashboardData["calibration"] = map[string]interface{}{
+			"settledGames":             report.Samples,
+			"expectedCalibrationError": report.ExpectedCalibrationError,
+			"brierScore":               report.BrierScore,
+			"mappingFitted":            report.Fitted,
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -87,12 +87,26 @@ func GetPhase3Dashboard(w http.ResponseWriter, r *http.Request) {
 		dashboardData["qualityAssessmentStatus"] = "unavailable"
 	}
 
-	dashboardData["expectedImpact"] = "+5-8% accuracy improvement"
-	dashboardData["combinedPhases"] = map[string]string{
-		"phase1": "+7-11% (Error Analysis & Time-Weighted Performance)",
-		"phase2": "+8-12% (Enhanced Data Quality)",
-		"phase3": "+5-8% (Confidence & Model Selection)",
-		"total":  "+20-31% combined improvement",
+	// Replaces a set of hardcoded "+X-Y% accuracy improvement" strings that were
+	// served as though they were findings. Nothing measured them, and the
+	// quoted gains were never compared against any baseline. These are real
+	// numbers or absent.
+	if calibrator := services.GetProbabilityCalibrationService(); calibrator != nil {
+		report := calibrator.Report()
+		if report.Samples > 0 {
+			dashboardData["calibration"] = map[string]interface{}{
+				"settledGames":             report.Samples,
+				"expectedCalibrationError": report.ExpectedCalibrationError,
+				"brierScore":               report.BrierScore,
+				"mappingFitted":            report.Fitted,
+				"reliabilityCurve":         report.Bins,
+			}
+		} else {
+			dashboardData["calibration"] = map[string]interface{}{
+				"settledGames": 0,
+				"note":         "no settled predictions recorded yet",
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
