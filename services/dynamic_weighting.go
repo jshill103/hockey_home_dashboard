@@ -407,7 +407,7 @@ func (dws *DynamicWeightingService) GetCurrentWeights() map[string]float64 {
 	defer dws.mutex.Unlock()
 
 	if !dws.isEnabled {
-		return dws.calculator.baseWeights
+		return copyWeights(dws.calculator.baseWeights)
 	}
 
 	// Update weights if enough time has passed
@@ -418,7 +418,24 @@ func (dws *DynamicWeightingService) GetCurrentWeights() map[string]float64 {
 		}
 	}
 
-	return dws.calculator.currentWeights
+	// Copy rather than hand out the live map. Callers treat the result as
+	// theirs to adjust -- the ensemble applies a data-quality boost to it on
+	// every prediction -- and returning the internal map meant those
+	// adjustments were written straight back into this service's state and
+	// then persisted. The boost compounded on each request instead of being
+	// applied once, steadily inflating whichever models it favoured, and the
+	// writes happened after this mutex was released, so they also raced with
+	// updateWeights.
+	return copyWeights(dws.calculator.currentWeights)
+}
+
+// copyWeights returns a shallow copy so callers cannot mutate service state.
+func copyWeights(src map[string]float64) map[string]float64 {
+	out := make(map[string]float64, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
 }
 
 // updateWeights recalculates and updates model weights based on recent performance
@@ -853,27 +870,57 @@ func (dws *DynamicWeightingService) extractContexts(record AccuracyRecord) []str
 	return contexts
 }
 
+// effectiveMinWeight scales the configured floor to the number of models.
+//
+// The configured MinWeight is 0.15, which only makes sense for a handful of
+// models. With the nine models this ensemble runs, nine floors of 0.15 demand
+// 135% of the weight budget, so the floor bound every below-average model and
+// normalization simply rescaled the result. The effect was that a model
+// predicting worse than a coin flip was structurally guaranteed a large share
+// no matter how poorly it performed.
+//
+// Expressing the floor as a fraction of the equal-weight share keeps it
+// meaningful at any model count: a weak model is kept alive so it can recover
+// if it improves, but it cannot crowd out models that are actually working.
+func effectiveMinWeight(configured float64, modelCount int) float64 {
+	if modelCount <= 0 {
+		return configured
+	}
+	// At most 35% of the budget is reserved by floors in aggregate.
+	scaled := 0.35 / float64(modelCount)
+	return math.Min(configured, scaled)
+}
+
 // applyWeightConstraints ensures weights stay within defined limits
 func (dws *DynamicWeightingService) applyWeightConstraints(weights map[string]float64) {
 	constraints := dws.calculator.weightConstraints
+	minWeight := effectiveMinWeight(constraints.MinWeight, len(weights))
 
-	for modelName, weight := range weights {
+	for modelName := range weights {
 		// Apply min/max constraints
-		if weight < constraints.MinWeight {
-			weights[modelName] = constraints.MinWeight
-		} else if weight > constraints.MaxWeight {
-			weights[modelName] = constraints.MaxWeight
+		bounded := weights[modelName]
+		if bounded < minWeight {
+			bounded = minWeight
+		} else if bounded > constraints.MaxWeight {
+			bounded = constraints.MaxWeight
 		}
 
-		// Apply max shift constraint
+		// Apply max shift constraint.
+		//
+		// This used to compare against the pre-clamp value from the range
+		// expression rather than the bounded one, so whenever the shift limit
+		// engaged it overwrote the result of the min/max clamp using a stale
+		// number. The two constraints fought and the floor silently lost.
 		currentWeight := dws.calculator.currentWeights[modelName]
 		maxChange := constraints.MaxShiftPerUpdate
 
-		if weight > currentWeight+maxChange {
-			weights[modelName] = currentWeight + maxChange
-		} else if weight < currentWeight-maxChange {
-			weights[modelName] = currentWeight - maxChange
+		if bounded > currentWeight+maxChange {
+			bounded = currentWeight + maxChange
+		} else if bounded < currentWeight-maxChange {
+			bounded = currentWeight - maxChange
 		}
+
+		weights[modelName] = bounded
 	}
 }
 

@@ -1,0 +1,36 @@
+{
+  "trackers": {},
+  "currentWeights": {
+    "Bayesian Inference": 0.11214953271028036,
+    "Elo Rating": 0.1588785046728972,
+    "Enhanced Statistical": 0.2803738317757009,
+    "Gradient Boosting": 0.06542056074766356,
+    "LSTM": 0.06542056074766356,
+    "Monte Carlo Simulation": 0.08411214953271028,
+    "Neural Network": 0.05607476635514018,
+    "Poisson Regression": 0.11214953271028036,
+    "Random Forest": 0.06542056074766356
+  },
+  "contextWeights": {},
+  "weightHistory": [
+    {
+      "timestamp": "2026-10-04T14:25:12.812768-06:00",
+      "weights": {
+        "Bayesian Inference": 0.11214953271028036,
+        "Elo Rating": 0.1588785046728972,
+        "Enhanced Statistical": 0.2803738317757009,
+        "Gradient Boosting": 0.06542056074766356,
+        "LSTM": 0.06542056074766356,
+        "Monte Carlo Simulation": 0.08411214953271028,
+        "Neural Network": 0.05607476635514018,
+        "Poisson Regression": 0.11214953271028036,
+        "Random Forest": 0.06542056074766356
+      },
+      "triggerReason": "Performance-based update",
+      "performanceData": {}
+    }
+  ],
+  "lastWeightUpdate": "0001-01-01T00:00:00Z",
+  "lastFullUpdate": "2026-10-04T14:25:12.812875-06:00",
+  "version": "1.0"
+}

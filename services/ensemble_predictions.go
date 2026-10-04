@@ -938,31 +938,25 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 
 	// Note: Context-aware model selection moved to Phase 3 (see above)
 
-	// 📊 ADDITIONAL: Apply data quality boost when we have rich player data
-	hasPlayerData := (homeFactors.TopScorerForm > 0 && awayFactors.TopScorerForm > 0 &&
-		homeFactors.DepthForm > 0 && awayFactors.DepthForm > 0)
-
-	if hasPlayerData {
-		// Boost ML models that use player features
-		currentWeights["Neural Network"] *= 1.15       // NN uses all 75 features
-		currentWeights["Enhanced Statistical"] *= 1.10 // Statistical uses player impact
-		currentWeights["Gradient Boosting"] *= 1.12    // GB uses player features
-
-		// Slightly reduce simpler models
-		currentWeights["Bayesian Inference"] *= 0.95
-		currentWeights["Monte Carlo Simulation"] *= 0.95
-
-		// Normalize weights back to 1.0
-		totalNorm := 0.0
-		for _, w := range currentWeights {
-			totalNorm += w
-		}
-		for name := range currentWeights {
-			currentWeights[name] /= totalNorm
-		}
-
-		fmt.Printf("📊 Data Quality Boost Applied: Full player intelligence available!\n")
-	}
+	// There used to be a "data quality boost" here that multiplied the
+	// Neural Network by 1.15, Enhanced Statistical by 1.10 and Gradient
+	// Boosting by 1.12 whenever player data was present, while cutting
+	// Bayesian Inference and Monte Carlo by 0.95.
+	//
+	// It was removed because measurement contradicts it. Over the games
+	// recorded so far Monte Carlo is the most accurate model in the ensemble
+	// and the Neural Network is among the least, and the most overconfident
+	// by a wide margin. The boost was therefore penalizing the best model and
+	// promoting the worst, on the untested assumption that "uses more
+	// features" implies "more accurate when those features are available".
+	//
+	// Nothing validated those multipliers and nothing measured whether they
+	// helped. DynamicWeightingService already reweights from observed
+	// per-game outcomes, which is the same question answered with evidence,
+	// so this hand-tuned layer could only fight it.
+	//
+	// If a feature-availability effect is real it should be demonstrated
+	// against a baseline before being reintroduced.
 
 	fmt.Printf("⚖️ Current model weights: Statistical=%.1f%%, Bayesian=%.1f%%, Monte Carlo=%.1f%%, Elo=%.1f%%, Poisson=%.1f%%, Neural Net=%.1f%%\n",
 		currentWeights["Enhanced Statistical"]*100,
