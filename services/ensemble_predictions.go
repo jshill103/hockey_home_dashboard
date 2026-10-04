@@ -982,6 +982,8 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 			result.Weight = model.GetWeight()
 		}
 
+		result.PredictedScore = breakTiedScoreline(result.PredictedScore, result.WinProbability)
+
 		modelResults = append(modelResults, *result)
 		totalWeight += result.Weight
 
@@ -1087,6 +1089,30 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 // weighted average of that one home-relative probability:
 //
 //	finalHomeProb = Σ(weight_i * homeWinProb_i) / Σ(weight_i)
+// breakTiedScoreline rewrites a level predicted score so it names a winner.
+//
+// The NHL has no ties: overtime and the shootout always resolve a game. Each
+// model formats its own scoreline and several of them rounded the two sides
+// independently, so a close game came out as 3-3 or 2-2 -- a result the sport
+// cannot produce. The extra goal goes to whichever side the model's own win
+// probability favours, so its score and its pick agree. Scores that already
+// name a winner, and anything unparseable, are left alone.
+func breakTiedScoreline(score string, homeWinProb float64) string {
+	var home, away int
+	if _, err := fmt.Sscanf(score, "%d-%d", &home, &away); err != nil {
+		return score
+	}
+	if home != away {
+		return score
+	}
+	if homeWinProb >= 0.5 {
+		home++
+	} else {
+		away++
+	}
+	return fmt.Sprintf("%d-%d", home, away)
+}
+
 func (eps *EnsemblePredictionService) combineWeightedPredictions(results []models.ModelResult, totalWeight float64, homeFactors, awayFactors *models.PredictionFactors) *models.PredictionResult {
 	var weightedHomeProbSum, probWeightSum float64
 	var weightedConfidence float64
