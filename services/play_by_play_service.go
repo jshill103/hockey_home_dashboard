@@ -366,9 +366,10 @@ func (pbp *PlayByPlayService) analyzePlayByPlay(data *models.PlayByPlayResponse)
 		}
 	}
 
-	// Calculate derived metrics
-	pbp.calculateDerivedMetrics(&analytics.HomeAnalytics)
-	pbp.calculateDerivedMetrics(&analytics.AwayAnalytics)
+	// Calculate derived metrics. Each side needs the other because possession
+	// share is a ratio of the two teams' shot attempts.
+	pbp.calculateDerivedMetrics(&analytics.HomeAnalytics, &analytics.AwayAnalytics)
+	pbp.calculateDerivedMetrics(&analytics.AwayAnalytics, &analytics.HomeAnalytics)
 
 	return analytics
 }
@@ -672,8 +673,11 @@ func (pbp *PlayByPlayService) updateShotLocationMetrics(play models.PlayEvent, t
 	team.AvgShotAngle = (currentAngleTotal + angle) / float64(team.TotalShots)
 }
 
-// calculateDerivedMetrics calculates all derived/percentage metrics
-func (pbp *PlayByPlayService) calculateDerivedMetrics(team *models.TeamPlayAnalytics) {
+// calculateDerivedMetrics calculates all derived/percentage metrics.
+//
+// opponent is the other side of the same game, needed for the possession
+// shares (Corsi/Fenwick), which are ratios between the two teams.
+func (pbp *PlayByPlayService) calculateDerivedMetrics(team, opponent *models.TeamPlayAnalytics) {
 	// xG differential
 	team.XGDifferential = team.ExpectedGoals - team.ExpectedGoalsAgainst
 
@@ -686,15 +690,22 @@ func (pbp *PlayByPlayService) calculateDerivedMetrics(team *models.TeamPlayAnaly
 		team.FaceoffWinPct = float64(team.FaceoffsWon) / float64(totalFaceoffs)
 	}
 
-	// Corsi For % (shot attempt differential)
+	// Corsi For % (shot attempt differential).
+	//
+	// The "against" side is the opponent's attempts in the same game. It used
+	// to be left at zero because this function only ever saw one team, which
+	// made the ratio CF/(CF+0) = 1.0 for everybody: every team in the league
+	// reported exactly 100% Corsi, and the possession signal was a constant.
 	team.CorsiFor = team.ShotAttempts
+	team.CorsiAgainst = opponent.ShotAttempts
 	totalCorsi := team.CorsiFor + team.CorsiAgainst
 	if totalCorsi > 0 {
 		team.CorsiForPct = float64(team.CorsiFor) / float64(totalCorsi)
 	}
 
-	// Fenwick (unblocked shot attempts)
+	// Fenwick (unblocked shot attempts) had the same defect.
 	team.FenwickFor = team.ShotsOnGoal + team.MissedShots
+	team.FenwickAgainst = opponent.ShotsOnGoal + opponent.MissedShots
 	totalFenwick := team.FenwickFor + team.FenwickAgainst
 	if totalFenwick > 0 {
 		team.FenwickForPct = float64(team.FenwickFor) / float64(totalFenwick)
@@ -834,9 +845,54 @@ func (pbp *PlayByPlayService) loadTeamStats() {
 		return
 	}
 
+	repaired := repairDegeneratePossessionShares(stats)
+
 	pbp.statsMu.Lock()
 	pbp.teamStats = stats
 	pbp.statsMu.Unlock()
 
 	log.Printf("📂 Loaded play-by-play stats for %d teams", len(stats))
+	if repaired > 0 {
+		log.Printf("🔧 Reset impossible possession shares for %d teams (legacy data)", repaired)
+	}
+}
+
+// neutralPossessionShare is the only defensible value for a possession share
+// with no trustworthy history behind it. Corsi-for and Corsi-against are the
+// two halves of one game's shot attempts, so the shares of the two teams sum
+// to 1 and the league mean is exactly 0.5.
+const neutralPossessionShare = 0.5
+
+// degeneratePossessionThreshold catches shares saved before CorsiAgainst and
+// FenwickAgainst were populated. A team cannot take every shot attempt in a
+// game, so anything at or above this is the old CF/(CF+0) = 1.0 artifact
+// rather than a real measurement.
+const degeneratePossessionThreshold = 0.999
+
+// repairDegeneratePossessionShares discards stored possession shares that the
+// old one-sided Corsi calculation could not have gotten right.
+//
+// Without this the bad values would linger: the rolling average is a 10-game
+// EWMA, so a saved 1.0 keeps leaking into the blend for dozens of games after
+// the underlying calculation is fixed. Returns how many teams were reset.
+func repairDegeneratePossessionShares(stats map[string]*models.TeamPlayByPlayStats) int {
+	repaired := 0
+	for _, s := range stats {
+		if s == nil {
+			continue
+		}
+		bad := false
+		if s.AvgCorsiForPct >= degeneratePossessionThreshold {
+			s.AvgCorsiForPct = neutralPossessionShare
+			bad = true
+		}
+		if s.AvgFenwickForPct >= degeneratePossessionThreshold {
+			s.AvgFenwickForPct = neutralPossessionShare
+			bad = true
+		}
+		if bad {
+			repaired++
+		}
+	}
+	return repaired
 }
