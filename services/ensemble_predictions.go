@@ -254,21 +254,19 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 			time.Now(),
 		)
 
-		// Get contextual weights for model selection
-		contextualWeights := contextService.GetContextualWeights(gameContext)
-		if contextualWeights != nil && contextualWeights.Confidence > 0.7 {
+		if gameContext != nil {
 			fmt.Printf("🎯 Context: %s (%s importance, %s difficulty)\n",
 				gameContext.RecommendedStrategy, gameContext.ImpactLevel, gameContext.PredictionDifficulty)
-
-			// Log any significant weight adjustments
-			for model, adjustment := range contextualWeights.Adjustments {
-				if math.Abs(adjustment-1.0) > 0.05 {
-					finalWeight := contextualWeights.FinalWeights[model]
-					fmt.Printf("   📊 %s: %.1f%% weight (%.0f%% adjustment)\n",
-						model, finalWeight*100, (adjustment-1.0)*100)
-				}
-			}
 		}
+
+		// Contextual weights are deliberately not applied here. This block used
+		// to fetch them and print per-model "weight adjustments", which read as
+		// though the ensemble were reweighting itself by context when nothing
+		// was ever passed to the combination step. The weights are hand-tuned
+		// rather than learned, and DynamicWeightingService already reweights
+		// models from their measured performance, so layering an unvalidated
+		// heuristic on top of it would be change that cannot be attributed.
+		// They remain available to the analytics view via GetContextualWeights.
 	}
 
 	// ============================================================================

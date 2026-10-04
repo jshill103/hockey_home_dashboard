@@ -73,26 +73,9 @@ func NewNeuralNetworkModel() *NeuralNetworkModel {
 	return model
 }
 
-// XGBoostModel implements gradient boosting for hockey predictions
-type XGBoostModel struct {
-	trees             []DecisionTree
-	learningRate      float64
-	maxDepth          int
-	numTrees          int
-	weight            float64
-	featureImportance map[string]float64
-	lastUpdated       time.Time
-}
-
-// DecisionTree represents a single decision tree in the ensemble
-type DecisionTree struct {
-	Feature   string
-	Threshold float64
-	Left      *DecisionTree
-	Right     *DecisionTree
-	Value     float64
-	IsLeaf    bool
-}
+// XGBoost was declared here but never implemented: the type had no Predict or
+// Train, so it could not satisfy PredictionModel, and nothing ever constructed
+// it. Gradient boosting is provided for real by gradient_boosting.go.
 
 // LSTM Model is now in lstm_model.go
 
@@ -902,10 +885,6 @@ func (nn *NeuralNetworkModel) GetLastUpdate() time.Time {
 // ============================================================================
 // OTHER MODEL IMPLEMENTATIONS (placeholder getters)
 // ============================================================================
-
-// GetName, GetWeight implementations for other models...
-func (xgb *XGBoostModel) GetName() string    { return "XGBoost" }
-func (xgb *XGBoostModel) GetWeight() float64 { return xgb.weight }
 
 // LSTM methods are now in lstm_model.go
 // Random Forest methods are now in random_forest.go
