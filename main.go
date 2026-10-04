@@ -305,19 +305,30 @@ func main() {
 	fmt.Println("⏱️ This will take ~10-15 minutes but provides 32x more training data")
 	pbpService := services.GetPlayByPlayService()
 	if pbpService != nil {
+		// Predictions are withheld until this finishes. The backfill runs in
+		// the background so the dashboard and the rest of the API stay
+		// available, but anything predicted from half-loaded history can
+		// contradict what the same model says minutes later.
+		services.BeginPredictionWarmup()
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
 					fmt.Printf("⚠️ Panic during play-by-play backfill: %v\n", r)
+					services.CompletePredictionWarmup(true, "play-by-play backfill panicked")
 				}
 			}()
 			// Run league-wide backfill in background to not block server startup
 			if err := pbpService.BackfillAllTeams(10); err != nil {
 				fmt.Printf("⚠️ Warning: Failed to backfill play-by-play data: %v\n", err)
+				services.CompletePredictionWarmup(true, fmt.Sprintf("play-by-play backfill failed: %v", err))
 			} else {
 				fmt.Println("✅ League-wide Play-by-Play backfill complete (320 games processed)")
+				services.CompletePredictionWarmup(false, "")
 			}
 		}()
+	} else {
+		// No backfill to wait on.
+		services.CompletePredictionWarmup(true, "play-by-play service unavailable")
 	}
 
 	// Initialize Live Prediction System for real-time model updates

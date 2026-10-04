@@ -30,6 +30,10 @@ func HandleGamePrediction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if writeWarmupResponse(w) {
+		return
+	}
+
 	// Check if force refresh is requested via query parameter
 	forceRefresh := r.URL.Query().Get("refresh") == "true"
 	if forceRefresh {
@@ -843,6 +847,10 @@ func HandleLeagueWidePredictions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if writeWarmupResponse(w) {
+		return
+	}
+
 	predictions, err := predictionStorage.GetAllPredictions()
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error": "%s"}`, err.Error()), http.StatusInternalServerError)
@@ -1096,3 +1104,31 @@ func generatePredictionsPopupHTML(allPredictions []*services.StoredPrediction, a
 }
 
 // HandleTriggerDailyPredictions manually triggers the daily prediction generation
+
+// writeWarmupResponse short-circuits a prediction request while the
+// league-wide backfill is still running, returning 503 with a Retry-After so
+// clients poll rather than cache a bad answer.
+//
+// Predictions built from half-loaded history are not just imprecise, they
+// can invert. The same NYR/UTA matchup was predicted 4.08-1.69 for the home
+// side during warm-up and 3.08-4.07 against it once the data landed eighteen
+// seconds later. The first answer was cached and shown as though it were
+// sound. Saying "not yet" is the honest response.
+//
+// Returns true when it has handled the request.
+func writeWarmupResponse(w http.ResponseWriter) bool {
+	if services.PredictionDataReady() {
+		return false
+	}
+
+	status := services.GetPredictionWarmupStatus()
+	w.Header().Set("Retry-After", "30")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"error":   "prediction data is still warming up",
+		"detail":  "the league-wide play-by-play backfill has not finished; predictions made now could be contradicted once it does",
+		"warmup":  status,
+		"retryIn": 30,
+	})
+	return true
+}
