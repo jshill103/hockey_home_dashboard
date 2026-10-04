@@ -347,14 +347,9 @@ func (dps *DailyPredictionService) generatePredictionForGame(game UpcomingGame) 
 	}
 
 	// Convert PredictionResult to GamePrediction
-	// Calculate home and away win probabilities based on prediction
+	// WinProbability is the home team's probability, so no swap on Winner.
 	homeWinProb := result.WinProbability
 	awayWinProb := 1.0 - result.WinProbability
-	if result.Winner == game.AwayTeam {
-		// If away team is predicted to win, swap probabilities
-		homeWinProb = 1.0 - result.WinProbability
-		awayWinProb = result.WinProbability
-	}
 
 	gamePrediction := &models.GamePrediction{
 		GameID: game.GameID,

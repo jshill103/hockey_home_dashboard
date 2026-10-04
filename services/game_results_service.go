@@ -758,6 +758,14 @@ func (grs *GameResultsService) feedToModels(game *models.CompletedGame) {
 				}
 			}
 
+			if calibrator := GetProbabilityCalibrationService(); calibrator != nil {
+				if err := calibrator.RecordOutcome(
+					ensemblePrediction.WinProbability, game.Winner == homeTeam,
+				); err != nil {
+					log.Printf("⚠️ Failed to record probability calibration outcome: %v", err)
+				}
+			}
+
 			if calibration := GetConfidenceCalibrationService(); calibration != nil {
 				if err := calibration.RecordPredictionOutcome(
 					ensemblePrediction.Confidence, ensemblePrediction.Winner == game.Winner,

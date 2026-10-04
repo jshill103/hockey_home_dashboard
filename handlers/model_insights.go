@@ -79,8 +79,8 @@ func buildModelInsightsHTML(
 		</div>
 		<div class="model-agreement">Confidence: %.1f%%</div>
 	</div>
-`, awayTeam, homeTeam, result.Winner, result.WinProbability*100,
-		result.WinProbability*100, prediction.Confidence*100)
+`, awayTeam, homeTeam, result.Winner, result.WinnerProbability()*100,
+		result.WinnerProbability()*100, prediction.Confidence*100)
 
 	// Individual model predictions
 	html += `<div class="individual-models-section">`

@@ -78,15 +78,14 @@ func (eas *ErrorAnalysisService) RecordPrediction(
 
 	// Get predicted winner and confidence from result
 	predictedWinner := predictionResult.Winner
-	confidence := predictionResult.WinProbability
 
-	// Calculate home/away probabilities
+	// How sure the pick is, which is the probability attached to whichever
+	// side was picked rather than the home-referenced WinProbability.
+	confidence := predictionResult.WinnerProbability()
+
+	// WinProbability is the home team's probability, so no swap on Winner.
 	homeWinProb := predictionResult.WinProbability
 	awayWinProb := 1.0 - predictionResult.WinProbability
-	if predictedWinner == awayTeam {
-		homeWinProb = 1.0 - predictionResult.WinProbability
-		awayWinProb = predictionResult.WinProbability
-	}
 
 	record := &models.PredictionAccuracyRecord{
 		GameID:               gameID,

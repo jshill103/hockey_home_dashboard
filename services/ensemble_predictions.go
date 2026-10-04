@@ -1071,7 +1071,7 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 	}
 
 	fmt.Printf("🎯 Ensemble Result: %s wins with %.1f%% probability (Score: %s, Confidence: %.1f%%)\n",
-		combinedResult.Winner, combinedResult.WinProbability*100,
+		combinedResult.Winner, combinedResult.WinnerProbability()*100,
 		combinedResult.PredictedScore, combinedResult.Confidence*100)
 
 	fmt.Printf("⏱️ Total processing time: %dms\n", time.Since(start).Milliseconds())
@@ -1133,17 +1133,24 @@ func (eps *EnsemblePredictionService) combineWeightedPredictions(results []model
 	}
 	finalHomeProb = math.Max(0.0, math.Min(1.0, finalHomeProb))
 
-	// Determine final winner and the probability of that winner winning
-	var winner string
-	var finalProb float64
-
-	if finalHomeProb >= 0.5 {
-		winner = homeFactors.TeamCode
-		finalProb = finalHomeProb
-	} else {
-		winner = awayFactors.TeamCode
-		finalProb = 1.0 - finalHomeProb
+	// Map the blended probability onto observed frequencies. This is the
+	// identity until enough settled games exist to fit it, and the fit is
+	// rejected unless it beats the identity, so it can only help.
+	if calibrator := GetProbabilityCalibrationService(); calibrator != nil {
+		if calibrated := calibrator.Calibrate(finalHomeProb); calibrated != finalHomeProb {
+			fmt.Printf("📏 Probability calibration: %.1f%% → %.1f%% (home)\n",
+				finalHomeProb*100, calibrated*100)
+			finalHomeProb = calibrated
+		}
 	}
+
+	// Determine the final winner. The reported probability stays on the home
+	// team regardless of which side is favoured; see PredictionResult.
+	winner := homeFactors.TeamCode
+	if finalHomeProb < 0.5 {
+		winner = awayFactors.TeamCode
+	}
+	finalProb := finalHomeProb
 
 	// Create final score prediction
 	predictedScore := "3-2" // Default fallback

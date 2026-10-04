@@ -26,8 +26,20 @@ type PredictionTeam struct {
 
 // PredictionResult holds the main prediction outcome
 type PredictionResult struct {
-	Winner         string             `json:"winner"`         // Team code of predicted winner
-	WinProbability float64            `json:"winProbability"` // 0.0 to 1.0
+	Winner string `json:"winner"` // Team code of predicted winner
+
+	// WinProbability is the probability that the HOME team wins, matching
+	// ModelResult.WinProbability. It is not the probability that Winner wins,
+	// so a value below 0.5 is normal and means the away team is favoured.
+	//
+	// The two combination paths used to disagree on this: the weighted average
+	// returned the winner's probability while the meta-learner returned the
+	// home team's, which left consumers split between the two readings and
+	// made the headline probability uninterpretable without also reading
+	// Winner. A fixed reference side is also the only form that can be
+	// calibrated, since the winner's probability is >= 0.5 by construction.
+	WinProbability float64 `json:"winProbability"`
+
 	PredictedScore string             `json:"predictedScore"` // e.g., "4-2"
 	IsUpset        bool               `json:"isUpset"`        // True if underdog predicted to win
 	GameType       string             `json:"gameType"`       // "blowout", "close", "toss-up"
@@ -38,10 +50,20 @@ type PredictionResult struct {
 	Context        *GameContext       `json:"context,omitempty"` // Phase 3: Game context used for prediction
 }
 
+// WinnerProbability returns the probability that Winner wins, derived from the
+// home-referenced WinProbability. Use it for display, where "TEAM wins with
+// 38%" would otherwise read as nonsense.
+func (p PredictionResult) WinnerProbability() float64 {
+	if p.WinProbability >= 0.5 {
+		return p.WinProbability
+	}
+	return 1 - p.WinProbability
+}
+
 // ModelResult represents prediction from a single model
 type ModelResult struct {
 	ModelName      string  `json:"modelName"`      // e.g., "Statistical", "Bayesian", "Monte Carlo"
-	WinProbability float64 `json:"winProbability"` // This model's win probability
+	WinProbability float64 `json:"winProbability"` // Probability the HOME team wins, per this model
 	Confidence     float64 `json:"confidence"`     // This model's confidence
 	PredictedScore string  `json:"predictedScore"` // This model's score prediction
 	Weight         float64 `json:"weight"`         // Weight in ensemble (0-1)

@@ -193,8 +193,11 @@ func (pss *PredictionStorageService) calculateAccuracy(prediction *models.GamePr
 	// Calculate calibration error
 	// If we predicted 70% win probability and they won, error is |0.7 - 1.0| = 0.3
 	// If we predicted 70% and they lost, error is |0.7 - 0.0| = 0.7
+	// WinProbability forecasts the home team winning, so calibration error is
+	// measured against whether the home team won rather than whether the pick
+	// was right.
 	actualOutcome := 0.0
-	if prediction.Prediction.Winner == actualWinner {
+	if actualWinner == prediction.HomeTeam.Code {
 		actualOutcome = 1.0
 	}
 	accuracy.CalibrationError = float64(int(1000*(prediction.Prediction.WinProbability-actualOutcome))) / 1000.0

@@ -228,12 +228,9 @@ func (ps *PredictionService) PredictNextGame() (*models.GamePrediction, error) {
 // probability orientation, expected goals, recent form/streak, key factors)
 // are derived from the underlying data.
 func (ps *PredictionService) buildGamePrediction(nextGame *models.Game, homeFactors, awayFactors *models.PredictionFactors, prediction *models.PredictionResult) *models.GamePrediction {
+	// WinProbability is the home team's probability, so no swap on Winner.
 	homeWinProb := prediction.WinProbability
 	awayWinProb := 1.0 - prediction.WinProbability
-	if prediction.Winner == nextGame.AwayTeam.Abbrev {
-		homeWinProb = 1.0 - prediction.WinProbability
-		awayWinProb = prediction.WinProbability
-	}
 
 	homeRecentForm, homeStreak := ps.getRealRecentFormAndStreak(homeFactors.TeamCode)
 	awayRecentForm, awayStreak := ps.getRealRecentFormAndStreak(awayFactors.TeamCode)
