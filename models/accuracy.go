@@ -68,7 +68,11 @@ type AccuracySummary struct {
 	TotalPredictions      int     `json:"totalPredictions"`
 	CorrectPredictions    int     `json:"correctPredictions"`
 	IncorrectPredictions  int     `json:"incorrectPredictions"`
-	OverallAccuracy       float64 `json:"overallAccuracy"`       // Percentage correct
+	// Every rate on this struct, including AverageConfidence and the
+	// breakdowns below, is a fraction in 0-1 rather than a 0-100 percentage.
+	// Multiply before display. Note that SystemStats.PredictionStats uses the
+	// opposite convention for its identically named field.
+	OverallAccuracy       float64 `json:"overallAccuracy"`       // Fraction correct
 	AverageConfidence     float64 `json:"averageConfidence"`     // Average confidence of predictions
 	AveragePredictionError float64 `json:"averagePredictionError"` // Average absolute error
 	BrierScore            float64 `json:"brierScore"`            // Probabilistic accuracy metric

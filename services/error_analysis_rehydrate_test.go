@@ -124,8 +124,10 @@ func TestSummaryIsNotZeroWhenSettledPredictionsExist(t *testing.T) {
 	if summary.CorrectPredictions != 2 {
 		t.Fatalf("CorrectPredictions = %d, want 2", summary.CorrectPredictions)
 	}
-	if summary.OverallAccuracy <= 0 {
-		t.Fatalf("OverallAccuracy = %v, want a measured value", summary.OverallAccuracy)
+	// Rates on this struct are fractions, not 0-100 percentages. Reading it
+	// the other way renders a 57% model as "0.6% accurate".
+	if got := summary.OverallAccuracy; got < 0.66 || got > 0.67 {
+		t.Fatalf("OverallAccuracy = %v, want 2/3 as a fraction", got)
 	}
 }
 
