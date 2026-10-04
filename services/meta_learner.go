@@ -387,6 +387,15 @@ func (mlm *MetaLearnerModel) GetName() string {
 	return "Meta-Learner"
 }
 
+// IsTrained reports whether the meta-learner has been fitted. Train/AutoTrain
+// can flip this at any point in the process lifetime, so callers must consult
+// it per prediction rather than caching the value at construction.
+func (mlm *MetaLearnerModel) IsTrained() bool {
+	mlm.mutex.RLock()
+	defer mlm.mutex.RUnlock()
+	return mlm.trained
+}
+
 // GetWeight returns the model weight
 func (mlm *MetaLearnerModel) GetWeight() float64 {
 	mlm.mutex.RLock()

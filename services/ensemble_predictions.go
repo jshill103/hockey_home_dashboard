@@ -37,18 +37,18 @@ func NewEnsemblePredictionService(teamCode string) *EnsemblePredictionService {
 	return &EnsemblePredictionService{
 		teamCode:        teamCode,
 		metaLearner:     metaLearner,
-		useMetaLearner:  metaLearner.trained, // Use if trained, otherwise fall back to weighted average
+		useMetaLearner:  true, // Kill switch only; whether stacking actually runs is decided per prediction by metaLearner.IsTrained()
 		accuracyTracker: NewAccuracyTrackingService(),
 		dataQuality:     NewDataQualityService(teamCode),
 		dynamicWeights:  GetDynamicWeightingService(),
-		crossValidation: NewCrossValidationService(),
+		crossValidation: GetCrossValidationService(),
 		models: []PredictionModel{
 			NewStatisticalModel(),       // 30% (if meta-learner not used)
 			NewBayesianModel(),          // 12%
 			NewMonteCarloModel(),        // 9%
-			NewEloRatingModel(),         // 17%
-			NewPoissonRegressionModel(), // 12%
-			NewNeuralNetworkModel(),     // 6%
+			GetEloRatingModel(),         // 17% -- shared; these three learn from game results
+			GetPoissonRegressionModel(), // 12%
+			GetNeuralNetworkModel(),     // 6%
 			NewGradientBoostingModel(),  // 7%
 			NewLSTMModel(),              // 7% -- re-enabled, see lstm_model.go header comment
 			NewRandomForestModel(),      // 7%
@@ -1007,7 +1007,7 @@ func (eps *EnsemblePredictionService) PredictGame(homeFactors, awayFactors *mode
 	// Combine predictions - use meta-learner if trained, otherwise weighted average
 	var combinedResult *models.PredictionResult
 
-	if eps.useMetaLearner && eps.metaLearner.trained {
+	if eps.useMetaLearner && eps.metaLearner.IsTrained() {
 		// Use meta-learner to optimally combine predictions
 		combinedResult = eps.combineWithMetaLearner(modelResults, homeFactors, awayFactors)
 		combinedResult.EnsembleMethod = "Meta-Learner (Stacking)"

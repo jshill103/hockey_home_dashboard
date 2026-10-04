@@ -736,6 +736,36 @@ func (grs *GameResultsService) feedToModels(game *models.CompletedGame) {
 			modelResults := stored.Prediction.Prediction.ModelResults
 			homeTeam, awayTeam := stored.HomeTeam, stored.AwayTeam
 
+			// Close the three feedback loops that had no caller anywhere in the
+			// tree: without these the cross-validation service never reached
+			// MinHistoricalData, the confidence calibration curve never left its
+			// flat 0.95 default, and the system-stats accuracy counter only ever
+			// counted predictions made, never ones that came true.
+			ensemblePrediction := stored.Prediction.Prediction
+			actualScore := fmt.Sprintf("%d-%d", game.HomeTeam.Score, game.AwayTeam.Score)
+
+			if statsSvc := GetSystemStatsService(); statsSvc != nil {
+				statsSvc.VerifyPrediction(game.GameID, game.Winner, actualScore)
+			}
+
+			if lps := GetLivePredictionSystem(); lps != nil {
+				if ensemble := lps.GetEnsemble(); ensemble != nil {
+					if err := ensemble.RecordHistoricalPrediction(
+						homeTeam, awayTeam, stored.GameDate, &ensemblePrediction, game.Winner, actualScore,
+					); err != nil {
+						log.Printf("⚠️ Failed to record historical prediction: %v", err)
+					}
+				}
+			}
+
+			if calibration := GetConfidenceCalibrationService(); calibration != nil {
+				if err := calibration.RecordPredictionOutcome(
+					ensemblePrediction.Confidence, ensemblePrediction.Winner == game.Winner,
+				); err != nil {
+					log.Printf("⚠️ Failed to record confidence calibration outcome: %v", err)
+				}
+			}
+
 			contextType := "regular"
 			if game.GameType == 3 {
 				contextType = "playoff"

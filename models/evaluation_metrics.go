@@ -25,6 +25,14 @@ type ModelEvaluationMetrics struct {
 	BrierScore float64 `json:"brierScore"` // Mean squared error of probabilities
 	LogLoss    float64 `json:"logLoss"`    // Cross-entropy loss
 
+	// Trivial Baselines
+	// A model is only worth its complexity if it beats "always pick the home
+	// team", which wins roughly 55% of NHL games on its own. Without these,
+	// an accuracy number in isolation says nothing about skill.
+	BaselineHomeAccuracy float64 `json:"baselineHomeAccuracy"` // Accuracy of always picking the home team
+	BaselineBrierScore   float64 `json:"baselineBrierScore"`   // Brier of forecasting the home base rate every game
+	BrierSkillScore      float64 `json:"brierSkillScore"`      // 1 - (model Brier / baseline Brier); >0 beats the baseline
+
 	// Score Prediction
 	MAE  float64 `json:"mae"`  // Mean Absolute Error (goals)
 	RMSE float64 `json:"rmse"` // Root Mean Squared Error (goals)

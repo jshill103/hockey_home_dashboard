@@ -630,8 +630,10 @@ func (mus *ModelUncertaintyService) calculateBrierScore() float64 {
 
 	var totalSquaredError float64
 	for _, pred := range mus.historicalPredictions {
+		// WinProbability is P(home team wins), so it is scored against whether the
+		// home team won rather than against whether the pick was right.
 		actual := 0.0
-		if pred.WasCorrect {
+		if pred.ActualWinner == pred.HomeTeam {
 			actual = 1.0
 		}
 

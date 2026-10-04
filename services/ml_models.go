@@ -27,6 +27,20 @@ type NeuralNetworkModel struct {
 	dataDir      string       // Directory for persistence
 }
 
+var (
+	neuralNetInstance *NeuralNetworkModel
+	neuralNetOnce     sync.Once
+)
+
+// GetNeuralNetworkModel returns the process-wide neural network. Weights are
+// updated per game result, so see GetEloRatingModel for why this must be shared.
+func GetNeuralNetworkModel() *NeuralNetworkModel {
+	neuralNetOnce.Do(func() {
+		neuralNetInstance = NewNeuralNetworkModel()
+	})
+	return neuralNetInstance
+}
+
 // NewNeuralNetworkModel creates a new neural network prediction model
 func NewNeuralNetworkModel() *NeuralNetworkModel {
 	// UPGRADED: Larger architecture with Phase 2 enhanced data quality

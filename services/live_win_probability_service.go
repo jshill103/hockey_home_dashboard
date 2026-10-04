@@ -55,28 +55,17 @@ type LiveWinProbabilityResult struct {
 	AwayWinProbability float64 `json:"awayWinProbability"`
 }
 
-// getSharedPoissonModel returns the live prediction system's shared, already
-// warmed-up (and rate-persisted) Poisson model when the system has been
-// initialized, falling back to a freshly constructed disk-backed instance
-// otherwise (e.g. if called before startup finishes, or from a standalone
-// tool/test).
+// getSharedPoissonModel returns the warmed-up, rate-persisted Poisson model.
+// This used to reach through the live prediction system because each caller
+// otherwise built its own instance; the model is a true singleton now, so the
+// accessor is correct whether or not startup has finished.
 func getSharedPoissonModel() *PoissonRegressionModel {
-	if lps := GetLivePredictionSystem(); lps != nil {
-		if pm := lps.GetPoissonModel(); pm != nil {
-			return pm
-		}
-	}
-	return NewPoissonRegressionModel()
+	return GetPoissonRegressionModel()
 }
 
 // getSharedEloModel mirrors getSharedPoissonModel for the Elo rating model.
 func getSharedEloModel() *EloRatingModel {
-	if lps := GetLivePredictionSystem(); lps != nil {
-		if em := lps.GetEloModel(); em != nil {
-			return em
-		}
-	}
-	return NewEloRatingModel()
+	return GetEloRatingModel()
 }
 
 // boundGoalsLambda mirrors the bounds PoissonRegressionModel.calculateExpectedGoals

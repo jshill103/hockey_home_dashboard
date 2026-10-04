@@ -240,6 +240,17 @@ func (mes *ModelEvaluationService) AddGameToBatch(game models.CompletedGame) err
 	mes.batchMutex.Lock()
 	defer mes.batchMutex.Unlock()
 
+	// Grow the rolling history that getTrainingWindow() serves to GB/RF/LSTM.
+	// Without this, completedGames stays frozen at whatever loadCompletedGames()
+	// read at startup and those models retrain forever on boot-time history.
+	// Scoped so mes.mutex is released before trainModelBatch runs below, since
+	// getTrainingWindow takes it for reading.
+	func() {
+		mes.mutex.Lock()
+		defer mes.mutex.Unlock()
+		mes.completedGames = append(mes.completedGames, game)
+	}()
+
 	// Add to all model-specific batches
 	mes.nnBatch = append(mes.nnBatch, game)
 	mes.gbBatch = append(mes.gbBatch, game)
@@ -574,15 +585,25 @@ func (mes *ModelEvaluationService) ForceBatchTraining() error {
 
 // recordPrediction records a prediction outcome
 func (mes *ModelEvaluationService) recordPrediction(modelName string, pred *models.ModelResult, game *models.CompletedGame, homeFactors, awayFactors *models.PredictionFactors) {
+	// WinProbability is always the *home* team's win probability, so the model's
+	// actual pick is whichever side it favored. This used to hardcode the home
+	// team as the predicted winner, which made IsCorrect mean nothing more than
+	// "the home team won" and pinned every model's reported accuracy to the
+	// league home-win rate regardless of how well it predicted.
+	predictedWinner := awayFactors.TeamCode
+	if pred.WinProbability >= 0.5 {
+		predictedWinner = homeFactors.TeamCode
+	}
+
 	outcome := models.PredictionOutcome{
 		GameID:          game.GameID,
-		PredictedWinner: homeFactors.TeamCode,
+		PredictedWinner: predictedWinner,
 		ActualWinner:    game.Winner,
 		PredictedScore:  pred.PredictedScore,
 		ActualScore:     fmt.Sprintf("%d-%d", game.HomeTeam.Score, game.AwayTeam.Score),
 		WinProbability:  pred.WinProbability,
 		Confidence:      pred.Confidence,
-		IsCorrect:       homeFactors.TeamCode == game.Winner,
+		IsCorrect:       predictedWinner == game.Winner,
 		HomeTeam:        game.HomeTeam.TeamCode,
 		AwayTeam:        game.AwayTeam.TeamCode,
 		PredictionTime:  time.Now(),
@@ -634,6 +655,7 @@ func (mes *ModelEvaluationService) calculateModelMetrics(modelName string, predi
 	var correctCount int
 	var brierSum float64
 	var confidenceSum float64
+	var homeWinCount int
 	var homeCorrect, awayCorrect int
 	var homeTotal, awayTotal int
 	var upsetCorrect, upsetTotal int
@@ -661,10 +683,14 @@ func (mes *ModelEvaluationService) calculateModelMetrics(modelName string, predi
 			}
 		}
 
-		// Brier Score (for probability calibration)
+		// Brier Score (for probability calibration). WinProbability is the home
+		// team's win probability, so it has to be scored against whether the home
+		// team actually won -- not against whether the pick was right, which
+		// measures confidence-when-correct rather than calibration.
 		actual := 0.0
-		if pred.IsCorrect {
+		if pred.ActualWinner == pred.HomeTeam {
 			actual = 1.0
+			homeWinCount++
 		}
 		brierSum += math.Pow(pred.WinProbability-actual, 2)
 
@@ -699,6 +725,16 @@ func (mes *ModelEvaluationService) calculateModelMetrics(modelName string, predi
 	metrics.BrierScore = brierSum / float64(len(predictions))
 	metrics.AvgConfidence = confidenceSum / float64(len(predictions))
 	metrics.CalibrationError = math.Abs(metrics.AvgConfidence - metrics.Accuracy)
+
+	// Trivial baseline: always pick the home team, and forecast the empirical
+	// home win rate for every game. The Brier of that constant forecast is
+	// p(1-p). A positive skill score means the model earns its complexity.
+	homeWinRate := float64(homeWinCount) / float64(len(predictions))
+	metrics.BaselineHomeAccuracy = homeWinRate
+	metrics.BaselineBrierScore = homeWinRate * (1 - homeWinRate)
+	if metrics.BaselineBrierScore > 0 {
+		metrics.BrierSkillScore = 1 - (metrics.BrierScore / metrics.BaselineBrierScore)
+	}
 
 	// Confusion matrix metrics
 	metrics.TruePositives = cm.TruePositives

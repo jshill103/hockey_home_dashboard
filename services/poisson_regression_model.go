@@ -77,6 +77,20 @@ type RateRecord struct {
 	Confidence      float64   `json:"confidence"`
 }
 
+var (
+	poissonModelInstance *PoissonRegressionModel
+	poissonModelOnce     sync.Once
+)
+
+// GetPoissonRegressionModel returns the process-wide Poisson model. See
+// GetEloRatingModel for why shared state matters here.
+func GetPoissonRegressionModel() *PoissonRegressionModel {
+	poissonModelOnce.Do(func() {
+		poissonModelInstance = NewPoissonRegressionModel()
+	})
+	return poissonModelInstance
+}
+
 // NewPoissonRegressionModel creates a new Poisson regression prediction model
 func NewPoissonRegressionModel() *PoissonRegressionModel {
 	model := &PoissonRegressionModel{

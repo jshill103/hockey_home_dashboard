@@ -34,9 +34,9 @@ func NewLivePredictionSystem(teamCode string) *LivePredictionSystem {
 	// Register models with the scheduler
 	// Note: We need to make the models implement UpdatableModel interface
 	// For now, we'll register the ones we've enhanced
-	eloModel := NewEloRatingModel()
-	poissonModel := NewPoissonRegressionModel()
-	neuralNet := NewNeuralNetworkModel()
+	eloModel := GetEloRatingModel()
+	poissonModel := GetPoissonRegressionModel()
+	neuralNet := GetNeuralNetworkModel()
 
 	modelScheduler.RegisterModel(eloModel)
 	modelScheduler.RegisterModel(poissonModel)

@@ -63,6 +63,22 @@ type RatingRecord struct {
 	Confidence float64   `json:"confidence"`
 }
 
+var (
+	eloModelInstance *EloRatingModel
+	eloModelOnce     sync.Once
+)
+
+// GetEloRatingModel returns the process-wide Elo model. Ratings are learned
+// incrementally from game results, so every consumer has to share one instance;
+// separate copies diverge the moment a result lands and only agree again after
+// a restart reloads them from disk.
+func GetEloRatingModel() *EloRatingModel {
+	eloModelOnce.Do(func() {
+		eloModelInstance = NewEloRatingModel()
+	})
+	return eloModelInstance
+}
+
 // NewEloRatingModel creates a new Elo rating prediction model
 func NewEloRatingModel() *EloRatingModel {
 	model := &EloRatingModel{

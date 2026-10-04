@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/jaredshillingburg/go_uhc/models"
@@ -150,6 +151,21 @@ type CrossValidationSettings struct {
 	UpdateFrequency    time.Duration `json:"updateFrequency"`    // How often to revalidate
 }
 
+var (
+	crossValidationInstance *CrossValidationService
+	crossValidationOnce     sync.Once
+)
+
+// GetCrossValidationService returns the process-wide cross-validation service.
+// Historical predictions accumulate in memory here, so a per-caller instance
+// would never reach MinHistoricalData and validation would never run.
+func GetCrossValidationService() *CrossValidationService {
+	crossValidationOnce.Do(func() {
+		crossValidationInstance = NewCrossValidationService()
+	})
+	return crossValidationInstance
+}
+
 // NewCrossValidationService creates a new cross-validation service
 func NewCrossValidationService() *CrossValidationService {
 	settings := CrossValidationSettings{
@@ -183,15 +199,22 @@ func (cvs *CrossValidationService) AddHistoricalPrediction(prediction Historical
 	if prediction.GameCompleted {
 		prediction.IsCorrect = (prediction.PredictedWinner == prediction.ActualWinner)
 
-		// Calculate probability error
-		actualOutcome := 0.0
-		if prediction.IsCorrect {
-			actualOutcome = 1.0
+		// WinProbability is the home team's win probability, so probability error
+		// is measured against whether the home team won. Scoring it against
+		// IsCorrect instead conflates calibration with confidence-when-correct.
+		actualHomeWin := 0.0
+		if prediction.ActualWinner == prediction.HomeTeam {
+			actualHomeWin = 1.0
 		}
-		prediction.ProbabilityError = math.Abs(prediction.WinProbability - actualOutcome)
+		prediction.ProbabilityError = math.Abs(prediction.WinProbability - actualHomeWin)
 
-		// Calculate confidence error (calibration)
-		prediction.ConfidenceError = math.Abs(prediction.RawConfidence - actualOutcome)
+		// Confidence is expressed relative to the pick, not to the home side, so
+		// it is still scored against whether the pick was right.
+		confidenceTarget := 0.0
+		if prediction.IsCorrect {
+			confidenceTarget = 1.0
+		}
+		prediction.ConfidenceError = math.Abs(prediction.RawConfidence - confidenceTarget)
 
 		// Calculate score error
 		prediction.ScoreError = cvs.calculateScoreError(prediction.PredictedScore, prediction.ActualScore)
@@ -400,16 +423,18 @@ func (cvs *CrossValidationService) validateFold(foldIndex int, testFold []Histor
 		totalProbError += pred.ProbabilityError
 		totalScoreError += pred.ScoreError
 
-		// Brier score calculation
-		actualOutcome := 0.0
-		if pred.IsCorrect {
-			actualOutcome = 1.0
+		// Brier score and log loss both score the forecast probability against the
+		// event it forecasts. WinProbability is P(home team wins), so the event is
+		// "the home team won" -- not "our pick was right".
+		actualHomeWin := 0.0
+		if pred.ActualWinner == pred.HomeTeam {
+			actualHomeWin = 1.0
 		}
-		brierSum += math.Pow(pred.WinProbability-actualOutcome, 2)
+		brierSum += math.Pow(pred.WinProbability-actualHomeWin, 2)
 
 		// Log loss calculation (avoid log(0))
 		prob := math.Max(0.001, math.Min(0.999, pred.WinProbability))
-		if pred.IsCorrect {
+		if actualHomeWin == 1.0 {
 			logLossSum += -math.Log(prob)
 		} else {
 			logLossSum += -math.Log(1 - prob)
