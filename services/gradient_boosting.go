@@ -656,18 +656,12 @@ func (gbm *GradientBoostingModel) extractFeatures(home, away *models.PredictionF
 }
 
 // predictScore predicts the final score
+// This mapped the win probability onto one of five fixed strings, ignoring
+// who was playing, so 91% of stored predictions read 3-2. One of the five was
+// "3-3 (OT)", a tied scoreline the NHL cannot produce, returned for every
+// game the model saw as close. See scorelineFromExpectedGoals.
 func (gbm *GradientBoostingModel) predictScore(winProb float64, home, away *models.PredictionFactors) string {
-	// Simple score prediction based on probability
-	if winProb > 0.65 {
-		return "4-2" // Comfortable home win
-	} else if winProb > 0.55 {
-		return "3-2" // Close home win
-	} else if winProb > 0.45 {
-		return "3-3 (OT)" // Could go either way
-	} else if winProb > 0.35 {
-		return "2-3" // Close away win
-	}
-	return "2-4" // Comfortable away win
+	return scorelineFromExpectedGoals(winProb, home, away)
 }
 
 // calculateFeatureImportance calculates which features are most important

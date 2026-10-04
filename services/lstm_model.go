@@ -441,34 +441,13 @@ func (lstm *LSTMModel) extractSequenceForTeam(teamCode string) [][]float64 {
 }
 
 // predictScore predicts the final score
+// This took the two teams' factors and never read them, building the score
+// from a fixed 3.0/2.5 base nudged by the win probability. Since the model's
+// probability only spans about 0.50 to 0.58, every nudge rounded back to the
+// same place and all 561 stored LSTM predictions read 3-2. See
+// scorelineFromExpectedGoals.
 func (lstm *LSTMModel) predictScore(winProb float64, homeFactors, awayFactors *models.PredictionFactors) string {
-	// Base expected goals
-	homeGoals := 3.0
-	awayGoals := 2.5
-
-	// Adjust based on win probability
-	if winProb > 0.5 {
-		homeGoals += (winProb - 0.5) * 2.0
-		awayGoals -= (winProb - 0.5) * 1.5
-	} else {
-		homeGoals -= (0.5 - winProb) * 1.5
-		awayGoals += (0.5 - winProb) * 2.0
-	}
-
-	// Round to integers
-	homeScore := int(math.Round(homeGoals))
-	awayScore := int(math.Round(awayGoals))
-
-	// Ensure minimum score difference
-	if homeScore == awayScore {
-		if winProb > 0.5 {
-			homeScore++
-		} else {
-			awayScore++
-		}
-	}
-
-	return fmt.Sprintf("%d-%d", homeScore, awayScore)
+	return scorelineFromExpectedGoals(winProb, homeFactors, awayFactors)
 }
 
 // Train trains the LSTM model on game sequences

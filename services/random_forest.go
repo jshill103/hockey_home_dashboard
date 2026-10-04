@@ -762,30 +762,11 @@ func (rfm *RandomForestModel) extractFeatures(home, away *models.PredictionFacto
 }
 
 // predictScore predicts the final score
+// This was a byte-identical copy of LSTM's helper and shared its defect: the
+// team factors were accepted and never read, so 91% of stored Random Forest
+// predictions read 3-2. See scorelineFromExpectedGoals.
 func (rfm *RandomForestModel) predictScore(winProb float64, homeFactors, awayFactors *models.PredictionFactors) string {
-	homeGoals := 3.0
-	awayGoals := 2.5
-
-	if winProb > 0.5 {
-		homeGoals += (winProb - 0.5) * 2.0
-		awayGoals -= (winProb - 0.5) * 1.5
-	} else {
-		homeGoals -= (0.5 - winProb) * 1.5
-		awayGoals += (0.5 - winProb) * 2.0
-	}
-
-	homeScore := int(math.Round(homeGoals))
-	awayScore := int(math.Round(awayGoals))
-
-	if homeScore == awayScore {
-		if winProb > 0.5 {
-			homeScore++
-		} else {
-			awayScore++
-		}
-	}
-
-	return fmt.Sprintf("%d-%d", homeScore, awayScore)
+	return scorelineFromExpectedGoals(winProb, homeFactors, awayFactors)
 }
 
 // calculateFeatureImportance calculates which features are most important
