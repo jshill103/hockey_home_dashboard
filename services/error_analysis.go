@@ -50,8 +50,15 @@ func InitializeErrorAnalysis() error {
 			fmt.Printf("⚠️ Warning: Could not load existing accuracy records: %v\n", err)
 		}
 
+		// Recover the rest from the prediction store, which is where settled
+		// games actually land.
+		if added := errorAnalysisInstance.rehydrateFromPredictionStorage(); added > 0 {
+			fmt.Printf("📊 Recovered %d accuracy records from the prediction store\n", added)
+		}
+
 		// Calculate initial summary
 		errorAnalysisInstance.recalculateSummary()
+		errorAnalysisInstance.analyzeErrorPatterns()
 
 		fmt.Println("✅ Error Analysis Service initialized")
 	})
@@ -137,13 +144,43 @@ func (eas *ErrorAnalysisService) UpdatePredictionWithResult(
 		return fmt.Errorf("failed to load prediction record: %w", err)
 	}
 
-	// Determine actual winner
+	eas.finalizeRecord(record, homeScore, awayScore, gameType)
+	actualWinner := record.ActualWinner
+
+	// Save updated record
+	if err := eas.saveAccuracyRecord(record); err != nil {
+		return fmt.Errorf("failed to save accuracy record: %w", err)
+	}
+
+	// Add to in-memory records
+	eas.records = append(eas.records, record)
+
+	// Recalculate summary statistics
+	eas.recalculateSummary()
+
+	// Analyze for error patterns
+	eas.analyzeErrorPatterns()
+
+	status := "✅ CORRECT"
+	if !record.IsCorrect {
+		status = "❌ INCORRECT"
+	}
+	fmt.Printf("📊 %s - Game %d: Predicted %s, Actual %s (%d-%d)\n",
+		status, gameID, record.PredictedWinner, actualWinner, homeScore, awayScore)
+
+	return nil
+}
+
+// finalizeRecord fills in every field of a record that can only be known once
+// the game is over. Both the live result path and the rehydration path in
+// error_analysis_rehydrate.go go through here, so a record rebuilt from the
+// prediction store is scored identically to one written as the result landed.
+func (eas *ErrorAnalysisService) finalizeRecord(record *models.PredictionAccuracyRecord, homeScore, awayScore int, gameType string) {
 	actualWinner := record.HomeTeam
 	if awayScore > homeScore {
 		actualWinner = record.AwayTeam
 	}
 
-	// Update record with results
 	record.ActualWinner = actualWinner
 	record.HomeScore = homeScore
 	record.AwayScore = awayScore
@@ -172,14 +209,14 @@ func (eas *ErrorAnalysisService) UpdatePredictionWithResult(
 	// Update model-specific results
 	for modelName, modelPred := range record.ModelPredictions {
 		modelPred.IsCorrect = (modelPred.PredictedWinner == actualWinner)
-		
+
 		// Calculate model prediction error
 		modelActualProb := modelPred.AwayWinProb
 		if actualWinner == record.HomeTeam {
 			modelActualProb = modelPred.HomeWinProb
 		}
 		modelPred.PredictionError = math.Abs(modelActualProb - 1.0)
-		
+
 		// Determine if this model helped or hurt the ensemble
 		if modelPred.IsCorrect == record.IsCorrect {
 			modelPred.ContributionSign = 0 // Neutral
@@ -188,32 +225,9 @@ func (eas *ErrorAnalysisService) UpdatePredictionWithResult(
 		} else {
 			modelPred.ContributionSign = -1 // Hurt the prediction
 		}
-		
+
 		record.ModelPredictions[modelName] = modelPred
 	}
-
-	// Save updated record
-	if err := eas.saveAccuracyRecord(record); err != nil {
-		return fmt.Errorf("failed to save accuracy record: %w", err)
-	}
-
-	// Add to in-memory records
-	eas.records = append(eas.records, record)
-
-	// Recalculate summary statistics
-	eas.recalculateSummary()
-
-	// Analyze for error patterns
-	eas.analyzeErrorPatterns()
-
-	status := "✅ CORRECT"
-	if !record.IsCorrect {
-		status = "❌ INCORRECT"
-	}
-	fmt.Printf("📊 %s - Game %d: Predicted %s, Actual %s (%d-%d)\n",
-		status, gameID, record.PredictedWinner, actualWinner, homeScore, awayScore)
-
-	return nil
 }
 
 // isUpset determines if the result was an upset (underdog won)

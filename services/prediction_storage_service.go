@@ -178,6 +178,13 @@ func (pss *PredictionStorageService) UpdateWithResult(gameID int, result *models
 	log.Printf("✅ Updated prediction for game %d with actual result (Winner Correct: %v)",
 		gameID, accuracy.WinnerCorrect)
 
+	// Settling a prediction is the one event that changes measured accuracy,
+	// so the accuracy records are fed from here rather than from a parallel
+	// store that could fall out of step.
+	if errorAnalysis := GetErrorAnalysisService(); errorAnalysis != nil {
+		errorAnalysis.IngestSettledPrediction(stored)
+	}
+
 	return nil
 }
 
